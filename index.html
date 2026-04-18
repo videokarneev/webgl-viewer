@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GLB Viewer</title>
+    <script>
+      (function () {
+        function showRuntimeError(message) {
+          var existing = document.getElementById('runtime-error');
+          if (existing) {
+            existing.textContent = message;
+            return;
+          }
+
+          var pre = document.createElement('pre');
+          pre.id = 'runtime-error';
+          pre.style.position = 'fixed';
+          pre.style.inset = '16px';
+          pre.style.zIndex = '99999';
+          pre.style.margin = '0';
+          pre.style.padding = '16px';
+          pre.style.overflow = 'auto';
+          pre.style.whiteSpace = 'pre-wrap';
+          pre.style.background = '#140f12';
+          pre.style.color = '#ffd8e1';
+          pre.style.border = '1px solid #7a3145';
+          pre.style.borderRadius = '8px';
+          pre.textContent = message;
+          document.addEventListener('DOMContentLoaded', function () {
+            document.body.appendChild(pre);
+          });
+        }
+
+        window.addEventListener('error', function (event) {
+          showRuntimeError('Runtime error:\n' + (event.error && event.error.stack ? event.error.stack : event.message));
+        });
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          showRuntimeError('Unhandled rejection:\n' + (reason && reason.stack ? reason.stack : String(reason)));
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+  </html>
