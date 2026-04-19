@@ -12,7 +12,6 @@ const CLOCK = new THREE.Clock();
 const DEFAULT_EFFECT_STATE = {
   enabled: true,
   targetSlot: 'emissive',
-  blendMode: 'screen',
   frameOrder: 'row',
   gridX: 2,
   gridY: 25,
@@ -20,17 +19,19 @@ const DEFAULT_EFFECT_STATE = {
   frameCount: 50,
   currentFrame: 0,
   opacity: 0.85,
+  frameBlend: false,
   maskByRelief: false,
   reliefStrength: 8,
   play: true,
   loop: true,
-  uvChannel: 'uv',
+  uvChannel: 'auto',
   wrapMode: 'repeat',
   offsetX: 0,
   offsetY: 0,
   scaleX: 1,
   scaleY: 1,
   rotation: 0,
+  swapXY: false,
 };
 
 const app = document.querySelector('#app');
@@ -43,12 +44,12 @@ app.innerHTML = `
           <p class="eyebrow">Karneev WebGL Scene Editor</p>
           <h1>GLB scene configurator</h1>
           <p class="muted">
-            Загружай GLB, выбирай материал, добавляй atlas overlay в Base Color или Emission и публикуй конфиг сцены.
+            Load a GLB, pick a material, preview the atlas in Base Color or drive it through Emission, and publish the scene config.
           </p>
         </div>
         <div class="dropzone" id="dropzone">
-          <strong>Перетащи сюда model, atlas или environment</strong>
-          <span>Поддерживаются .glb, .gltf, .hdr, .png, .jpg, .webp, .json</span>
+          <strong>Drop a model, atlas, or environment here</strong>
+          <span>Supported: .glb, .gltf, .hdr, .png, .jpg, .webp, .json</span>
         </div>
       </section>
 
@@ -60,7 +61,7 @@ app.innerHTML = `
         <div class="asset-summary muted">
           <div><strong>Model:</strong> <span id="modelStatus">none</span></div>
           <div><strong>Atlas:</strong> <span id="atlasStatus">none</span></div>
-          <div><strong>HDRI:</strong> <span id="hdriStatus">default studio</span></div>
+          <div><strong>Environment:</strong> <span id="hdriStatus">default studio</span></div>
         </div>
         <label class="field">
           <span>Model URL</span>
@@ -92,6 +93,17 @@ app.innerHTML = `
           <button id="openHdriButton">Open HDRI file</button>
           <button id="loadHdriUrlButton" class="ghost">Load HDRI URL</button>
         </div>
+
+        <label class="field">
+          <span>360 panorama URL</span>
+          <input id="panoramaUrlInput" type="text" placeholder="Optional .jpg/.png equirect panorama" />
+        </label>
+        <div class="inline-actions">
+          <input id="panoramaInput" class="hidden-input" type="file" accept="image/*" />
+          <button id="openPanoramaButton">Open panorama file</button>
+          <button id="loadPanoramaUrlButton" class="ghost">Load panorama URL</button>
+          <button id="resetEnvironmentButton" class="ghost">Reset environment</button>
+        </div>
       </section>
 
       <section class="panel">
@@ -108,7 +120,7 @@ app.innerHTML = `
           <button id="resetCameraButton" class="ghost">Reset camera</button>
           <button id="lockPointerButton" class="ghost">Lock pointer</button>
         </div>
-        <p class="small-muted">WASD + mouse look в режиме first person. Пока без коллизий, чтобы не превращать редактор в движок игры.</p>
+        <p class="small-muted">WASD + mouse look in first-person mode. No collisions yet, so the editor stays lightweight.</p>
         <label class="field">
           <span>Exposure <output id="exposureValue">1.00</output></span>
           <input id="exposureInput" type="range" min="0" max="3" step="0.01" value="1" />
@@ -147,41 +159,167 @@ app.innerHTML = `
         <label class="field">
           <span>Target material</span>
           <select id="materialSelect">
-            <option value="">Сначала загрузи модель</option>
+            <option value="">Load a model first</option>
           </select>
         </label>
-        <div id="materialMeta" class="material-meta muted">Материалы сцены пока не найдены.</div>
+        <div id="materialMeta" class="material-meta muted">No scene materials detected yet.</div>
       </section>
 
       <section class="panel">
-        <h2>Atlas Effect</h2>
+        <h2>Material Settings</h2>
+        <div class="grid-two">
+          <label class="field">
+            <span>Base color</span>
+            <input id="materialColorInput" type="color" value="#ffffff" />
+          </label>
+          <label class="field">
+            <span>Emissive color</span>
+            <input id="materialEmissiveColorInput" type="color" value="#000000" />
+          </label>
+        </div>
+        <label class="field">
+          <span>Metalness <output id="materialMetalnessValue">0.00</output></span>
+          <input id="materialMetalnessInput" type="range" min="0" max="1" step="0.01" value="0" />
+        </label>
+        <label class="field">
+          <span>Roughness <output id="materialRoughnessValue">1.00</output></span>
+          <input id="materialRoughnessInput" type="range" min="0" max="1" step="0.01" value="1" />
+        </label>
+        <label class="field">
+          <span>Env map intensity <output id="materialEnvMapValue">1.00</output></span>
+          <input id="materialEnvMapInput" type="range" min="0" max="5" step="0.01" value="1" />
+        </label>
+        <label class="field">
+          <span>Emissive intensity <output id="materialEmissiveIntensityValue">1.00</output></span>
+          <input id="materialEmissiveIntensityInput" type="range" min="0" max="10" step="0.01" value="1" />
+        </label>
+        <label class="field">
+          <span>Clearcoat <output id="materialClearcoatValue">0.00</output></span>
+          <input id="materialClearcoatInput" type="range" min="0" max="1" step="0.01" value="0" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Lights</h2>
+          <button id="applyLightPresetButton" class="ghost small">Apply preset</button>
+        </div>
+        <label class="field">
+          <span>Light preset</span>
+          <select id="lightPresetSelect">
+            <option value="studio">Studio</option>
+            <option value="product">Product</option>
+            <option value="sunset">Sunset</option>
+            <option value="night">Night</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Ambient <output id="ambientLightValue">0.34</output></span>
+          <input id="ambientLightInput" type="range" min="0" max="5" step="0.01" value="0.34" />
+        </label>
+        <label class="field">
+          <span>Hemisphere <output id="hemisphereLightValue">0.90</output></span>
+          <input id="hemisphereLightInput" type="range" min="0" max="5" step="0.01" value="0.9" />
+        </label>
+        <label class="field">
+          <span>Key light <output id="keyLightValue">1.80</output></span>
+          <input id="keyLightInput" type="range" min="0" max="8" step="0.01" value="1.8" />
+        </label>
+        <label class="field">
+          <span>Fill light <output id="fillLightValue">0.85</output></span>
+          <input id="fillLightInput" type="range" min="0" max="8" step="0.01" value="0.85" />
+        </label>
+        <label class="field">
+          <span>Rim light <output id="rimLightValue">0.65</output></span>
+          <input id="rimLightInput" type="range" min="0" max="8" step="0.01" value="0.65" />
+        </label>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Extra Lights</h2>
+          <button id="removeExtraLightButton" class="ghost small">Remove selected</button>
+        </div>
+        <div class="inline-actions">
+          <button id="addDirectionalLightButton">Add directional</button>
+          <button id="addPointLightButton">Add point</button>
+          <button id="addSpotLightButton">Add spot</button>
+        </div>
+        <label class="field">
+          <span>Selected light</span>
+          <select id="extraLightSelect">
+            <option value="">No extra lights</option>
+          </select>
+        </label>
+        <div id="extraLightMeta" class="material-meta muted">Create a light to edit its settings.</div>
+        <label class="checkbox">
+          <input id="extraLightEnabledInput" type="checkbox" checked />
+          <span>Enabled</span>
+        </label>
+        <label class="field">
+          <span>Color</span>
+          <input id="extraLightColorInput" type="color" value="#ffffff" />
+        </label>
+        <label class="field">
+          <span>Intensity <output id="extraLightIntensityValue">1.00</output></span>
+          <input id="extraLightIntensityInput" type="range" min="0" max="20" step="0.01" value="1" />
+        </label>
+        <label class="field">
+          <span>Distance <output id="extraLightDistanceValue">0.00</output></span>
+          <input id="extraLightDistanceInput" type="range" min="0" max="50" step="0.01" value="0" />
+        </label>
+        <label class="field">
+          <span>Angle <output id="extraLightAngleValue">30°</output></span>
+          <input id="extraLightAngleInput" type="range" min="1" max="90" step="1" value="30" />
+        </label>
+        <div class="grid-two">
+          <label class="field">
+            <span>Position X</span>
+            <input id="extraLightPosXInput" type="number" step="0.1" value="3" />
+          </label>
+          <label class="field">
+            <span>Position Y</span>
+            <input id="extraLightPosYInput" type="number" step="0.1" value="4" />
+          </label>
+        </div>
+        <div class="grid-two">
+          <label class="field">
+            <span>Position Z</span>
+            <input id="extraLightPosZInput" type="number" step="0.1" value="3" />
+          </label>
+          <label class="field">
+            <span>Target X</span>
+            <input id="extraLightTargetXInput" type="number" step="0.1" value="0" />
+          </label>
+        </div>
+        <div class="grid-two">
+          <label class="field">
+            <span>Target Y</span>
+            <input id="extraLightTargetYInput" type="number" step="0.1" value="0" />
+          </label>
+          <label class="field">
+            <span>Target Z</span>
+            <input id="extraLightTargetZInput" type="number" step="0.1" value="0" />
+          </label>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Emissive Atlas</h2>
         <label class="checkbox">
           <input id="effectEnabledInput" type="checkbox" checked />
-          <span>Enable atlas overlay</span>
+          <span>Enable atlas effect</span>
         </label>
         <div class="inline-actions">
           <button id="playPauseAtlasButton">Pause atlas</button>
         </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>Target slot</span>
-            <select id="targetSlotSelect">
-              <option value="baseColor">Base Color</option>
-              <option value="emissive" selected>Emission</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Blend mode</span>
-            <select id="blendModeSelect">
-              <option value="replace">Normal / Replace</option>
-              <option value="screen" selected>Screen</option>
-              <option value="mix">Mix</option>
-              <option value="add">Add</option>
-              <option value="multiply">Multiply</option>
-              <option value="debug">Debug overlay</option>
-            </select>
-          </label>
-        </div>
+        <label class="field">
+          <span>Target channel</span>
+          <select id="targetSlotSelect">
+            <option value="emissive" selected>Emission</option>
+            <option value="baseColor">Base Color</option>
+          </select>
+        </label>
         <label class="field">
           <span>Frame order</span>
           <select id="frameOrderSelect">
@@ -225,6 +363,10 @@ app.innerHTML = `
           <label><input id="playToggle" type="checkbox" checked /> Play</label>
           <label><input id="loopToggle" type="checkbox" checked /> Loop</label>
         </div>
+        <label class="checkbox">
+          <input id="frameBlendInput" type="checkbox" />
+          <span>Frame blending</span>
+        </label>
         <label class="field">
           <span>Current frame <output id="currentFrameValue">1 / 50</output></span>
           <input id="currentFrameInput" type="range" min="0" max="49" step="1" value="0" />
@@ -238,10 +380,14 @@ app.innerHTML = `
         <h2>UV Transform</h2>
         <div class="grid-two">
           <label class="field">
-            <span>UV channel</span>
+            <span>UV source</span>
             <select id="uvChannelSelect">
-              <option value="uv">uv</option>
-              <option value="uv2">uv2</option>
+              <option value="auto">Auto</option>
+              <option value="normal">Normal Map</option>
+              <option value="baseColor">Base Color Map</option>
+              <option value="emissive">Emissive Map</option>
+              <option value="uv">Raw UV</option>
+              <option value="uv2">Raw UV2</option>
             </select>
           </label>
           <label class="field">
@@ -272,6 +418,10 @@ app.innerHTML = `
             <input id="scaleYInput" type="number" min="0.01" step="0.01" value="1" />
           </label>
         </div>
+        <label class="checkbox">
+          <input id="swapXYInput" type="checkbox" />
+          <span>Swap X / Y</span>
+        </label>
         <label class="field">
           <span>Rotation <output id="rotationValue">0°</output></span>
           <input id="rotationInput" type="range" min="-180" max="180" step="1" value="0" />
@@ -282,7 +432,7 @@ app.innerHTML = `
     <main class="viewport-wrap">
       <canvas id="viewport"></canvas>
       <div class="hud">
-        <span id="statusLabel">Сцена готова. Загрузи модель и atlas, чтобы собрать web-представление.</span>
+        <span id="statusLabel">Scene ready. Load a model and atlas to assemble the viewer setup.</span>
       </div>
     </main>
   </div>
@@ -294,12 +444,26 @@ const elements = {
   modelInput: document.querySelector('#modelInput'),
   atlasInput: document.querySelector('#atlasInput'),
   hdriInput: document.querySelector('#hdriInput'),
+  panoramaInput: document.querySelector('#panoramaInput'),
   configInput: document.querySelector('#configInput'),
   modelUrlInput: document.querySelector('#modelUrlInput'),
   atlasUrlInput: document.querySelector('#atlasUrlInput'),
   hdriUrlInput: document.querySelector('#hdriUrlInput'),
+  panoramaUrlInput: document.querySelector('#panoramaUrlInput'),
   materialSelect: document.querySelector('#materialSelect'),
   materialMeta: document.querySelector('#materialMeta'),
+  materialColorInput: document.querySelector('#materialColorInput'),
+  materialEmissiveColorInput: document.querySelector('#materialEmissiveColorInput'),
+  materialMetalnessInput: document.querySelector('#materialMetalnessInput'),
+  materialMetalnessValue: document.querySelector('#materialMetalnessValue'),
+  materialRoughnessInput: document.querySelector('#materialRoughnessInput'),
+  materialRoughnessValue: document.querySelector('#materialRoughnessValue'),
+  materialEnvMapInput: document.querySelector('#materialEnvMapInput'),
+  materialEnvMapValue: document.querySelector('#materialEnvMapValue'),
+  materialEmissiveIntensityInput: document.querySelector('#materialEmissiveIntensityInput'),
+  materialEmissiveIntensityValue: document.querySelector('#materialEmissiveIntensityValue'),
+  materialClearcoatInput: document.querySelector('#materialClearcoatInput'),
+  materialClearcoatValue: document.querySelector('#materialClearcoatValue'),
   modelStatus: document.querySelector('#modelStatus'),
   atlasStatus: document.querySelector('#atlasStatus'),
   hdriStatus: document.querySelector('#hdriStatus'),
@@ -310,6 +474,7 @@ const elements = {
   envIntensityValue: document.querySelector('#envIntensityValue'),
   opacityInput: document.querySelector('#opacityInput'),
   opacityValue: document.querySelector('#opacityValue'),
+  frameBlendInput: document.querySelector('#frameBlendInput'),
   maskByReliefInput: document.querySelector('#maskByReliefInput'),
   reliefStrengthInput: document.querySelector('#reliefStrengthInput'),
   reliefStrengthValue: document.querySelector('#reliefStrengthValue'),
@@ -322,7 +487,6 @@ const elements = {
   atlasPreview: document.querySelector('#atlasPreview'),
   effectEnabledInput: document.querySelector('#effectEnabledInput'),
   targetSlotSelect: document.querySelector('#targetSlotSelect'),
-  blendModeSelect: document.querySelector('#blendModeSelect'),
   gridXInput: document.querySelector('#gridXInput'),
   gridYInput: document.querySelector('#gridYInput'),
   fpsInput: document.querySelector('#fpsInput'),
@@ -335,6 +499,39 @@ const elements = {
   offsetYInput: document.querySelector('#offsetYInput'),
   scaleXInput: document.querySelector('#scaleXInput'),
   scaleYInput: document.querySelector('#scaleYInput'),
+  swapXYInput: document.querySelector('#swapXYInput'),
+  ambientLightInput: document.querySelector('#ambientLightInput'),
+  ambientLightValue: document.querySelector('#ambientLightValue'),
+  lightPresetSelect: document.querySelector('#lightPresetSelect'),
+  applyLightPresetButton: document.querySelector('#applyLightPresetButton'),
+  hemisphereLightInput: document.querySelector('#hemisphereLightInput'),
+  hemisphereLightValue: document.querySelector('#hemisphereLightValue'),
+  keyLightInput: document.querySelector('#keyLightInput'),
+  keyLightValue: document.querySelector('#keyLightValue'),
+  fillLightInput: document.querySelector('#fillLightInput'),
+  fillLightValue: document.querySelector('#fillLightValue'),
+  rimLightInput: document.querySelector('#rimLightInput'),
+  rimLightValue: document.querySelector('#rimLightValue'),
+  addDirectionalLightButton: document.querySelector('#addDirectionalLightButton'),
+  addPointLightButton: document.querySelector('#addPointLightButton'),
+  addSpotLightButton: document.querySelector('#addSpotLightButton'),
+  removeExtraLightButton: document.querySelector('#removeExtraLightButton'),
+  extraLightSelect: document.querySelector('#extraLightSelect'),
+  extraLightMeta: document.querySelector('#extraLightMeta'),
+  extraLightEnabledInput: document.querySelector('#extraLightEnabledInput'),
+  extraLightColorInput: document.querySelector('#extraLightColorInput'),
+  extraLightIntensityInput: document.querySelector('#extraLightIntensityInput'),
+  extraLightIntensityValue: document.querySelector('#extraLightIntensityValue'),
+  extraLightDistanceInput: document.querySelector('#extraLightDistanceInput'),
+  extraLightDistanceValue: document.querySelector('#extraLightDistanceValue'),
+  extraLightAngleInput: document.querySelector('#extraLightAngleInput'),
+  extraLightAngleValue: document.querySelector('#extraLightAngleValue'),
+  extraLightPosXInput: document.querySelector('#extraLightPosXInput'),
+  extraLightPosYInput: document.querySelector('#extraLightPosYInput'),
+  extraLightPosZInput: document.querySelector('#extraLightPosZInput'),
+  extraLightTargetXInput: document.querySelector('#extraLightTargetXInput'),
+  extraLightTargetYInput: document.querySelector('#extraLightTargetYInput'),
+  extraLightTargetZInput: document.querySelector('#extraLightTargetZInput'),
   gridToggle: document.querySelector('#gridToggle'),
   axesToggle: document.querySelector('#axesToggle'),
 };
@@ -348,7 +545,8 @@ renderer.toneMappingExposure = 1.1;
 renderer.debug.checkShaderErrors = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#101820');
+const defaultBackgroundColor = new THREE.Color('#101820');
+scene.background = defaultBackgroundColor;
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(3.4, 2.2, 5.6);
@@ -396,9 +594,17 @@ const state = {
   currentModelSource: '',
   currentAtlasSource: '',
   currentHdriSource: '',
+  currentPanoramaSource: '',
   materials: [],
   selectedMaterialId: '',
   envIntensity: 0.8,
+  lighting: {
+    ambient: 0.34,
+    hemisphere: 0.9,
+    key: 1.8,
+    fill: 0.85,
+    rim: 0.65,
+  },
   cameraMode: 'orbit',
   firstPerson: {
     velocity: new THREE.Vector3(),
@@ -410,6 +616,12 @@ const state = {
     ...DEFAULT_EFFECT_STATE,
   },
   atlasTexture: null,
+  atlasFrameCanvas: document.createElement('canvas'),
+  atlasFrameTexture: null,
+  environmentMapTexture: null,
+  environmentBackgroundTexture: null,
+  extraLights: [],
+  selectedExtraLightId: '',
   debugBoundsHelper: null,
 };
 
@@ -435,7 +647,7 @@ function formatAssetLabel(source, fallback = 'none') {
 function updateAssetSummary() {
   elements.modelStatus.textContent = formatAssetLabel(state.currentModelSource);
   elements.atlasStatus.textContent = formatAssetLabel(state.currentAtlasSource);
-  elements.hdriStatus.textContent = formatAssetLabel(state.currentHdriSource, 'default studio');
+  elements.hdriStatus.textContent = formatAssetLabel(state.currentPanoramaSource || state.currentHdriSource, 'default studio');
 }
 
 function sanitizeNumber(value, fallback, min = -Infinity) {
@@ -451,25 +663,50 @@ function toRadians(degrees) {
 }
 
 function buildSceneConfig() {
+  const selectedMaterial = getSelectedMaterialEntry()?.material ?? null;
   return {
     version: 1,
     assets: {
       model: state.currentModelSource || null,
       atlas: state.currentAtlasSource || null,
       hdri: state.currentHdriSource || null,
+      panorama: state.currentPanoramaSource || null,
     },
     viewer: {
       cameraMode: state.cameraMode,
       exposure: renderer.toneMappingExposure,
       envIntensity: state.envIntensity,
+      lighting: { ...state.lighting },
       cameraPosition: camera.position.toArray(),
       orbitTarget: orbitControls.target.toArray(),
     },
+    materialSettings: selectedMaterial
+      ? {
+          color: selectedMaterial.color?.getHexString?.() ?? null,
+          emissive: selectedMaterial.emissive?.getHexString?.() ?? null,
+          metalness: 'metalness' in selectedMaterial ? selectedMaterial.metalness : null,
+          roughness: 'roughness' in selectedMaterial ? selectedMaterial.roughness : null,
+          envMapIntensity: 'envMapIntensity' in selectedMaterial ? selectedMaterial.envMapIntensity : null,
+          emissiveIntensity: 'emissiveIntensity' in selectedMaterial ? selectedMaterial.emissiveIntensity : null,
+          clearcoat: 'clearcoat' in selectedMaterial ? selectedMaterial.clearcoat : null,
+        }
+      : null,
     materialEffect: {
       materialId: state.selectedMaterialId || null,
       materialName: getSelectedMaterialEntry()?.material.name || null,
       ...state.effect,
     },
+    extraLights: state.extraLights.map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      color: entry.light.color.getHexString(),
+      intensity: entry.light.intensity,
+      distance: 'distance' in entry.light ? entry.light.distance : 0,
+      angle: 'angle' in entry.light ? entry.light.angle : null,
+      visible: entry.light.visible,
+      position: entry.light.position.toArray(),
+      target: entry.target ? entry.target.position.toArray() : null,
+    })),
   };
 }
 
@@ -494,15 +731,119 @@ function disposeTexture(texture) {
   }
 }
 
+function clearCustomEnvironment() {
+  if (state.environmentMapTexture && state.environmentMapTexture !== defaultEnvironment) {
+    disposeTexture(state.environmentMapTexture);
+  }
+  if (state.environmentBackgroundTexture) {
+    disposeTexture(state.environmentBackgroundTexture);
+  }
+  state.environmentMapTexture = null;
+  state.environmentBackgroundTexture = null;
+  scene.environment = defaultEnvironment;
+  scene.background = defaultBackgroundColor;
+  state.currentHdriSource = '';
+  state.currentPanoramaSource = '';
+}
+
 function getWrapMode(mode) {
   return mode === 'clamp' ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
 }
 
 function ensureAtlasTextureOptions(texture) {
   texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
   texture.wrapS = getWrapMode(state.effect.wrapMode);
   texture.wrapT = getWrapMode(state.effect.wrapMode);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
   texture.needsUpdate = true;
+}
+
+function ensureFrameTextureOptions(texture) {
+  if (!texture) {
+    return;
+  }
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.flipY = false;
+  texture.wrapS = getWrapMode(state.effect.wrapMode);
+  texture.wrapT = getWrapMode(state.effect.wrapMode);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+}
+
+function updateAtlasFrameTexture() {
+  updateAtlasFrameTextureAt(state.effect.currentFrame);
+}
+
+function updateAtlasFrameTextureAt(frameValue) {
+  if (!state.atlasTexture?.image) {
+    return;
+  }
+
+  const image = state.atlasTexture.image;
+  const columns = Math.max(1, state.effect.gridX);
+  const rows = Math.max(1, state.effect.gridY);
+  const maxFrames = columns * rows;
+  const clampedFrame = Math.min(Math.max(0, frameValue), Math.max(0, maxFrames - 1));
+  const baseFrame = Math.floor(clampedFrame);
+  const blendWeight =
+    state.effect.frameBlend && maxFrames > 1 ? Math.min(Math.max(0, clampedFrame - baseFrame), 1) : 0;
+  const nextFrame = state.effect.loop
+    ? (baseFrame + 1) % maxFrames
+    : Math.min(baseFrame + 1, maxFrames - 1);
+  const { column, row } = getFrameCoordinates(baseFrame, columns, rows, state.effect.frameOrder);
+  const { column: nextColumn, row: nextRow } = getFrameCoordinates(nextFrame, columns, rows, state.effect.frameOrder);
+
+  const frameWidth = Math.max(1, Math.floor(image.width / columns));
+  const frameHeight = Math.max(1, Math.floor(image.height / rows));
+  const sourceX = column * frameWidth;
+  const sourceY = row * frameHeight;
+  const nextSourceX = nextColumn * frameWidth;
+  const nextSourceY = nextRow * frameHeight;
+
+  state.atlasFrameCanvas.width = frameWidth;
+  state.atlasFrameCanvas.height = frameHeight;
+
+  const ctx = state.atlasFrameCanvas.getContext('2d');
+  ctx.clearRect(0, 0, frameWidth, frameHeight);
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    frameWidth,
+    frameHeight,
+    0,
+    0,
+    frameWidth,
+    frameHeight,
+  );
+
+  if (blendWeight > 0.001) {
+    ctx.save();
+    ctx.globalAlpha = blendWeight;
+    ctx.drawImage(
+      image,
+      nextSourceX,
+      nextSourceY,
+      frameWidth,
+      frameHeight,
+      0,
+      0,
+      frameWidth,
+      frameHeight,
+    );
+    ctx.restore();
+  }
+
+  if (!state.atlasFrameTexture) {
+    state.atlasFrameTexture = new THREE.CanvasTexture(state.atlasFrameCanvas);
+  }
+
+  ensureFrameTextureOptions(state.atlasFrameTexture);
 }
 
 function getFrameCoordinates(index, gridX, gridY, order) {
@@ -635,7 +976,7 @@ function createDemoScene() {
   state.currentModelSource = 'demo://ring';
   collectMaterials(root);
   frameObject(root);
-  setStatus('Открыта demo-сцена. Можно тестировать material patching без внешней модели.');
+  setStatus('Demo scene loaded. You can test material patching without an external model.');
 }
 
 function clearCurrentModel() {
@@ -659,8 +1000,8 @@ function clearCurrentModel() {
   state.materials = [];
   state.selectedMaterialId = '';
   state.currentModelSource = '';
-  elements.materialSelect.innerHTML = '<option value="">Сначала загрузи модель</option>';
-  elements.materialMeta.textContent = 'Материалы сцены пока не найдены.';
+  elements.materialSelect.innerHTML = '<option value="">Load a model first</option>';
+  elements.materialMeta.textContent = 'No scene materials detected yet.';
   updateAssetSummary();
 }
 
@@ -711,6 +1052,369 @@ function updateEnvironmentIntensity() {
       material.needsUpdate = true;
     }
   });
+}
+
+function loadImageTextureFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    textureLoader.load(url, resolve, undefined, reject);
+  });
+}
+
+function createExtraLight(type) {
+  const id = `${type}-${Math.random().toString(36).slice(2, 9)}`;
+  let light;
+  let target = null;
+
+  if (type === 'directional') {
+    light = new THREE.DirectionalLight('#ffffff', 1.5);
+    light.position.set(3, 4, 3);
+    target = new THREE.Object3D();
+    target.position.set(0, 0, 0);
+    scene.add(target);
+    light.target = target;
+  } else if (type === 'spot') {
+    light = new THREE.SpotLight('#ffffff', 3, 0, Math.PI / 6, 0.2, 2);
+    light.position.set(3, 4, 3);
+    target = new THREE.Object3D();
+    target.position.set(0, 0, 0);
+    scene.add(target);
+    light.target = target;
+  } else {
+    light = new THREE.PointLight('#ffffff', 2, 0, 2);
+    light.position.set(2, 2, 2);
+  }
+
+  light.name = `Extra ${type} light`;
+  scene.add(light);
+
+  const record = { id, type, light, target };
+  state.extraLights.push(record);
+  state.selectedExtraLightId = id;
+  syncExtraLightControls();
+  syncConfigOutput();
+}
+
+function removeSelectedExtraLight() {
+  const index = state.extraLights.findIndex((entry) => entry.id === state.selectedExtraLightId);
+  if (index === -1) {
+    return;
+  }
+
+  const [entry] = state.extraLights.splice(index, 1);
+  scene.remove(entry.light);
+  if (entry.target) {
+    scene.remove(entry.target);
+  }
+  state.selectedExtraLightId = state.extraLights[0]?.id ?? '';
+  syncExtraLightControls();
+  syncConfigOutput();
+}
+
+function clearExtraLights() {
+  while (state.extraLights.length) {
+    state.selectedExtraLightId = state.extraLights[0].id;
+    removeSelectedExtraLight();
+  }
+}
+
+function getSelectedExtraLight() {
+  return state.extraLights.find((entry) => entry.id === state.selectedExtraLightId) ?? null;
+}
+
+function setExtraLightFieldState(input, enabled) {
+  input.disabled = !enabled;
+}
+
+function syncExtraLightControls() {
+  elements.extraLightSelect.innerHTML = '';
+
+  if (!state.extraLights.length) {
+    elements.extraLightSelect.innerHTML = '<option value="">No extra lights</option>';
+    elements.extraLightMeta.textContent = 'Create a light to edit its settings.';
+    [
+      elements.extraLightEnabledInput,
+      elements.extraLightColorInput,
+      elements.extraLightIntensityInput,
+      elements.extraLightDistanceInput,
+      elements.extraLightAngleInput,
+      elements.extraLightPosXInput,
+      elements.extraLightPosYInput,
+      elements.extraLightPosZInput,
+      elements.extraLightTargetXInput,
+      elements.extraLightTargetYInput,
+      elements.extraLightTargetZInput,
+      elements.removeExtraLightButton,
+    ].forEach((input) => setExtraLightFieldState(input, false));
+    return;
+  }
+
+  state.extraLights.forEach((entry, index) => {
+    const option = document.createElement('option');
+    option.value = entry.id;
+    option.textContent = `${index + 1}. ${entry.type}`;
+    elements.extraLightSelect.append(option);
+  });
+
+  if (!state.selectedExtraLightId || !state.extraLights.some((entry) => entry.id === state.selectedExtraLightId)) {
+    state.selectedExtraLightId = state.extraLights[0].id;
+  }
+
+  elements.extraLightSelect.value = state.selectedExtraLightId;
+
+  const entry = getSelectedExtraLight();
+  if (!entry) {
+    return;
+  }
+
+  const { light, target, type } = entry;
+  elements.extraLightMeta.textContent = `${type} | ${light.type}`;
+  elements.extraLightEnabledInput.checked = light.visible;
+  elements.extraLightColorInput.value = `#${light.color.getHexString()}`;
+  elements.extraLightIntensityInput.value = String(light.intensity);
+  elements.extraLightIntensityValue.textContent = light.intensity.toFixed(2);
+  elements.extraLightDistanceInput.value = String('distance' in light ? light.distance : 0);
+  elements.extraLightDistanceValue.textContent = Number(elements.extraLightDistanceInput.value).toFixed(2);
+  elements.extraLightAngleInput.value = String(
+    'angle' in light ? THREE.MathUtils.radToDeg(light.angle) : 30,
+  );
+  elements.extraLightAngleValue.textContent = `${Number(elements.extraLightAngleInput.value).toFixed(0)}°`;
+  elements.extraLightPosXInput.value = light.position.x.toFixed(2);
+  elements.extraLightPosYInput.value = light.position.y.toFixed(2);
+  elements.extraLightPosZInput.value = light.position.z.toFixed(2);
+  elements.extraLightTargetXInput.value = String(target?.position.x ?? 0);
+  elements.extraLightTargetYInput.value = String(target?.position.y ?? 0);
+  elements.extraLightTargetZInput.value = String(target?.position.z ?? 0);
+
+  [
+    elements.extraLightEnabledInput,
+    elements.extraLightColorInput,
+    elements.extraLightIntensityInput,
+    elements.extraLightPosXInput,
+    elements.extraLightPosYInput,
+    elements.extraLightPosZInput,
+    elements.removeExtraLightButton,
+  ].forEach((input) => setExtraLightFieldState(input, true));
+
+  setExtraLightFieldState(elements.extraLightDistanceInput, 'distance' in light);
+  setExtraLightFieldState(elements.extraLightAngleInput, type === 'spot');
+  setExtraLightFieldState(elements.extraLightTargetXInput, Boolean(target));
+  setExtraLightFieldState(elements.extraLightTargetYInput, Boolean(target));
+  setExtraLightFieldState(elements.extraLightTargetZInput, Boolean(target));
+}
+
+function applySelectedExtraLightControls() {
+  const entry = getSelectedExtraLight();
+  if (!entry) {
+    return;
+  }
+
+  const { light, target, type } = entry;
+  light.visible = elements.extraLightEnabledInput.checked;
+  light.color.set(elements.extraLightColorInput.value);
+  light.intensity = sanitizeNumber(elements.extraLightIntensityInput.value, light.intensity, 0);
+  light.position.set(
+    sanitizeNumber(elements.extraLightPosXInput.value, light.position.x),
+    sanitizeNumber(elements.extraLightPosYInput.value, light.position.y),
+    sanitizeNumber(elements.extraLightPosZInput.value, light.position.z),
+  );
+
+  if ('distance' in light) {
+    light.distance = sanitizeNumber(elements.extraLightDistanceInput.value, light.distance, 0);
+  }
+  if (type === 'spot') {
+    light.angle = THREE.MathUtils.degToRad(
+      sanitizeNumber(elements.extraLightAngleInput.value, THREE.MathUtils.radToDeg(light.angle), 1),
+    );
+  }
+  if (target) {
+    target.position.set(
+      sanitizeNumber(elements.extraLightTargetXInput.value, target.position.x),
+      sanitizeNumber(elements.extraLightTargetYInput.value, target.position.y),
+      sanitizeNumber(elements.extraLightTargetZInput.value, target.position.z),
+    );
+    target.updateMatrixWorld();
+  }
+
+  light.updateMatrixWorld();
+  syncExtraLightControls();
+  syncConfigOutput();
+}
+
+function updateLightControls() {
+  elements.ambientLightInput.value = String(state.lighting.ambient);
+  elements.ambientLightValue.textContent = state.lighting.ambient.toFixed(2);
+  elements.hemisphereLightInput.value = String(state.lighting.hemisphere);
+  elements.hemisphereLightValue.textContent = state.lighting.hemisphere.toFixed(2);
+  elements.keyLightInput.value = String(state.lighting.key);
+  elements.keyLightValue.textContent = state.lighting.key.toFixed(2);
+  elements.fillLightInput.value = String(state.lighting.fill);
+  elements.fillLightValue.textContent = state.lighting.fill.toFixed(2);
+  elements.rimLightInput.value = String(state.lighting.rim);
+  elements.rimLightValue.textContent = state.lighting.rim.toFixed(2);
+}
+
+function applyLightingFromState() {
+  ambientLight.intensity = state.lighting.ambient;
+  hemisphereLight.intensity = state.lighting.hemisphere;
+  keyLight.intensity = state.lighting.key;
+  fillLight.intensity = state.lighting.fill;
+  rimLight.intensity = state.lighting.rim;
+  updateLightControls();
+}
+
+function applyLightPreset(preset) {
+  const presets = {
+    studio: {
+      lighting: { ambient: 0.34, hemisphere: 0.9, key: 1.8, fill: 0.85, rim: 0.65 },
+      envIntensity: 0.8,
+      background: '#101820',
+      keyColor: '#fff5e8',
+      fillColor: '#d8ebff',
+      rimColor: '#cfe4ff',
+      hemiSky: '#eaf4ff',
+      hemiGround: '#182028',
+    },
+    product: {
+      lighting: { ambient: 0.22, hemisphere: 0.55, key: 3.4, fill: 1.4, rim: 1.2 },
+      envIntensity: 1.15,
+      background: '#0f1318',
+      keyColor: '#fff2db',
+      fillColor: '#f4fbff',
+      rimColor: '#ffffff',
+      hemiSky: '#eef6ff',
+      hemiGround: '#20262d',
+    },
+    sunset: {
+      lighting: { ambient: 0.18, hemisphere: 0.4, key: 2.6, fill: 0.65, rim: 1.6 },
+      envIntensity: 0.95,
+      background: '#1a1110',
+      keyColor: '#ffb26b',
+      fillColor: '#6ea1ff',
+      rimColor: '#ff8a5b',
+      hemiSky: '#ffcf9b',
+      hemiGround: '#241515',
+    },
+    night: {
+      lighting: { ambient: 0.08, hemisphere: 0.2, key: 0.95, fill: 0.35, rim: 1.9 },
+      envIntensity: 0.55,
+      background: '#06090f',
+      keyColor: '#93b7ff',
+      fillColor: '#3f5f9d',
+      rimColor: '#b8d7ff',
+      hemiSky: '#5a77a8',
+      hemiGround: '#080b10',
+    },
+  };
+
+  const config = presets[preset];
+  if (!config) {
+    return;
+  }
+
+  state.lighting = { ...config.lighting };
+  state.envIntensity = config.envIntensity;
+  keyLight.color.set(config.keyColor);
+  fillLight.color.set(config.fillColor);
+  rimLight.color.set(config.rimColor);
+  hemisphereLight.color.set(config.hemiSky);
+  hemisphereLight.groundColor.set(config.hemiGround);
+
+  if (!state.environmentBackgroundTexture) {
+    scene.background = new THREE.Color(config.background);
+  }
+
+  applyLightingFromState();
+  elements.envIntensityInput.value = String(state.envIntensity);
+  elements.envIntensityValue.textContent = state.envIntensity.toFixed(2);
+  updateEnvironmentIntensity();
+  syncConfigOutput();
+  setStatus(`Applied ${preset} light preset.`);
+}
+
+function setMaterialControlState(input, enabled) {
+  input.disabled = !enabled;
+}
+
+function syncMaterialControls(entry = getSelectedMaterialEntry()) {
+  const material = entry?.material ?? null;
+
+  if (!material) {
+    [
+      elements.materialColorInput,
+      elements.materialEmissiveColorInput,
+      elements.materialMetalnessInput,
+      elements.materialRoughnessInput,
+      elements.materialEnvMapInput,
+      elements.materialEmissiveIntensityInput,
+      elements.materialClearcoatInput,
+    ].forEach((input) => setMaterialControlState(input, false));
+    return;
+  }
+
+  elements.materialColorInput.value = `#${material.color?.getHexString?.() ?? 'ffffff'}`;
+  elements.materialEmissiveColorInput.value = `#${material.emissive?.getHexString?.() ?? '000000'}`;
+  elements.materialMetalnessInput.value = String('metalness' in material ? material.metalness : 0);
+  elements.materialRoughnessInput.value = String('roughness' in material ? material.roughness : 1);
+  elements.materialEnvMapInput.value = String('envMapIntensity' in material ? material.envMapIntensity : state.envIntensity);
+  elements.materialEmissiveIntensityInput.value = String(
+    'emissiveIntensity' in material ? material.emissiveIntensity : 1,
+  );
+  elements.materialClearcoatInput.value = String('clearcoat' in material ? material.clearcoat : 0);
+
+  elements.materialMetalnessValue.textContent = Number(elements.materialMetalnessInput.value).toFixed(2);
+  elements.materialRoughnessValue.textContent = Number(elements.materialRoughnessInput.value).toFixed(2);
+  elements.materialEnvMapValue.textContent = Number(elements.materialEnvMapInput.value).toFixed(2);
+  elements.materialEmissiveIntensityValue.textContent = Number(
+    elements.materialEmissiveIntensityInput.value,
+  ).toFixed(2);
+  elements.materialClearcoatValue.textContent = Number(elements.materialClearcoatInput.value).toFixed(2);
+
+  setMaterialControlState(elements.materialColorInput, 'color' in material);
+  setMaterialControlState(elements.materialEmissiveColorInput, 'emissive' in material);
+  setMaterialControlState(elements.materialMetalnessInput, 'metalness' in material);
+  setMaterialControlState(elements.materialRoughnessInput, 'roughness' in material);
+  setMaterialControlState(elements.materialEnvMapInput, 'envMapIntensity' in material);
+  setMaterialControlState(elements.materialEmissiveIntensityInput, 'emissiveIntensity' in material);
+  setMaterialControlState(elements.materialClearcoatInput, 'clearcoat' in material);
+}
+
+function applySelectedMaterialControls() {
+  const entry = getSelectedMaterialEntry();
+  const material = entry?.material;
+  if (!material) {
+    return;
+  }
+
+  if ('color' in material) {
+    material.color.set(elements.materialColorInput.value);
+  }
+  if ('emissive' in material) {
+    material.emissive.set(elements.materialEmissiveColorInput.value);
+  }
+  if ('metalness' in material) {
+    material.metalness = sanitizeNumber(elements.materialMetalnessInput.value, material.metalness, 0);
+  }
+  if ('roughness' in material) {
+    material.roughness = sanitizeNumber(elements.materialRoughnessInput.value, material.roughness, 0);
+  }
+  if ('envMapIntensity' in material) {
+    material.envMapIntensity = sanitizeNumber(elements.materialEnvMapInput.value, material.envMapIntensity, 0);
+  }
+  if ('emissiveIntensity' in material) {
+    material.emissiveIntensity = sanitizeNumber(
+      elements.materialEmissiveIntensityInput.value,
+      material.emissiveIntensity,
+      0,
+    );
+  }
+  if ('clearcoat' in material) {
+    material.clearcoat = sanitizeNumber(elements.materialClearcoatInput.value, material.clearcoat, 0);
+  }
+
+  material.needsUpdate = true;
+  syncMaterialControls(entry);
+  describeMaterial(entry);
+  syncConfigOutput();
 }
 
 function getSelectedMaterialEntry() {
@@ -764,8 +1468,9 @@ function collectMaterials(root) {
   elements.materialSelect.innerHTML = '';
 
   if (!state.materials.length) {
-    elements.materialSelect.innerHTML = '<option value="">Материалы не найдены</option>';
-    elements.materialMeta.textContent = 'Материалы сцены пока не найдены.';
+    elements.materialSelect.innerHTML = '<option value="">No materials found</option>';
+    elements.materialMeta.textContent = 'No scene materials detected yet.';
+    syncMaterialControls(null);
     return;
   }
 
@@ -779,6 +1484,7 @@ function collectMaterials(root) {
   state.selectedMaterialId = state.materials[0].id;
   elements.materialSelect.value = state.selectedMaterialId;
   describeMaterial(getSelectedMaterialEntry());
+  syncMaterialControls();
   elements.playPauseAtlasButton.textContent = state.effect.play ? 'Pause atlas' : 'Play atlas';
   updateAtlasPreview();
   applyEffectToAllMaterials();
@@ -806,18 +1512,21 @@ async function loadAtlasSource(url, label = url, revokeAfter = false) {
   try {
     const texture = await loadTextureFromUrl(url);
     disposeTexture(state.atlasTexture);
+    disposeTexture(state.atlasFrameTexture);
+    state.atlasFrameTexture = null;
     ensureAtlasTextureOptions(texture);
     state.atlasTexture = texture;
     state.currentAtlasSource = label;
     state.effect.enabled = true;
     clampFrameCount();
+    updateAtlasFrameTexture();
     fillControlsFromState();
     applyEffectToAllMaterials();
     updateAtlasPreview();
-    setStatus(`Atlas loaded: ${label}. Safe overlay mode: Emission + Screen.`);
+    setStatus(`Atlas loaded: ${label}. Switch Target channel between Emission and Base Color to inspect the mapping.`);
   } catch (error) {
     console.error(error);
-    setStatus(`Не удалось загрузить atlas: ${label}`);
+    setStatus(`Failed to load atlas: ${label}`);
   } finally {
     if (revokeAfter) {
       revokeIfBlob(url);
@@ -831,17 +1540,44 @@ async function loadHdriSource(url, label = url, revokeAfter = false) {
     const texture = await loadHdriFromUrl(url);
     texture.mapping = THREE.EquirectangularReflectionMapping;
     const envMap = pmremGenerator.fromEquirectangular(texture).texture;
-    if (scene.environment && scene.environment !== defaultEnvironment) {
-      disposeTexture(scene.environment);
-    }
+    clearCustomEnvironment();
     scene.environment = envMap;
+    scene.background = defaultBackgroundColor;
+    state.environmentMapTexture = envMap;
     state.currentHdriSource = label;
+    state.currentPanoramaSource = '';
     updateEnvironmentIntensity();
     texture.dispose();
     setStatus(`Environment loaded: ${label}`);
   } catch (error) {
     console.error(error);
-    setStatus(`Не удалось загрузить HDRI: ${label}`);
+    setStatus(`Failed to load HDRI: ${label}`);
+  } finally {
+    if (revokeAfter) {
+      revokeIfBlob(url);
+    }
+    syncConfigOutput();
+  }
+}
+
+async function loadPanoramaSource(url, label = url, revokeAfter = false) {
+  try {
+    const texture = await loadImageTextureFromUrl(url);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+    clearCustomEnvironment();
+    scene.environment = envMap;
+    scene.background = texture;
+    state.environmentMapTexture = envMap;
+    state.environmentBackgroundTexture = texture;
+    state.currentPanoramaSource = label;
+    state.currentHdriSource = '';
+    updateEnvironmentIntensity();
+    setStatus(`Panorama loaded: ${label}`);
+  } catch (error) {
+    console.error(error);
+    setStatus(`Failed to load panorama: ${label}`);
   } finally {
     if (revokeAfter) {
       revokeIfBlob(url);
@@ -852,7 +1588,7 @@ async function loadHdriSource(url, label = url, revokeAfter = false) {
 
 async function loadModelSource(url, label = url, revokeAfter = false) {
   clearCurrentModel();
-  setStatus(`Загружаю модель: ${label}`);
+  setStatus(`Loading model: ${label}`);
 
   try {
     const gltf = await loadGltfFromUrl(url);
@@ -872,10 +1608,10 @@ async function loadModelSource(url, label = url, revokeAfter = false) {
     frameObject(root);
     orbitControls.saveState();
     updateEnvironmentIntensity();
-    setStatus(`Модель загружена: ${label}`);
+    setStatus(`Model loaded: ${label}`);
   } catch (error) {
     console.error(error);
-    setStatus(`Не удалось загрузить модель: ${label}`);
+    setStatus(`Failed to load model: ${label}`);
   } finally {
     if (revokeAfter) {
       revokeIfBlob(url);
@@ -886,35 +1622,6 @@ async function loadModelSource(url, label = url, revokeAfter = false) {
 
 function getActiveUv(vUv, vUv2) {
   return state.effect.uvChannel === 'uv2' ? vUv2 : vUv;
-}
-
-function getBlendFunction(mode) {
-  switch (mode) {
-    case 'replace':
-      return 'mix(baseColor, overlayColor, overlayAlpha)';
-    case 'debug':
-      return 'mix(baseColor, vec3(0.0, 1.0, 1.0), overlayAlpha)';
-    case 'mix':
-      return 'mix(baseColor, overlayColor, overlayAlpha)';
-    case 'add':
-      return 'baseColor + overlayColor * overlayAlpha';
-    case 'multiply':
-      return 'mix(baseColor, baseColor * overlayColor, overlayAlpha)';
-    case 'screen':
-      return '1.0 - (1.0 - baseColor) * (1.0 - overlayColor * overlayAlpha)';
-    default:
-      return 'mix(baseColor, overlayColor, overlayAlpha)';
-  }
-}
-
-function getOverlayAlphaExpression(mode) {
-  if (mode === 'replace') {
-    return 'smoothstep(0.04, 0.35, max(atlasSample.r, max(atlasSample.g, atlasSample.b))) * uAtlasOpacity';
-  }
-  if (mode === 'debug') {
-    return 'max(0.2, max(atlasSample.r, max(atlasSample.g, atlasSample.b)) * uAtlasOpacity)';
-  }
-  return 'max(atlasSample.a, max(atlasSample.r, max(atlasSample.g, atlasSample.b))) * uAtlasOpacity';
 }
 
 function clampFrameCount() {
@@ -944,17 +1651,22 @@ function applyPatchToMaterial(material) {
     material.userData.originalCustomProgramCacheKey = material.customProgramCacheKey;
   }
 
-  const shouldPatch = material.uuid === state.selectedMaterialId && Boolean(state.atlasTexture);
+  const shouldPatch =
+    material.uuid === state.selectedMaterialId &&
+    Boolean(state.atlasTexture) &&
+    state.effect.enabled;
   material.userData.atlasEffectActive = shouldPatch;
 
   material.customProgramCacheKey = () =>
     JSON.stringify({
       atlas: shouldPatch,
-      slot: state.effect.targetSlot,
-      blend: state.effect.blendMode,
+      targetSlot: state.effect.targetSlot,
       uvChannel: state.effect.uvChannel,
+      swapXY: state.effect.swapXY,
       frameOrder: state.effect.frameOrder,
       wrapMode: state.effect.wrapMode,
+      gridX: state.effect.gridX,
+      gridY: state.effect.gridY,
     });
 
   material.onBeforeCompile = (shader) => {
@@ -962,9 +1674,7 @@ function applyPatchToMaterial(material) {
       return;
     }
 
-    shader.uniforms.uAtlasTexture = { value: state.atlasTexture };
-    shader.uniforms.uAtlasGrid = { value: new THREE.Vector2(state.effect.gridX, state.effect.gridY) };
-    shader.uniforms.uAtlasFrame = { value: 0 };
+    shader.uniforms.uAtlasTexture = { value: state.atlasFrameTexture ?? state.atlasTexture };
     shader.uniforms.uAtlasOpacity = { value: state.effect.opacity };
     shader.uniforms.uAtlasMaskByRelief = { value: state.effect.maskByRelief ? 1 : 0 };
     shader.uniforms.uAtlasReliefStrength = { value: state.effect.reliefStrength };
@@ -973,9 +1683,20 @@ function applyPatchToMaterial(material) {
     };
     shader.uniforms.uAtlasRotation = { value: toRadians(state.effect.rotation) };
     shader.uniforms.uAtlasEnabled = { value: state.effect.enabled ? 1 : 0 };
-    shader.uniforms.uAtlasUseUv2 = { value: state.effect.uvChannel === 'uv2' ? 1 : 0 };
+    shader.uniforms.uAtlasTargetSlot = { value: state.effect.targetSlot === 'baseColor' ? 1 : 0 };
+    shader.uniforms.uAtlasUvSource = {
+      value: {
+        auto: 0,
+        normal: 1,
+        baseColor: 2,
+        emissive: 3,
+        uv: 4,
+        uv2: 5,
+      }[state.effect.uvChannel] ?? 0,
+    };
     shader.uniforms.uAtlasOrder = { value: state.effect.frameOrder === 'column' ? 1 : 0 };
-    shader.uniforms.uAtlasTargetSlot = { value: state.effect.targetSlot === 'emissive' ? 1 : 0 };
+    shader.uniforms.uAtlasWrapMode = { value: state.effect.wrapMode === 'repeat' ? 1 : 0 };
+    shader.uniforms.uAtlasSwapXY = { value: state.effect.swapXY ? 1 : 0 };
     material.userData.atlasUniforms = shader.uniforms;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -1004,19 +1725,24 @@ vAtlasUv2 = vec2(0.0);
       '#include <common>',
       `#include <common>
 uniform sampler2D uAtlasTexture;
-uniform vec2 uAtlasGrid;
-uniform float uAtlasFrame;
 uniform float uAtlasOpacity;
 uniform float uAtlasMaskByRelief;
 uniform float uAtlasReliefStrength;
 uniform vec4 uAtlasTransform;
 uniform float uAtlasRotation;
 uniform float uAtlasEnabled;
-uniform float uAtlasUseUv2;
-uniform float uAtlasOrder;
 uniform float uAtlasTargetSlot;
+uniform float uAtlasUvSource;
+uniform float uAtlasOrder;
+uniform float uAtlasWrapMode;
+uniform float uAtlasSwapXY;
 varying vec2 vAtlasUv;
-varying vec2 vAtlasUv2;
+varying vec2 vAtlasUv2;`,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <uv_pars_fragment>',
+      `#include <uv_pars_fragment>
 
 vec2 rotateAtlasUv(vec2 uv, float angle) {
   float s = sin(angle);
@@ -1027,41 +1753,77 @@ vec2 rotateAtlasUv(vec2 uv, float angle) {
   return uv;
 }
 
+vec2 getSourceAtlasUv() {
+  if (uAtlasUvSource > 4.5) {
+    return vAtlasUv2;
+  }
+
+  if (uAtlasUvSource > 3.5) {
+    return vAtlasUv;
+  }
+
+  if (uAtlasUvSource > 2.5) {
+    #ifdef USE_EMISSIVEMAP
+      return vEmissiveMapUv;
+    #elif defined(USE_MAP)
+      return vMapUv;
+    #else
+      return vAtlasUv;
+    #endif
+  }
+
+  if (uAtlasUvSource > 1.5) {
+    #ifdef USE_MAP
+      return vMapUv;
+    #else
+      return vAtlasUv;
+    #endif
+  }
+
+  if (uAtlasUvSource > 0.5) {
+    #ifdef USE_NORMALMAP
+      return vNormalMapUv;
+    #elif defined(USE_MAP)
+      return vMapUv;
+    #else
+      return vAtlasUv;
+    #endif
+  }
+
+  #ifdef USE_NORMALMAP
+    return vNormalMapUv;
+  #elif defined(USE_EMISSIVEMAP)
+    return vEmissiveMapUv;
+  #elif defined(USE_MAP)
+    return vMapUv;
+  #else
+    return vAtlasUv;
+  #endif
+}
+
+vec2 transformAtlasUv(vec2 uv) {
+  if (uAtlasSwapXY > 0.5) {
+    uv = uv.yx;
+  }
+
+  uv = uv * uAtlasTransform.zw + uAtlasTransform.xy;
+  uv = rotateAtlasUv(uv, uAtlasRotation);
+
+  if (uAtlasWrapMode > 0.5) {
+    uv = fract(uv);
+  } else {
+    uv = clamp(uv, 0.0, 1.0);
+  }
+
+  return uv;
+}
+
 vec2 getAtlasSampleUv() {
-  vec2 sourceUv = mix(vAtlasUv, vAtlasUv2, step(0.5, uAtlasUseUv2));
-  vec2 transformed = sourceUv * uAtlasTransform.zw + uAtlasTransform.xy;
-  transformed = rotateAtlasUv(transformed, uAtlasRotation);
-
-  vec2 tiledUv = transformed;
-  if (${state.effect.wrapMode === 'clamp' ? 'true' : 'false'}) {
-    tiledUv = clamp(tiledUv, 0.0, 1.0);
-  } else {
-    tiledUv = fract(tiledUv);
-  }
-
-  float frame = uAtlasFrame;
-  float columns = max(uAtlasGrid.x, 1.0);
-  float rows = max(uAtlasGrid.y, 1.0);
-  float column = 0.0;
-  float row = 0.0;
-  if (uAtlasOrder > 0.5) {
-    row = mod(frame, rows);
-    column = floor(frame / rows);
-  } else {
-    column = mod(frame, columns);
-    row = floor(frame / columns);
-  }
-  vec2 tileSize = vec2(1.0 / columns, 1.0 / rows);
-  return vec2(column, rows - 1.0 - row) * tileSize + tiledUv * tileSize;
+  return transformAtlasUv(getSourceAtlasUv());
 }
 
 vec4 sampleAtlasColor() {
-  vec4 atlasSample = texture2D(uAtlasTexture, getAtlasSampleUv());
-  return atlasSample;
-}
-
-vec2 getAtlasMaskUv() {
-  return mix(vAtlasUv, vAtlasUv2, step(0.5, uAtlasUseUv2));
+  return texture2D(uAtlasTexture, getAtlasSampleUv());
 }
 
 float sampleReliefMask() {
@@ -1072,25 +1834,35 @@ float sampleReliefMask() {
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <map_fragment>',
       `#include <map_fragment>
-if (uAtlasEnabled > 0.5 && uAtlasTargetSlot < 0.5) {
+if (uAtlasEnabled > 0.5 && uAtlasTargetSlot > 0.5) {
   vec4 atlasSample = sampleAtlasColor();
-  vec3 overlayColor = atlasSample.rgb;
-  float overlayAlpha = ${getOverlayAlphaExpression(state.effect.blendMode)} * sampleReliefMask();
-  vec3 baseColor = diffuseColor.rgb;
-  diffuseColor.rgb = ${getBlendFunction(state.effect.blendMode)};
+  float atlasMask = atlasSample.a;
+
+  if (atlasMask <= 0.001) {
+    atlasMask = 1.0;
+  }
+
+  float baseMask = atlasMask * uAtlasOpacity;
+  diffuseColor.rgb = mix(diffuseColor.rgb, atlasSample.rgb, baseMask);
 }`,
     );
 
     shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <output_fragment>',
-      `if (uAtlasEnabled > 0.5 && uAtlasTargetSlot > 0.5) {
+      '#include <emissivemap_fragment>',
+      `#include <emissivemap_fragment>
+if (uAtlasEnabled > 0.5 && uAtlasTargetSlot < 0.5) {
   vec4 atlasSample = sampleAtlasColor();
-  vec3 overlayColor = atlasSample.rgb;
-  float overlayAlpha = ${getOverlayAlphaExpression(state.effect.blendMode)} * sampleReliefMask();
-  vec3 baseColor = outgoingLight;
-  outgoingLight = ${getBlendFunction(state.effect.blendMode)};
+  float reliefMask = sampleReliefMask();
+  float atlasMask = atlasSample.a;
+
+  if (atlasMask <= 0.001) {
+    atlasMask = 1.0;
+  }
+
+  float emissiveMask = atlasMask * reliefMask * uAtlasOpacity;
+  totalEmissiveRadiance += atlasSample.rgb * emissiveMask;
 }
-#include <output_fragment>`,
+`,
     );
   };
 
@@ -1128,8 +1900,8 @@ function updateMaterialUniforms() {
     return;
   }
 
-  uniforms.uAtlasTexture.value = state.atlasTexture;
-  uniforms.uAtlasGrid.value.set(state.effect.gridX, state.effect.gridY);
+  updateAtlasFrameTexture();
+  uniforms.uAtlasTexture.value = state.atlasFrameTexture ?? state.atlasTexture;
   uniforms.uAtlasOpacity.value = state.effect.opacity;
   uniforms.uAtlasMaskByRelief.value = state.effect.maskByRelief ? 1 : 0;
   uniforms.uAtlasReliefStrength.value = state.effect.reliefStrength;
@@ -1141,10 +1913,19 @@ function updateMaterialUniforms() {
   );
   uniforms.uAtlasRotation.value = toRadians(state.effect.rotation);
   uniforms.uAtlasEnabled.value = state.effect.enabled ? 1 : 0;
-  uniforms.uAtlasUseUv2.value = state.effect.uvChannel === 'uv2' ? 1 : 0;
+  uniforms.uAtlasTargetSlot.value = state.effect.targetSlot === 'baseColor' ? 1 : 0;
+  uniforms.uAtlasUvSource.value =
+    {
+      auto: 0,
+      normal: 1,
+      baseColor: 2,
+      emissive: 3,
+      uv: 4,
+      uv2: 5,
+    }[state.effect.uvChannel] ?? 0;
   uniforms.uAtlasOrder.value = state.effect.frameOrder === 'column' ? 1 : 0;
-  uniforms.uAtlasTargetSlot.value = state.effect.targetSlot === 'emissive' ? 1 : 0;
-  uniforms.uAtlasFrame.value = state.effect.currentFrame;
+  uniforms.uAtlasWrapMode.value = state.effect.wrapMode === 'repeat' ? 1 : 0;
+  uniforms.uAtlasSwapXY.value = state.effect.swapXY ? 1 : 0;
 }
 
 function setCameraMode(mode) {
@@ -1166,13 +1947,13 @@ function setCameraMode(mode) {
 function updateEffectStateFromControls() {
   state.effect.enabled = elements.effectEnabledInput.checked;
   state.effect.targetSlot = elements.targetSlotSelect.value;
-  state.effect.blendMode = elements.blendModeSelect.value;
   state.effect.gridX = sanitizeNumber(elements.gridXInput.value, 1, 1);
   state.effect.gridY = sanitizeNumber(elements.gridYInput.value, 1, 1);
   state.effect.fps = sanitizeNumber(elements.fpsInput.value, 1, 1);
   state.effect.frameCount = sanitizeNumber(elements.frameCountInput.value, 1, 1);
   state.effect.currentFrame = sanitizeNumber(elements.currentFrameInput.value, 0, 0);
   state.effect.opacity = sanitizeNumber(elements.opacityInput.value, 1, 0);
+  state.effect.frameBlend = elements.frameBlendInput.checked;
   state.effect.maskByRelief = elements.maskByReliefInput.checked;
   state.effect.reliefStrength = sanitizeNumber(elements.reliefStrengthInput.value, 8, 0);
   state.effect.play = elements.playToggle.checked;
@@ -1180,6 +1961,7 @@ function updateEffectStateFromControls() {
   state.effect.frameOrder = elements.frameOrderSelect.value;
   state.effect.uvChannel = elements.uvChannelSelect.value;
   state.effect.wrapMode = elements.wrapModeSelect.value;
+  state.effect.swapXY = elements.swapXYInput.checked;
   state.effect.offsetX = sanitizeNumber(elements.offsetXInput.value, 0);
   state.effect.offsetY = sanitizeNumber(elements.offsetYInput.value, 0);
   state.effect.scaleX = sanitizeNumber(elements.scaleXInput.value, 1, 0.01);
@@ -1189,6 +1971,8 @@ function updateEffectStateFromControls() {
 
   if (state.atlasTexture) {
     ensureAtlasTextureOptions(state.atlasTexture);
+    ensureFrameTextureOptions(state.atlasFrameTexture);
+    updateAtlasFrameTexture();
   }
 
   elements.opacityValue.textContent = state.effect.opacity.toFixed(2);
@@ -1207,13 +1991,13 @@ function updateEffectStateFromControls() {
 function fillControlsFromState() {
   elements.effectEnabledInput.checked = state.effect.enabled;
   elements.targetSlotSelect.value = state.effect.targetSlot;
-  elements.blendModeSelect.value = state.effect.blendMode;
   elements.gridXInput.value = String(state.effect.gridX);
   elements.gridYInput.value = String(state.effect.gridY);
   elements.fpsInput.value = String(state.effect.fps);
   elements.frameCountInput.value = String(state.effect.frameCount);
   updateCurrentFrameUi();
   elements.opacityInput.value = String(state.effect.opacity);
+  elements.frameBlendInput.checked = state.effect.frameBlend;
   elements.maskByReliefInput.checked = state.effect.maskByRelief;
   elements.reliefStrengthInput.value = String(state.effect.reliefStrength);
   elements.reliefStrengthValue.textContent = state.effect.reliefStrength.toFixed(1);
@@ -1222,6 +2006,7 @@ function fillControlsFromState() {
   elements.frameOrderSelect.value = state.effect.frameOrder;
   elements.uvChannelSelect.value = state.effect.uvChannel;
   elements.wrapModeSelect.value = state.effect.wrapMode;
+  elements.swapXYInput.checked = state.effect.swapXY;
   elements.offsetXInput.value = String(state.effect.offsetX);
   elements.offsetYInput.value = String(state.effect.offsetY);
   elements.scaleXInput.value = String(state.effect.scaleX);
@@ -1241,7 +2026,7 @@ async function importConfig(file) {
     setStatus(`Config imported: ${file.name}`);
   } catch (error) {
     console.error(error);
-    setStatus(`Не удалось импортировать config: ${file.name}`);
+    setStatus(`Failed to import config: ${file.name}`);
   }
 }
 
@@ -1257,6 +2042,10 @@ async function applyConfig(config) {
   if (config?.assets?.hdri) {
     elements.hdriUrlInput.value = config.assets.hdri;
     await loadHdriSource(config.assets.hdri, config.assets.hdri);
+  }
+  if (config?.assets?.panorama) {
+    elements.panoramaUrlInput.value = config.assets.panorama;
+    await loadPanoramaSource(config.assets.panorama, config.assets.panorama);
   }
 
   if (config?.viewer) {
@@ -1275,16 +2064,89 @@ async function applyConfig(config) {
       orbitControls.target.fromArray(config.viewer.orbitTarget);
       orbitControls.update();
     }
+    if (config.viewer.lighting) {
+      state.lighting.ambient = sanitizeNumber(config.viewer.lighting.ambient, state.lighting.ambient, 0);
+      state.lighting.hemisphere = sanitizeNumber(config.viewer.lighting.hemisphere, state.lighting.hemisphere, 0);
+      state.lighting.key = sanitizeNumber(config.viewer.lighting.key, state.lighting.key, 0);
+      state.lighting.fill = sanitizeNumber(config.viewer.lighting.fill, state.lighting.fill, 0);
+      state.lighting.rim = sanitizeNumber(config.viewer.lighting.rim, state.lighting.rim, 0);
+      applyLightingFromState();
+    }
     if (config.viewer.cameraMode === 'firstPerson' || config.viewer.cameraMode === 'orbit') {
       setCameraMode(config.viewer.cameraMode);
     }
+  }
+
+  if (config?.materialSettings) {
+    const material = getSelectedMaterialEntry()?.material;
+    if (material) {
+      if (config.materialSettings.color && 'color' in material) {
+        material.color.set(`#${config.materialSettings.color}`);
+      }
+      if (config.materialSettings.emissive && 'emissive' in material) {
+        material.emissive.set(`#${config.materialSettings.emissive}`);
+      }
+      if (config.materialSettings.metalness != null && 'metalness' in material) {
+        material.metalness = sanitizeNumber(config.materialSettings.metalness, material.metalness, 0);
+      }
+      if (config.materialSettings.roughness != null && 'roughness' in material) {
+        material.roughness = sanitizeNumber(config.materialSettings.roughness, material.roughness, 0);
+      }
+      if (config.materialSettings.envMapIntensity != null && 'envMapIntensity' in material) {
+        material.envMapIntensity = sanitizeNumber(
+          config.materialSettings.envMapIntensity,
+          material.envMapIntensity,
+          0,
+        );
+      }
+      if (config.materialSettings.emissiveIntensity != null && 'emissiveIntensity' in material) {
+        material.emissiveIntensity = sanitizeNumber(
+          config.materialSettings.emissiveIntensity,
+          material.emissiveIntensity,
+          0,
+        );
+      }
+      if (config.materialSettings.clearcoat != null && 'clearcoat' in material) {
+        material.clearcoat = sanitizeNumber(config.materialSettings.clearcoat, material.clearcoat, 0);
+      }
+      material.needsUpdate = true;
+    }
+  }
+
+  if (Array.isArray(config?.extraLights)) {
+    clearExtraLights();
+    config.extraLights.forEach((lightConfig) => {
+      if (!['directional', 'point', 'spot'].includes(lightConfig.type)) {
+        return;
+      }
+      createExtraLight(lightConfig.type);
+      const entry = getSelectedExtraLight();
+      if (!entry) {
+        return;
+      }
+      entry.light.color.set(`#${lightConfig.color ?? 'ffffff'}`);
+      entry.light.intensity = sanitizeNumber(lightConfig.intensity, entry.light.intensity, 0);
+      entry.light.visible = lightConfig.visible ?? true;
+      if (Array.isArray(lightConfig.position) && lightConfig.position.length === 3) {
+        entry.light.position.fromArray(lightConfig.position);
+      }
+      if ('distance' in entry.light) {
+        entry.light.distance = sanitizeNumber(lightConfig.distance, entry.light.distance, 0);
+      }
+      if ('angle' in entry.light && lightConfig.angle != null) {
+        entry.light.angle = sanitizeNumber(lightConfig.angle, entry.light.angle, 0);
+      }
+      if (entry.target && Array.isArray(lightConfig.target) && lightConfig.target.length === 3) {
+        entry.target.position.fromArray(lightConfig.target);
+      }
+    });
+    syncExtraLightControls();
   }
 
   if (config?.materialEffect) {
     Object.assign(state.effect, {
       enabled: config.materialEffect.enabled ?? state.effect.enabled,
       targetSlot: config.materialEffect.targetSlot ?? state.effect.targetSlot,
-      blendMode: config.materialEffect.blendMode ?? state.effect.blendMode,
       frameOrder: config.materialEffect.frameOrder ?? state.effect.frameOrder,
       gridX: sanitizeNumber(config.materialEffect.gridX, state.effect.gridX, 1),
       gridY: sanitizeNumber(config.materialEffect.gridY, state.effect.gridY, 1),
@@ -1292,12 +2154,14 @@ async function applyConfig(config) {
       frameCount: sanitizeNumber(config.materialEffect.frameCount, state.effect.frameCount, 1),
       currentFrame: sanitizeNumber(config.materialEffect.currentFrame, state.effect.currentFrame, 0),
       opacity: sanitizeNumber(config.materialEffect.opacity, state.effect.opacity, 0),
+      frameBlend: config.materialEffect.frameBlend ?? state.effect.frameBlend,
       maskByRelief: config.materialEffect.maskByRelief ?? state.effect.maskByRelief,
       reliefStrength: sanitizeNumber(config.materialEffect.reliefStrength, state.effect.reliefStrength, 0),
       play: config.materialEffect.play ?? state.effect.play,
       loop: config.materialEffect.loop ?? state.effect.loop,
       uvChannel: config.materialEffect.uvChannel ?? state.effect.uvChannel,
       wrapMode: config.materialEffect.wrapMode ?? state.effect.wrapMode,
+      swapXY: config.materialEffect.swapXY ?? state.effect.swapXY,
       offsetX: sanitizeNumber(config.materialEffect.offsetX, state.effect.offsetX),
       offsetY: sanitizeNumber(config.materialEffect.offsetY, state.effect.offsetY),
       scaleX: sanitizeNumber(config.materialEffect.scaleX, state.effect.scaleX, 0.01),
@@ -1313,6 +2177,7 @@ async function applyConfig(config) {
   }
 
   fillControlsFromState();
+  syncMaterialControls();
   updateEffectStateFromControls();
 }
 
@@ -1336,12 +2201,14 @@ async function copyViewerLink() {
   const config = encodeURIComponent(btoa(unescape(encodeURIComponent(JSON.stringify(buildSceneConfig())))));
   const url = `${window.location.origin}${window.location.pathname}?config=${config}`;
   await navigator.clipboard.writeText(url);
-  setStatus('Viewer link copied. Работает корректно, если assets доступны по URL, а не только как локальные blob-файлы.');
+  setStatus('Viewer link copied. It works when assets are reachable by URL, not only as local blob files.');
 }
 
 function resetAtlasEffect() {
   disposeTexture(state.atlasTexture);
+  disposeTexture(state.atlasFrameTexture);
   state.atlasTexture = null;
+  state.atlasFrameTexture = null;
   state.currentAtlasSource = '';
   Object.assign(state.effect, DEFAULT_EFFECT_STATE, { enabled: false });
   elements.atlasUrlInput.value = '';
@@ -1378,24 +2245,35 @@ function updateAtlasFrame() {
 
   let frame = state.effect.currentFrame;
   if (state.effect.play) {
-    frame = Math.floor(CLOCK.elapsedTime * state.effect.fps);
+    frame = CLOCK.elapsedTime * state.effect.fps;
     if (state.effect.loop) {
       frame %= state.effect.frameCount;
     } else {
       frame = Math.min(frame, state.effect.frameCount - 1);
     }
-    state.effect.currentFrame = frame;
+    state.effect.currentFrame = Math.floor(frame);
+    updateAtlasFrameTextureAt(frame);
     updateCurrentFrameUi();
     updateAtlasPreview();
+  } else {
+    updateAtlasFrameTextureAt(frame);
   }
-  uniforms.uAtlasFrame.value = frame;
+  uniforms.uAtlasTexture.value = state.atlasFrameTexture ?? state.atlasTexture;
 }
 
 function bindEvents() {
   document.querySelector('#openModelButton').addEventListener('click', () => elements.modelInput.click());
   document.querySelector('#openAtlasButton').addEventListener('click', () => elements.atlasInput.click());
   document.querySelector('#openHdriButton').addEventListener('click', () => elements.hdriInput.click());
+  document.querySelector('#openPanoramaButton').addEventListener('click', () => elements.panoramaInput.click());
   document.querySelector('#resetAtlasButton').addEventListener('click', resetAtlasEffect);
+  document.querySelector('#resetEnvironmentButton').addEventListener('click', () => {
+    clearCustomEnvironment();
+    updateEnvironmentIntensity();
+    updateAssetSummary();
+    setStatus('Environment reset to default studio.');
+    syncConfigOutput();
+  });
 
   document.querySelector('#loadModelUrlButton').addEventListener('click', () => {
     const url = elements.modelUrlInput.value.trim();
@@ -1413,6 +2291,12 @@ function bindEvents() {
     const url = elements.hdriUrlInput.value.trim();
     if (url) {
       loadHdriSource(url, url);
+    }
+  });
+  document.querySelector('#loadPanoramaUrlButton').addEventListener('click', () => {
+    const url = elements.panoramaUrlInput.value.trim();
+    if (url) {
+      loadPanoramaSource(url, url);
     }
   });
 
@@ -1441,6 +2325,14 @@ function bindEvents() {
     }
     const url = createObjectUrl(file);
     loadHdriSource(url, file.name, true);
+  });
+  elements.panoramaInput.addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    const url = createObjectUrl(file);
+    loadPanoramaSource(url, file.name, true);
   });
 
   elements.configInput.addEventListener('change', (event) => {
@@ -1494,32 +2386,45 @@ function bindEvents() {
   document.querySelector('#copyConfigButton').addEventListener('click', () => {
     copyJsonToClipboard().catch((error) => {
       console.error(error);
-      setStatus('Не удалось скопировать JSON config.');
+      setStatus('Failed to copy JSON config.');
     });
   });
   document.querySelector('#copyViewerLinkButton').addEventListener('click', () => {
     copyViewerLink().catch((error) => {
       console.error(error);
-      setStatus('Не удалось скопировать viewer link.');
+      setStatus('Failed to copy viewer link.');
     });
   });
 
   elements.materialSelect.addEventListener('change', () => {
     state.selectedMaterialId = elements.materialSelect.value;
     describeMaterial(getSelectedMaterialEntry());
+    syncMaterialControls();
     applyEffectToAllMaterials();
+  });
+
+  [
+    elements.materialColorInput,
+    elements.materialEmissiveColorInput,
+    elements.materialMetalnessInput,
+    elements.materialRoughnessInput,
+    elements.materialEnvMapInput,
+    elements.materialEmissiveIntensityInput,
+    elements.materialClearcoatInput,
+  ].forEach((input) => {
+    input.addEventListener('input', applySelectedMaterialControls);
   });
 
   [
     elements.effectEnabledInput,
     elements.targetSlotSelect,
-    elements.blendModeSelect,
     elements.gridXInput,
     elements.gridYInput,
     elements.fpsInput,
     elements.frameCountInput,
     elements.currentFrameInput,
     elements.opacityInput,
+    elements.frameBlendInput,
     elements.maskByReliefInput,
     elements.reliefStrengthInput,
     elements.playToggle,
@@ -1527,6 +2432,7 @@ function bindEvents() {
     elements.frameOrderSelect,
     elements.uvChannelSelect,
     elements.wrapModeSelect,
+    elements.swapXYInput,
     elements.offsetXInput,
     elements.offsetYInput,
     elements.scaleXInput,
@@ -1546,6 +2452,57 @@ function bindEvents() {
     updateEnvironmentIntensity();
     syncConfigOutput();
   });
+
+  elements.ambientLightInput.addEventListener('input', () => {
+    state.lighting.ambient = sanitizeNumber(elements.ambientLightInput.value, state.lighting.ambient, 0);
+    applyLightingFromState();
+    syncConfigOutput();
+  });
+  elements.hemisphereLightInput.addEventListener('input', () => {
+    state.lighting.hemisphere = sanitizeNumber(elements.hemisphereLightInput.value, state.lighting.hemisphere, 0);
+    applyLightingFromState();
+    syncConfigOutput();
+  });
+  elements.keyLightInput.addEventListener('input', () => {
+    state.lighting.key = sanitizeNumber(elements.keyLightInput.value, state.lighting.key, 0);
+    applyLightingFromState();
+    syncConfigOutput();
+  });
+  elements.fillLightInput.addEventListener('input', () => {
+    state.lighting.fill = sanitizeNumber(elements.fillLightInput.value, state.lighting.fill, 0);
+    applyLightingFromState();
+    syncConfigOutput();
+  });
+  elements.rimLightInput.addEventListener('input', () => {
+    state.lighting.rim = sanitizeNumber(elements.rimLightInput.value, state.lighting.rim, 0);
+    applyLightingFromState();
+    syncConfigOutput();
+  });
+  elements.applyLightPresetButton.addEventListener('click', () => {
+    applyLightPreset(elements.lightPresetSelect.value);
+  });
+
+  elements.addDirectionalLightButton.addEventListener('click', () => createExtraLight('directional'));
+  elements.addPointLightButton.addEventListener('click', () => createExtraLight('point'));
+  elements.addSpotLightButton.addEventListener('click', () => createExtraLight('spot'));
+  elements.removeExtraLightButton.addEventListener('click', removeSelectedExtraLight);
+  elements.extraLightSelect.addEventListener('change', () => {
+    state.selectedExtraLightId = elements.extraLightSelect.value;
+    syncExtraLightControls();
+  });
+  [
+    elements.extraLightEnabledInput,
+    elements.extraLightColorInput,
+    elements.extraLightIntensityInput,
+    elements.extraLightDistanceInput,
+    elements.extraLightAngleInput,
+    elements.extraLightPosXInput,
+    elements.extraLightPosYInput,
+    elements.extraLightPosZInput,
+    elements.extraLightTargetXInput,
+    elements.extraLightTargetYInput,
+    elements.extraLightTargetZInput,
+  ].forEach((input) => input.addEventListener('input', applySelectedExtraLightControls));
 
   elements.gridToggle.addEventListener('change', (event) => {
     gridHelper.visible = event.target.checked;
@@ -1627,7 +2584,7 @@ async function bootstrapFromUrl() {
     try {
       const decoded = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(configParam)))));
       await applyConfig(decoded);
-      setStatus('Сцена восстановлена из URL config.');
+      setStatus('Scene restored from URL config.');
       return;
     } catch (error) {
       console.error(error);
@@ -1655,6 +2612,9 @@ function animate() {
 
 bindEvents();
 fillControlsFromState();
+applyLightingFromState();
+syncMaterialControls(null);
+syncExtraLightControls();
 elements.exposureInput.value = String(renderer.toneMappingExposure);
 elements.exposureValue.textContent = renderer.toneMappingExposure.toFixed(2);
 elements.envIntensityInput.value = String(state.envIntensity);
