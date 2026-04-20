@@ -20,8 +20,6 @@ const DEFAULT_EFFECT_STATE = {
   currentFrame: 0,
   opacity: 0.85,
   frameBlend: false,
-  maskByRelief: false,
-  reliefStrength: 8,
   play: true,
   loop: true,
   uvChannel: 'auto',
@@ -351,14 +349,6 @@ app.innerHTML = `
           <span>Opacity / intensity <output id="opacityValue">1.00</output></span>
             <input id="opacityInput" type="range" min="0" max="2" step="0.01" value="0.85" />
         </label>
-        <label class="checkbox">
-          <input id="maskByReliefInput" type="checkbox" />
-          <span>Mask by normal relief</span>
-        </label>
-        <label class="field">
-          <span>Relief mask strength <output id="reliefStrengthValue">8.0</output></span>
-          <input id="reliefStrengthInput" type="range" min="0" max="24" step="0.1" value="8" />
-        </label>
         <div class="toggle-row">
           <label><input id="playToggle" type="checkbox" checked /> Play</label>
           <label><input id="loopToggle" type="checkbox" checked /> Loop</label>
@@ -475,9 +465,6 @@ const elements = {
   opacityInput: document.querySelector('#opacityInput'),
   opacityValue: document.querySelector('#opacityValue'),
   frameBlendInput: document.querySelector('#frameBlendInput'),
-  maskByReliefInput: document.querySelector('#maskByReliefInput'),
-  reliefStrengthInput: document.querySelector('#reliefStrengthInput'),
-  reliefStrengthValue: document.querySelector('#reliefStrengthValue'),
   currentFrameInput: document.querySelector('#currentFrameInput'),
   currentFrameValue: document.querySelector('#currentFrameValue'),
   rotationInput: document.querySelector('#rotationInput'),
@@ -1676,8 +1663,6 @@ function applyPatchToMaterial(material) {
 
     shader.uniforms.uAtlasTexture = { value: state.atlasFrameTexture ?? state.atlasTexture };
     shader.uniforms.uAtlasOpacity = { value: state.effect.opacity };
-    shader.uniforms.uAtlasMaskByRelief = { value: state.effect.maskByRelief ? 1 : 0 };
-    shader.uniforms.uAtlasReliefStrength = { value: state.effect.reliefStrength };
     shader.uniforms.uAtlasTransform = {
       value: new THREE.Vector4(state.effect.offsetX, state.effect.offsetY, state.effect.scaleX, state.effect.scaleY),
     };
@@ -1726,8 +1711,6 @@ vAtlasUv2 = vec2(0.0);
       `#include <common>
 uniform sampler2D uAtlasTexture;
 uniform float uAtlasOpacity;
-uniform float uAtlasMaskByRelief;
-uniform float uAtlasReliefStrength;
 uniform vec4 uAtlasTransform;
 uniform float uAtlasRotation;
 uniform float uAtlasEnabled;
@@ -1824,10 +1807,6 @@ vec2 getAtlasSampleUv() {
 
 vec4 sampleAtlasColor() {
   return texture2D(uAtlasTexture, getAtlasSampleUv());
-}
-
-float sampleReliefMask() {
-  return 1.0;
 }`,
     );
 
@@ -1852,14 +1831,13 @@ if (uAtlasEnabled > 0.5 && uAtlasTargetSlot > 0.5) {
       `#include <emissivemap_fragment>
 if (uAtlasEnabled > 0.5 && uAtlasTargetSlot < 0.5) {
   vec4 atlasSample = sampleAtlasColor();
-  float reliefMask = sampleReliefMask();
   float atlasMask = atlasSample.a;
 
   if (atlasMask <= 0.001) {
     atlasMask = 1.0;
   }
 
-  float emissiveMask = atlasMask * reliefMask * uAtlasOpacity;
+  float emissiveMask = atlasMask * uAtlasOpacity;
   totalEmissiveRadiance += atlasSample.rgb * emissiveMask;
 }
 `,
@@ -1903,8 +1881,6 @@ function updateMaterialUniforms() {
   updateAtlasFrameTexture();
   uniforms.uAtlasTexture.value = state.atlasFrameTexture ?? state.atlasTexture;
   uniforms.uAtlasOpacity.value = state.effect.opacity;
-  uniforms.uAtlasMaskByRelief.value = state.effect.maskByRelief ? 1 : 0;
-  uniforms.uAtlasReliefStrength.value = state.effect.reliefStrength;
   uniforms.uAtlasTransform.value.set(
     state.effect.offsetX,
     state.effect.offsetY,
@@ -1954,8 +1930,6 @@ function updateEffectStateFromControls() {
   state.effect.currentFrame = sanitizeNumber(elements.currentFrameInput.value, 0, 0);
   state.effect.opacity = sanitizeNumber(elements.opacityInput.value, 1, 0);
   state.effect.frameBlend = elements.frameBlendInput.checked;
-  state.effect.maskByRelief = elements.maskByReliefInput.checked;
-  state.effect.reliefStrength = sanitizeNumber(elements.reliefStrengthInput.value, 8, 0);
   state.effect.play = elements.playToggle.checked;
   state.effect.loop = elements.loopToggle.checked;
   state.effect.frameOrder = elements.frameOrderSelect.value;
@@ -1976,7 +1950,6 @@ function updateEffectStateFromControls() {
   }
 
   elements.opacityValue.textContent = state.effect.opacity.toFixed(2);
-  elements.reliefStrengthValue.textContent = state.effect.reliefStrength.toFixed(1);
   elements.rotationValue.textContent = `${state.effect.rotation.toFixed(0)}°`;
 
   elements.frameCountInput.value = String(state.effect.frameCount);
@@ -1998,9 +1971,6 @@ function fillControlsFromState() {
   updateCurrentFrameUi();
   elements.opacityInput.value = String(state.effect.opacity);
   elements.frameBlendInput.checked = state.effect.frameBlend;
-  elements.maskByReliefInput.checked = state.effect.maskByRelief;
-  elements.reliefStrengthInput.value = String(state.effect.reliefStrength);
-  elements.reliefStrengthValue.textContent = state.effect.reliefStrength.toFixed(1);
   elements.playToggle.checked = state.effect.play;
   elements.loopToggle.checked = state.effect.loop;
   elements.frameOrderSelect.value = state.effect.frameOrder;
@@ -2015,7 +1985,6 @@ function fillControlsFromState() {
   elements.playPauseAtlasButton.textContent = state.effect.play ? 'Pause atlas' : 'Play atlas';
   updateAtlasPreview();
   elements.opacityValue.textContent = state.effect.opacity.toFixed(2);
-  elements.reliefStrengthValue.textContent = state.effect.reliefStrength.toFixed(1);
   elements.rotationValue.textContent = `${state.effect.rotation.toFixed(0)}°`;
 }
 
@@ -2155,8 +2124,6 @@ async function applyConfig(config) {
       currentFrame: sanitizeNumber(config.materialEffect.currentFrame, state.effect.currentFrame, 0),
       opacity: sanitizeNumber(config.materialEffect.opacity, state.effect.opacity, 0),
       frameBlend: config.materialEffect.frameBlend ?? state.effect.frameBlend,
-      maskByRelief: config.materialEffect.maskByRelief ?? state.effect.maskByRelief,
-      reliefStrength: sanitizeNumber(config.materialEffect.reliefStrength, state.effect.reliefStrength, 0),
       play: config.materialEffect.play ?? state.effect.play,
       loop: config.materialEffect.loop ?? state.effect.loop,
       uvChannel: config.materialEffect.uvChannel ?? state.effect.uvChannel,
@@ -2425,8 +2392,6 @@ function bindEvents() {
     elements.currentFrameInput,
     elements.opacityInput,
     elements.frameBlendInput,
-    elements.maskByReliefInput,
-    elements.reliefStrengthInput,
     elements.playToggle,
     elements.loopToggle,
     elements.frameOrderSelect,
