@@ -42,23 +42,30 @@ app.innerHTML = `
           <p class="eyebrow">Karneev WebGL Scene Editor</p>
           <h1>GLB scene configurator</h1>
           <p class="muted">
-            Load a GLB, pick a material, preview the atlas in Base Color or drive it through Emission, and publish the scene config.
+            Assemble a scene, tune the camera, inspect materials, and keep advanced per-model features tucked away until you need them.
           </p>
         </div>
         <div class="dropzone" id="dropzone">
-          <strong>Drop a model, atlas, or environment here</strong>
+          <strong>Drop a model, atlas, environment, or config here</strong>
           <span>Supported: .glb, .gltf, .hdr, .png, .jpg, .webp, .json</span>
         </div>
       </section>
 
       <section class="panel">
         <div class="section-head">
-          <h2>Assets</h2>
-          <button id="loadDemoButton" class="ghost small">Load demo ring</button>
+          <h2>Scene</h2>
+          <span class="small-muted">Entry point</span>
+        </div>
+        <div class="inline-actions">
+          <input id="modelInput" class="hidden-input" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" />
+          <input id="configInput" class="hidden-input" type="file" accept=".json,application/json" />
+          <button id="openModelButton">Load model</button>
+          <button id="openConfigButton" class="ghost">Load config</button>
+          <button id="loadDemoButton" class="ghost">Load demo</button>
         </div>
         <div class="asset-summary muted">
-          <div><strong>Model:</strong> <span id="modelStatus">none</span></div>
-          <div><strong>Atlas:</strong> <span id="atlasStatus">none</span></div>
+          <div><strong>Scene status:</strong> <span id="sceneStatus">No model loaded</span></div>
+          <div><strong>Active model:</strong> <span id="activeModelLabel">none</span></div>
           <div><strong>Environment:</strong> <span id="hdriStatus">default studio</span></div>
         </div>
         <label class="field">
@@ -66,42 +73,44 @@ app.innerHTML = `
           <input id="modelUrlInput" type="text" placeholder="/assets/ring.glb or https://..." />
         </label>
         <div class="inline-actions">
-          <input id="modelInput" class="hidden-input" type="file" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" />
-          <button id="openModelButton">Open model file</button>
           <button id="loadModelUrlButton" class="ghost">Load model URL</button>
+          <button id="focusModelButton">Frame scene</button>
+          <button id="resetCameraButton" class="ghost">Reset camera</button>
         </div>
-
+        <div class="field">
+          <span>Loaded models</span>
+          <ul id="sceneModelList" class="simple-list">
+            <li>No models loaded</li>
+          </ul>
+        </div>
         <label class="field">
-          <span>Atlas URL</span>
-          <input id="atlasUrlInput" type="text" placeholder="/assets/fire.jpg or https://..." />
+          <span>Active model</span>
+          <select id="activeModelSelect">
+            <option value="">No models loaded</option>
+          </select>
         </label>
-        <div class="inline-actions">
-          <input id="atlasInput" class="hidden-input" type="file" accept="image/*" />
-          <button id="openAtlasButton">Open atlas file</button>
-          <button id="loadAtlasUrlButton" class="ghost">Load atlas URL</button>
-          <button id="resetAtlasButton" class="ghost">Reset atlas</button>
-        </div>
-
-        <label class="field">
-          <span>HDRI URL</span>
-          <input id="hdriUrlInput" type="text" placeholder="Optional .hdr environment" />
-        </label>
-        <div class="inline-actions">
-          <input id="hdriInput" class="hidden-input" type="file" accept=".hdr,image/vnd.radiance" />
-          <button id="openHdriButton">Open HDRI file</button>
-          <button id="loadHdriUrlButton" class="ghost">Load HDRI URL</button>
-        </div>
-
-        <label class="field">
-          <span>360 panorama URL</span>
-          <input id="panoramaUrlInput" type="text" placeholder="Optional .jpg/.png equirect panorama" />
-        </label>
-        <div class="inline-actions">
-          <input id="panoramaInput" class="hidden-input" type="file" accept="image/*" />
-          <button id="openPanoramaButton">Open panorama file</button>
-          <button id="loadPanoramaUrlButton" class="ghost">Load panorama URL</button>
-          <button id="resetEnvironmentButton" class="ghost">Reset environment</button>
-        </div>
+        <details class="panel-subsection" open>
+          <summary>Environment</summary>
+          <label class="field">
+            <span>HDRI URL</span>
+            <input id="hdriUrlInput" type="text" placeholder="Optional .hdr environment" />
+          </label>
+          <div class="inline-actions">
+            <input id="hdriInput" class="hidden-input" type="file" accept=".hdr,image/vnd.radiance" />
+            <button id="openHdriButton">Load HDRI</button>
+            <button id="loadHdriUrlButton" class="ghost">Load HDRI URL</button>
+          </div>
+          <label class="field">
+            <span>360 panorama URL</span>
+            <input id="panoramaUrlInput" type="text" placeholder="Optional .jpg/.png equirect panorama" />
+          </label>
+          <div class="inline-actions">
+            <input id="panoramaInput" class="hidden-input" type="file" accept="image/*" />
+            <button id="openPanoramaButton">Load panorama</button>
+            <button id="loadPanoramaUrlButton" class="ghost">Load panorama URL</button>
+            <button id="resetEnvironmentButton" class="ghost">Reset environment</button>
+          </div>
+        </details>
       </section>
 
       <section class="panel">
@@ -114,11 +123,18 @@ app.innerHTML = `
           </div>
         </div>
         <div class="inline-actions">
-          <button id="focusModelButton">Frame model</button>
-          <button id="resetCameraButton" class="ghost">Reset camera</button>
+          <button id="flyaroundToggleButton">Auto flyaround</button>
           <button id="lockPointerButton" class="ghost">Lock pointer</button>
         </div>
         <p class="small-muted">WASD + mouse look in first-person mode. No collisions yet, so the editor stays lightweight.</p>
+        <label class="field">
+          <span>Focal length <output id="focalLengthValue">35 mm</output></span>
+          <input id="focalLengthInput" type="range" min="18" max="120" step="1" value="35" />
+        </label>
+        <div class="readout-row muted">
+          <span>Field of view</span>
+          <strong id="fovValue">54.4°</strong>
+        </div>
         <label class="field">
           <span>Exposure <output id="exposureValue">1.00</output></span>
           <input id="exposureInput" type="range" min="0" max="3" step="0.01" value="1" />
@@ -131,40 +147,146 @@ app.innerHTML = `
           <label><input id="gridToggle" type="checkbox" checked /> Grid</label>
           <label><input id="axesToggle" type="checkbox" /> Axes</label>
         </div>
+        <details class="panel-subsection">
+          <summary>Lighting</summary>
+          <div class="section-head">
+            <span class="small-muted">Scene light rig</span>
+            <button id="applyLightPresetButton" class="ghost small">Apply preset</button>
+          </div>
+          <label class="field">
+            <span>Light preset</span>
+            <select id="lightPresetSelect">
+              <option value="studio">Studio</option>
+              <option value="product">Product</option>
+              <option value="sunset">Sunset</option>
+              <option value="night">Night</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Ambient <output id="ambientLightValue">0.34</output></span>
+            <input id="ambientLightInput" type="range" min="0" max="5" step="0.01" value="0.34" />
+          </label>
+          <label class="field">
+            <span>Hemisphere <output id="hemisphereLightValue">0.90</output></span>
+            <input id="hemisphereLightInput" type="range" min="0" max="5" step="0.01" value="0.9" />
+          </label>
+          <label class="field">
+            <span>Key light <output id="keyLightValue">1.80</output></span>
+            <input id="keyLightInput" type="range" min="0" max="8" step="0.01" value="1.8" />
+          </label>
+          <label class="field">
+            <span>Fill light <output id="fillLightValue">0.85</output></span>
+            <input id="fillLightInput" type="range" min="0" max="8" step="0.01" value="0.85" />
+          </label>
+          <label class="field">
+            <span>Rim light <output id="rimLightValue">0.65</output></span>
+            <input id="rimLightInput" type="range" min="0" max="8" step="0.01" value="0.65" />
+          </label>
+        </details>
+        <details class="panel-subsection">
+          <summary>Extra lights</summary>
+          <div class="section-head">
+            <span class="small-muted">Per-scene extras</span>
+            <button id="removeExtraLightButton" class="ghost small">Remove selected</button>
+          </div>
+          <div class="inline-actions">
+            <button id="addDirectionalLightButton">Add directional</button>
+            <button id="addPointLightButton">Add point</button>
+            <button id="addSpotLightButton">Add spot</button>
+          </div>
+          <label class="field">
+            <span>Selected light</span>
+            <select id="extraLightSelect">
+              <option value="">No extra lights</option>
+            </select>
+          </label>
+          <div id="extraLightMeta" class="material-meta muted">Create a light to edit its settings.</div>
+          <label class="checkbox">
+            <input id="extraLightEnabledInput" type="checkbox" checked />
+            <span>Enabled</span>
+          </label>
+          <label class="field">
+            <span>Color</span>
+            <input id="extraLightColorInput" type="color" value="#ffffff" />
+          </label>
+          <label class="field">
+            <span>Intensity <output id="extraLightIntensityValue">1.00</output></span>
+            <input id="extraLightIntensityInput" type="range" min="0" max="20" step="0.01" value="1" />
+          </label>
+          <label class="field">
+            <span>Distance <output id="extraLightDistanceValue">0.00</output></span>
+            <input id="extraLightDistanceInput" type="range" min="0" max="50" step="0.01" value="0" />
+          </label>
+          <label class="field">
+            <span>Angle <output id="extraLightAngleValue">30°</output></span>
+            <input id="extraLightAngleInput" type="range" min="1" max="90" step="1" value="30" />
+          </label>
+          <div class="grid-two">
+            <label class="field">
+              <span>Position X</span>
+              <input id="extraLightPosXInput" type="number" step="0.1" value="3" />
+            </label>
+            <label class="field">
+              <span>Position Y</span>
+              <input id="extraLightPosYInput" type="number" step="0.1" value="4" />
+            </label>
+          </div>
+          <div class="grid-two">
+            <label class="field">
+              <span>Position Z</span>
+              <input id="extraLightPosZInput" type="number" step="0.1" value="3" />
+            </label>
+            <label class="field">
+              <span>Target X</span>
+              <input id="extraLightTargetXInput" type="number" step="0.1" value="0" />
+            </label>
+          </div>
+          <div class="grid-two">
+            <label class="field">
+              <span>Target Y</span>
+              <input id="extraLightTargetYInput" type="number" step="0.1" value="0" />
+            </label>
+            <label class="field">
+              <span>Target Z</span>
+              <input id="extraLightTargetZInput" type="number" step="0.1" value="0" />
+            </label>
+          </div>
+        </details>
       </section>
 
       <section class="panel">
-        <div class="section-head">
-          <h2>Scene Config</h2>
-          <button id="copyConfigButton" class="ghost small">Copy JSON</button>
+        <h2>Models</h2>
+        <div class="field">
+          <span>All models</span>
+          <ul id="modelsList" class="simple-list">
+            <li>No models loaded</li>
+          </ul>
         </div>
+        <label class="field">
+          <span>Select active model</span>
+          <select id="modelsActiveSelect">
+            <option value="">No models loaded</option>
+          </select>
+        </label>
         <div class="inline-actions">
-          <button id="downloadConfigButton">Download config</button>
-          <button id="copyViewerLinkButton" class="ghost">Copy viewer link</button>
+          <button id="toggleModelVisibilityButton" class="ghost">Hide model</button>
+          <button id="removeModelButton" class="ghost">Remove model</button>
         </div>
-        <label class="field">
-          <span>Import config</span>
-          <input id="configInput" type="file" accept=".json,application/json" />
-        </label>
-        <label class="field">
-          <span>Generated config</span>
-          <textarea id="configOutput" rows="8" spellcheck="false"></textarea>
-        </label>
       </section>
 
       <section class="panel">
-        <h2>Materials</h2>
+        <h2>Selected Model</h2>
+        <div class="asset-summary muted">
+          <div><strong>Model status:</strong> <span id="modelStatus">none</span></div>
+          <div><strong>Model info:</strong> <span id="selectedModelInfo">No model selected</span></div>
+        </div>
         <label class="field">
-          <span>Target material</span>
+          <span>Material select</span>
           <select id="materialSelect">
             <option value="">Load a model first</option>
           </select>
         </label>
         <div id="materialMeta" class="material-meta muted">No scene materials detected yet.</div>
-      </section>
-
-      <section class="panel">
-        <h2>Material Settings</h2>
         <div class="grid-two">
           <label class="field">
             <span>Base color</span>
@@ -195,226 +317,153 @@ app.innerHTML = `
           <span>Clearcoat <output id="materialClearcoatValue">0.00</output></span>
           <input id="materialClearcoatInput" type="range" min="0" max="1" step="0.01" value="0" />
         </label>
+        <details class="panel-subsection" open>
+          <summary>Special features</summary>
+          <details class="panel-subsection" open>
+            <summary>Emissive Atlas</summary>
+            <label class="field">
+              <span>Atlas URL</span>
+              <input id="atlasUrlInput" type="text" placeholder="/assets/fire.jpg or https://..." />
+            </label>
+            <div class="inline-actions">
+              <input id="atlasInput" class="hidden-input" type="file" accept="image/*" />
+              <button id="openAtlasButton">Load atlas</button>
+              <button id="loadAtlasUrlButton" class="ghost">Load atlas URL</button>
+              <button id="resetAtlasButton" class="ghost">Reset atlas</button>
+            </div>
+            <div class="asset-summary muted compact-summary">
+              <div><strong>Atlas status:</strong> <span id="atlasStatus">none</span></div>
+            </div>
+            <label class="checkbox">
+              <input id="effectEnabledInput" type="checkbox" checked />
+              <span>Enable atlas</span>
+            </label>
+            <div class="atlas-preview-wrap">
+              <canvas id="atlasPreview" width="360" height="220"></canvas>
+            </div>
+            <label class="field">
+              <span>Target channel</span>
+              <select id="targetSlotSelect">
+                <option value="emissive" selected>Emission</option>
+                <option value="baseColor">Base Color</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Frame order</span>
+              <select id="frameOrderSelect">
+                <option value="row">Rows left to right</option>
+                <option value="column">Columns top to bottom</option>
+              </select>
+            </label>
+            <div class="grid-two">
+              <label class="field">
+                <span>Grid X</span>
+                <input id="gridXInput" type="number" min="1" step="1" value="2" />
+              </label>
+              <label class="field">
+                <span>Grid Y</span>
+                <input id="gridYInput" type="number" min="1" step="1" value="25" />
+              </label>
+            </div>
+            <div class="grid-two">
+              <label class="field">
+                <span>FPS</span>
+                <input id="fpsInput" type="number" min="1" step="1" value="18" />
+              </label>
+              <label class="field">
+                <span>Frame count</span>
+                <input id="frameCountInput" type="number" min="1" step="1" value="50" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label><input id="playToggle" type="checkbox" checked /> Play</label>
+              <label><input id="loopToggle" type="checkbox" checked /> Loop</label>
+            </div>
+            <div class="inline-actions">
+              <button id="playPauseAtlasButton">Pause atlas</button>
+            </div>
+            <label class="checkbox">
+              <input id="frameBlendInput" type="checkbox" />
+              <span>Frame blending</span>
+            </label>
+            <label class="field">
+              <span>Current frame <output id="currentFrameValue">1 / 50</output></span>
+              <input id="currentFrameInput" type="range" min="0" max="49" step="1" value="0" />
+            </label>
+            <label class="field">
+              <span>Intensity <output id="opacityValue">1.00</output></span>
+              <input id="opacityInput" type="range" min="0" max="2" step="0.01" value="0.85" />
+            </label>
+            <h3 class="subheading">UV Transform</h3>
+            <div class="grid-two">
+              <label class="field">
+                <span>UV source</span>
+                <select id="uvChannelSelect">
+                  <option value="auto">Auto</option>
+                  <option value="normal">Normal Map</option>
+                  <option value="baseColor">Base Color Map</option>
+                  <option value="emissive">Emissive Map</option>
+                  <option value="uv">Raw UV</option>
+                  <option value="uv2">Raw UV2</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Wrap mode</span>
+                <select id="wrapModeSelect">
+                  <option value="repeat">Repeat</option>
+                  <option value="clamp">Clamp</option>
+                </select>
+              </label>
+            </div>
+            <div class="grid-two">
+              <label class="field">
+                <span>Offset X</span>
+                <input id="offsetXInput" type="number" step="0.01" value="0" />
+              </label>
+              <label class="field">
+                <span>Offset Y</span>
+                <input id="offsetYInput" type="number" step="0.01" value="0" />
+              </label>
+            </div>
+            <div class="grid-two">
+              <label class="field">
+                <span>Scale X</span>
+                <input id="scaleXInput" type="number" min="0.01" step="0.01" value="1" />
+              </label>
+              <label class="field">
+                <span>Scale Y</span>
+                <input id="scaleYInput" type="number" min="0.01" step="0.01" value="1" />
+              </label>
+            </div>
+            <label class="checkbox">
+              <input id="swapXYInput" type="checkbox" />
+              <span>Swap X / Y</span>
+            </label>
+            <label class="field">
+              <span>Rotation <output id="rotationValue">0°</output></span>
+              <input id="rotationInput" type="range" min="-180" max="180" step="1" value="0" />
+            </label>
+          </details>
+          <details class="panel-subsection">
+            <summary>Future per-model features</summary>
+            <p class="small-muted">Additional non-standard model features will appear here as they are implemented.</p>
+          </details>
+        </details>
       </section>
 
       <section class="panel">
         <div class="section-head">
-          <h2>Lights</h2>
-          <button id="applyLightPresetButton" class="ghost small">Apply preset</button>
-        </div>
-        <label class="field">
-          <span>Light preset</span>
-          <select id="lightPresetSelect">
-            <option value="studio">Studio</option>
-            <option value="product">Product</option>
-            <option value="sunset">Sunset</option>
-            <option value="night">Night</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Ambient <output id="ambientLightValue">0.34</output></span>
-          <input id="ambientLightInput" type="range" min="0" max="5" step="0.01" value="0.34" />
-        </label>
-        <label class="field">
-          <span>Hemisphere <output id="hemisphereLightValue">0.90</output></span>
-          <input id="hemisphereLightInput" type="range" min="0" max="5" step="0.01" value="0.9" />
-        </label>
-        <label class="field">
-          <span>Key light <output id="keyLightValue">1.80</output></span>
-          <input id="keyLightInput" type="range" min="0" max="8" step="0.01" value="1.8" />
-        </label>
-        <label class="field">
-          <span>Fill light <output id="fillLightValue">0.85</output></span>
-          <input id="fillLightInput" type="range" min="0" max="8" step="0.01" value="0.85" />
-        </label>
-        <label class="field">
-          <span>Rim light <output id="rimLightValue">0.65</output></span>
-          <input id="rimLightInput" type="range" min="0" max="8" step="0.01" value="0.65" />
-        </label>
-      </section>
-
-      <section class="panel">
-        <div class="section-head">
-          <h2>Extra Lights</h2>
-          <button id="removeExtraLightButton" class="ghost small">Remove selected</button>
+          <h2>Config</h2>
+          <button id="copyConfigButton" class="ghost small">Copy JSON</button>
         </div>
         <div class="inline-actions">
-          <button id="addDirectionalLightButton">Add directional</button>
-          <button id="addPointLightButton">Add point</button>
-          <button id="addSpotLightButton">Add spot</button>
+          <button id="downloadConfigButton">Export config</button>
+          <button id="copyViewerLinkButton" class="ghost">Copy viewer link</button>
         </div>
+        <p class="small-muted">Load config from Scene, export and share from here.</p>
         <label class="field">
-          <span>Selected light</span>
-          <select id="extraLightSelect">
-            <option value="">No extra lights</option>
-          </select>
-        </label>
-        <div id="extraLightMeta" class="material-meta muted">Create a light to edit its settings.</div>
-        <label class="checkbox">
-          <input id="extraLightEnabledInput" type="checkbox" checked />
-          <span>Enabled</span>
-        </label>
-        <label class="field">
-          <span>Color</span>
-          <input id="extraLightColorInput" type="color" value="#ffffff" />
-        </label>
-        <label class="field">
-          <span>Intensity <output id="extraLightIntensityValue">1.00</output></span>
-          <input id="extraLightIntensityInput" type="range" min="0" max="20" step="0.01" value="1" />
-        </label>
-        <label class="field">
-          <span>Distance <output id="extraLightDistanceValue">0.00</output></span>
-          <input id="extraLightDistanceInput" type="range" min="0" max="50" step="0.01" value="0" />
-        </label>
-        <label class="field">
-          <span>Angle <output id="extraLightAngleValue">30°</output></span>
-          <input id="extraLightAngleInput" type="range" min="1" max="90" step="1" value="30" />
-        </label>
-        <div class="grid-two">
-          <label class="field">
-            <span>Position X</span>
-            <input id="extraLightPosXInput" type="number" step="0.1" value="3" />
-          </label>
-          <label class="field">
-            <span>Position Y</span>
-            <input id="extraLightPosYInput" type="number" step="0.1" value="4" />
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>Position Z</span>
-            <input id="extraLightPosZInput" type="number" step="0.1" value="3" />
-          </label>
-          <label class="field">
-            <span>Target X</span>
-            <input id="extraLightTargetXInput" type="number" step="0.1" value="0" />
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>Target Y</span>
-            <input id="extraLightTargetYInput" type="number" step="0.1" value="0" />
-          </label>
-          <label class="field">
-            <span>Target Z</span>
-            <input id="extraLightTargetZInput" type="number" step="0.1" value="0" />
-          </label>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>Emissive Atlas</h2>
-        <label class="checkbox">
-          <input id="effectEnabledInput" type="checkbox" checked />
-          <span>Enable atlas effect</span>
-        </label>
-        <div class="inline-actions">
-          <button id="playPauseAtlasButton">Pause atlas</button>
-        </div>
-        <label class="field">
-          <span>Target channel</span>
-          <select id="targetSlotSelect">
-            <option value="emissive" selected>Emission</option>
-            <option value="baseColor">Base Color</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Frame order</span>
-          <select id="frameOrderSelect">
-            <option value="row">Rows left to right</option>
-            <option value="column">Columns top to bottom</option>
-          </select>
-        </label>
-        <div class="grid-two">
-          <label class="field">
-            <span>Grid X</span>
-            <input id="gridXInput" type="number" min="1" step="1" value="2" />
-          </label>
-          <label class="field">
-            <span>Grid Y</span>
-            <input id="gridYInput" type="number" min="1" step="1" value="25" />
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>FPS</span>
-            <input id="fpsInput" type="number" min="1" step="1" value="18" />
-          </label>
-          <label class="field">
-            <span>Frame count</span>
-            <input id="frameCountInput" type="number" min="1" step="1" value="50" />
-          </label>
-        </div>
-        <label class="field">
-          <span>Opacity / intensity <output id="opacityValue">1.00</output></span>
-            <input id="opacityInput" type="range" min="0" max="2" step="0.01" value="0.85" />
-        </label>
-        <div class="toggle-row">
-          <label><input id="playToggle" type="checkbox" checked /> Play</label>
-          <label><input id="loopToggle" type="checkbox" checked /> Loop</label>
-        </div>
-        <label class="checkbox">
-          <input id="frameBlendInput" type="checkbox" />
-          <span>Frame blending</span>
-        </label>
-        <label class="field">
-          <span>Current frame <output id="currentFrameValue">1 / 50</output></span>
-          <input id="currentFrameInput" type="range" min="0" max="49" step="1" value="0" />
-        </label>
-        <div class="atlas-preview-wrap">
-          <canvas id="atlasPreview" width="360" height="220"></canvas>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>UV Transform</h2>
-        <div class="grid-two">
-          <label class="field">
-            <span>UV source</span>
-            <select id="uvChannelSelect">
-              <option value="auto">Auto</option>
-              <option value="normal">Normal Map</option>
-              <option value="baseColor">Base Color Map</option>
-              <option value="emissive">Emissive Map</option>
-              <option value="uv">Raw UV</option>
-              <option value="uv2">Raw UV2</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Wrap mode</span>
-            <select id="wrapModeSelect">
-              <option value="repeat">Repeat</option>
-              <option value="clamp">Clamp</option>
-            </select>
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>Offset X</span>
-            <input id="offsetXInput" type="number" step="0.01" value="0" />
-          </label>
-          <label class="field">
-            <span>Offset Y</span>
-            <input id="offsetYInput" type="number" step="0.01" value="0" />
-          </label>
-        </div>
-        <div class="grid-two">
-          <label class="field">
-            <span>Scale X</span>
-            <input id="scaleXInput" type="number" min="0.01" step="0.01" value="1" />
-          </label>
-          <label class="field">
-            <span>Scale Y</span>
-            <input id="scaleYInput" type="number" min="0.01" step="0.01" value="1" />
-          </label>
-        </div>
-        <label class="checkbox">
-          <input id="swapXYInput" type="checkbox" />
-          <span>Swap X / Y</span>
-        </label>
-        <label class="field">
-          <span>Rotation <output id="rotationValue">0°</output></span>
-          <input id="rotationInput" type="range" min="-180" max="180" step="1" value="0" />
+          <span>Generated config</span>
+          <textarea id="configOutput" rows="8" spellcheck="false"></textarea>
         </label>
       </section>
     </aside>
@@ -430,18 +479,29 @@ app.innerHTML = `
 
 const elements = {
   canvas: document.querySelector('#viewport'),
+  viewportWrap: document.querySelector('.viewport-wrap'),
   statusLabel: document.querySelector('#statusLabel'),
   modelInput: document.querySelector('#modelInput'),
   atlasInput: document.querySelector('#atlasInput'),
   hdriInput: document.querySelector('#hdriInput'),
   panoramaInput: document.querySelector('#panoramaInput'),
   configInput: document.querySelector('#configInput'),
+  openConfigButton: document.querySelector('#openConfigButton'),
   modelUrlInput: document.querySelector('#modelUrlInput'),
   atlasUrlInput: document.querySelector('#atlasUrlInput'),
   hdriUrlInput: document.querySelector('#hdriUrlInput'),
   panoramaUrlInput: document.querySelector('#panoramaUrlInput'),
+  sceneStatus: document.querySelector('#sceneStatus'),
+  activeModelLabel: document.querySelector('#activeModelLabel'),
+  sceneModelList: document.querySelector('#sceneModelList'),
+  activeModelSelect: document.querySelector('#activeModelSelect'),
+  modelsList: document.querySelector('#modelsList'),
+  modelsActiveSelect: document.querySelector('#modelsActiveSelect'),
+  toggleModelVisibilityButton: document.querySelector('#toggleModelVisibilityButton'),
+  removeModelButton: document.querySelector('#removeModelButton'),
   materialSelect: document.querySelector('#materialSelect'),
   materialMeta: document.querySelector('#materialMeta'),
+  selectedModelInfo: document.querySelector('#selectedModelInfo'),
   materialColorInput: document.querySelector('#materialColorInput'),
   materialEmissiveColorInput: document.querySelector('#materialEmissiveColorInput'),
   materialMetalnessInput: document.querySelector('#materialMetalnessInput'),
@@ -460,6 +520,10 @@ const elements = {
   configOutput: document.querySelector('#configOutput'),
   exposureInput: document.querySelector('#exposureInput'),
   exposureValue: document.querySelector('#exposureValue'),
+  focalLengthInput: document.querySelector('#focalLengthInput'),
+  focalLengthValue: document.querySelector('#focalLengthValue'),
+  fovValue: document.querySelector('#fovValue'),
+  flyaroundToggleButton: document.querySelector('#flyaroundToggleButton'),
   envIntensityInput: document.querySelector('#envIntensityInput'),
   envIntensityValue: document.querySelector('#envIntensityValue'),
   opacityInput: document.querySelector('#opacityInput'),
@@ -521,7 +585,18 @@ const elements = {
   extraLightTargetZInput: document.querySelector('#extraLightTargetZInput'),
   gridToggle: document.querySelector('#gridToggle'),
   axesToggle: document.querySelector('#axesToggle'),
+  modelPositionXInput: null,
+  modelPositionYInput: null,
+  modelPositionZInput: null,
+  modelRotationXInput: null,
+  modelRotationYInput: null,
+  modelRotationZInput: null,
+  modelRotationXValue: null,
+  modelRotationYValue: null,
+  modelRotationZValue: null,
 };
+
+setupSidebarLayout();
 
 const renderer = new THREE.WebGLRenderer({ canvas: elements.canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -537,10 +612,13 @@ scene.background = defaultBackgroundColor;
 
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
 camera.position.set(3.4, 2.2, 5.6);
+camera.setFocalLength(35);
 
 const orbitControls = new OrbitControls(camera, elements.canvas);
 orbitControls.enableDamping = true;
 orbitControls.target.set(0, 1, 0);
+orbitControls.autoRotate = false;
+orbitControls.autoRotateSpeed = 1.4;
 
 const pointerControls = new PointerLockControls(camera, document.body);
 scene.add(pointerControls.object);
@@ -593,6 +671,7 @@ const state = {
     rim: 0.65,
   },
   cameraMode: 'orbit',
+  flyaround: false,
   firstPerson: {
     velocity: new THREE.Vector3(),
     direction: new THREE.Vector3(),
@@ -611,6 +690,130 @@ const state = {
   selectedExtraLightId: '',
   debugBoundsHelper: null,
 };
+
+function findSidebarPanel(title) {
+  return [...document.querySelectorAll('.sidebar > .panel')].find(
+    (panel) => panel.querySelector('h2')?.textContent.trim() === title,
+  );
+}
+
+function convertPanelToAccordion(panel, title, options = {}) {
+  if (!panel) {
+    return null;
+  }
+
+  const details = document.createElement('details');
+  details.className = `${panel.className} panel-accordion`;
+  details.id = options.id ?? '';
+  details.open = Boolean(options.open);
+
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  details.append(summary);
+
+  Array.from(panel.children).forEach((child) => {
+    if (child.matches?.('h2')) {
+      return;
+    }
+    if (child.classList?.contains('section-head')) {
+      const heading = child.querySelector('h2');
+      if (heading?.textContent.trim() === title) {
+        Array.from(child.children).forEach((nested) => {
+          if (nested !== heading) {
+            details.append(nested);
+          }
+        });
+        return;
+      }
+    }
+    details.append(child);
+  });
+
+  panel.replaceWith(details);
+  return details;
+}
+
+function setupSidebarLayout() {
+  const heroPanel = document.querySelector('.hero-panel');
+  heroPanel?.querySelectorAll('.eyebrow, .muted, .dropzone').forEach((node) => node.remove());
+
+  elements.sceneModelList?.closest('.field')?.remove();
+  elements.activeModelSelect?.closest('label')?.remove();
+
+  const modelsPanel = findSidebarPanel('Models');
+  const selectedModelPanel = findSidebarPanel('Selected Model');
+  if (modelsPanel && selectedModelPanel) {
+    const selectedDetails = document.createElement('details');
+    selectedDetails.id = 'selectedModelPanel';
+    selectedDetails.className = 'panel-subsection';
+    selectedDetails.open = true;
+
+    const summary = document.createElement('summary');
+    summary.textContent = 'Selected Model';
+    selectedDetails.append(summary);
+
+    Array.from(selectedModelPanel.children).forEach((child) => {
+      if (!child.matches?.('h2')) {
+        selectedDetails.append(child);
+      }
+    });
+
+    const materialLabel = selectedDetails.querySelector('#materialSelect')?.closest('label');
+    materialLabel?.insertAdjacentHTML(
+      'beforebegin',
+      `
+        <div class="grid-two model-transform-grid">
+          <label class="field">
+            <span>Position X</span>
+            <input id="modelPositionXInput" type="number" step="0.01" value="0" />
+          </label>
+          <label class="field">
+            <span>Position Y</span>
+            <input id="modelPositionYInput" type="number" step="0.01" value="0" />
+          </label>
+        </div>
+        <div class="grid-two model-transform-grid">
+          <label class="field">
+            <span>Position Z</span>
+            <input id="modelPositionZInput" type="number" step="0.01" value="0" />
+          </label>
+          <label class="field">
+            <span>Rotation Y <output id="modelRotationYValue">0°</output></span>
+            <input id="modelRotationYInput" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+        </div>
+        <div class="grid-two model-transform-grid">
+          <label class="field">
+            <span>Rotation X <output id="modelRotationXValue">0°</output></span>
+            <input id="modelRotationXInput" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span>Rotation Z <output id="modelRotationZValue">0°</output></span>
+            <input id="modelRotationZInput" type="range" min="-180" max="180" step="1" value="0" />
+          </label>
+        </div>
+      `,
+    );
+
+    modelsPanel.append(selectedDetails);
+    selectedModelPanel.remove();
+  }
+
+  convertPanelToAccordion(findSidebarPanel('Scene'), 'Scene', { id: 'scenePanel', open: true });
+  convertPanelToAccordion(findSidebarPanel('Viewer'), 'Viewer', { id: 'viewerPanel', open: false });
+  convertPanelToAccordion(findSidebarPanel('Models'), 'Models', { id: 'modelsPanel', open: false });
+  convertPanelToAccordion(findSidebarPanel('Config'), 'Config', { id: 'configPanel', open: false });
+
+  elements.modelPositionXInput = document.querySelector('#modelPositionXInput');
+  elements.modelPositionYInput = document.querySelector('#modelPositionYInput');
+  elements.modelPositionZInput = document.querySelector('#modelPositionZInput');
+  elements.modelRotationXInput = document.querySelector('#modelRotationXInput');
+  elements.modelRotationYInput = document.querySelector('#modelRotationYInput');
+  elements.modelRotationZInput = document.querySelector('#modelRotationZInput');
+  elements.modelRotationXValue = document.querySelector('#modelRotationXValue');
+  elements.modelRotationYValue = document.querySelector('#modelRotationYValue');
+  elements.modelRotationZValue = document.querySelector('#modelRotationZValue');
+}
 
 function setStatus(message) {
   elements.statusLabel.textContent = message;
@@ -635,7 +838,112 @@ function updateAssetSummary() {
   elements.modelStatus.textContent = formatAssetLabel(state.currentModelSource);
   elements.atlasStatus.textContent = formatAssetLabel(state.currentAtlasSource);
   elements.hdriStatus.textContent = formatAssetLabel(state.currentPanoramaSource || state.currentHdriSource, 'default studio');
+  elements.activeModelLabel.textContent = formatAssetLabel(state.currentModelSource);
+  elements.sceneStatus.textContent = state.modelRoot ? 'Model loaded and ready' : 'No model loaded';
 }
+
+function updateCameraReadouts() {
+  const focalLength = camera.getFocalLength();
+  elements.focalLengthInput.value = String(Math.round(focalLength));
+  elements.focalLengthValue.textContent = `${Math.round(focalLength)} mm`;
+  elements.fovValue.textContent = `${camera.fov.toFixed(1)}\u00B0`;
+  elements.flyaroundToggleButton.textContent = state.flyaround ? 'Stop flyaround' : 'Auto flyaround';
+}
+
+
+function syncModelUi() {
+  const modelLabel = formatAssetLabel(state.currentModelSource);
+  const hasModel = Boolean(state.modelRoot);
+  const currentOptionMarkup = hasModel
+    ? `<option value="current">${modelLabel}</option>`
+    : '<option value="">No models loaded</option>';
+
+  elements.modelsList.innerHTML = hasModel
+    ? `<li>${modelLabel}${state.modelRoot.visible ? '' : ' (hidden)'}</li>`
+    : '<li>No models loaded</li>';
+  elements.modelsActiveSelect.innerHTML = currentOptionMarkup;
+  elements.modelsActiveSelect.value = hasModel ? 'current' : '';
+  elements.modelsActiveSelect.disabled = !hasModel;
+  elements.toggleModelVisibilityButton.disabled = !hasModel;
+  elements.removeModelButton.disabled = !hasModel;
+  elements.toggleModelVisibilityButton.textContent = hasModel && !state.modelRoot.visible ? 'Show model' : 'Hide model';
+  elements.selectedModelInfo.textContent = hasModel
+    ? `${state.modelRoot.name || 'Unnamed model'} | visible: ${state.modelRoot.visible ? 'yes' : 'no'}`
+    : 'No model selected';
+
+  const modelsPanel = document.querySelector('#modelsPanel');
+  modelsPanel?.classList.toggle('is-disabled', !hasModel);
+  if (!hasModel && modelsPanel) {
+    modelsPanel.open = false;
+  }
+}
+
+function syncModelTransformControls() {
+  if (!elements.modelPositionXInput) {
+    return;
+  }
+
+  if (!state.modelRoot) {
+    [
+      elements.modelPositionXInput,
+      elements.modelPositionYInput,
+      elements.modelPositionZInput,
+      elements.modelRotationXInput,
+      elements.modelRotationYInput,
+      elements.modelRotationZInput,
+    ].forEach((input) => {
+      input.value = '0';
+      input.disabled = true;
+    });
+    elements.modelRotationXValue.textContent = `0\u00B0`;
+    elements.modelRotationYValue.textContent = `0\u00B0`;
+    elements.modelRotationZValue.textContent = `0\u00B0`;
+    return;
+  }
+
+  elements.modelPositionXInput.disabled = false;
+  elements.modelPositionYInput.disabled = false;
+  elements.modelPositionZInput.disabled = false;
+  elements.modelRotationXInput.disabled = false;
+  elements.modelRotationYInput.disabled = false;
+  elements.modelRotationZInput.disabled = false;
+
+  elements.modelPositionXInput.value = state.modelRoot.position.x.toFixed(2);
+  elements.modelPositionYInput.value = state.modelRoot.position.y.toFixed(2);
+  elements.modelPositionZInput.value = state.modelRoot.position.z.toFixed(2);
+
+  const rotX = THREE.MathUtils.radToDeg(state.modelRoot.rotation.x);
+  const rotY = THREE.MathUtils.radToDeg(state.modelRoot.rotation.y);
+  const rotZ = THREE.MathUtils.radToDeg(state.modelRoot.rotation.z);
+
+  elements.modelRotationXInput.value = rotX.toFixed(0);
+  elements.modelRotationYInput.value = rotY.toFixed(0);
+  elements.modelRotationZInput.value = rotZ.toFixed(0);
+  elements.modelRotationXValue.textContent = `${rotX.toFixed(0)}\u00B0`;
+  elements.modelRotationYValue.textContent = `${rotY.toFixed(0)}\u00B0`;
+  elements.modelRotationZValue.textContent = `${rotZ.toFixed(0)}\u00B0`;
+}
+
+function applyModelTransformControls() {
+  if (!state.modelRoot) {
+    return;
+  }
+
+  state.modelRoot.position.set(
+    sanitizeNumber(elements.modelPositionXInput.value, state.modelRoot.position.x),
+    sanitizeNumber(elements.modelPositionYInput.value, state.modelRoot.position.y),
+    sanitizeNumber(elements.modelPositionZInput.value, state.modelRoot.position.z),
+  );
+  state.modelRoot.rotation.set(
+    THREE.MathUtils.degToRad(sanitizeNumber(elements.modelRotationXInput.value, THREE.MathUtils.radToDeg(state.modelRoot.rotation.x))),
+    THREE.MathUtils.degToRad(sanitizeNumber(elements.modelRotationYInput.value, THREE.MathUtils.radToDeg(state.modelRoot.rotation.y))),
+    THREE.MathUtils.degToRad(sanitizeNumber(elements.modelRotationZInput.value, THREE.MathUtils.radToDeg(state.modelRoot.rotation.z))),
+  );
+  state.modelRoot.updateMatrixWorld(true);
+  syncModelTransformControls();
+  syncConfigOutput();
+}
+
 
 function sanitizeNumber(value, fallback, min = -Infinity) {
   const numeric = Number(value);
@@ -661,6 +969,7 @@ function buildSceneConfig() {
     },
     viewer: {
       cameraMode: state.cameraMode,
+      focalLength: camera.getFocalLength(),
       exposure: renderer.toneMappingExposure,
       envIntensity: state.envIntensity,
       lighting: { ...state.lighting },
@@ -676,6 +985,16 @@ function buildSceneConfig() {
           envMapIntensity: 'envMapIntensity' in selectedMaterial ? selectedMaterial.envMapIntensity : null,
           emissiveIntensity: 'emissiveIntensity' in selectedMaterial ? selectedMaterial.emissiveIntensity : null,
           clearcoat: 'clearcoat' in selectedMaterial ? selectedMaterial.clearcoat : null,
+        }
+      : null,
+    modelTransform: state.modelRoot
+      ? {
+          position: state.modelRoot.position.toArray(),
+          rotation: [
+            THREE.MathUtils.radToDeg(state.modelRoot.rotation.x),
+            THREE.MathUtils.radToDeg(state.modelRoot.rotation.y),
+            THREE.MathUtils.radToDeg(state.modelRoot.rotation.z),
+          ],
         }
       : null,
     materialEffect: {
@@ -963,6 +1282,8 @@ function createDemoScene() {
   state.currentModelSource = 'demo://ring';
   collectMaterials(root);
   frameObject(root);
+  syncModelUi();
+  syncModelTransformControls();
   setStatus('Demo scene loaded. You can test material patching without an external model.');
 }
 
@@ -989,7 +1310,10 @@ function clearCurrentModel() {
   state.currentModelSource = '';
   elements.materialSelect.innerHTML = '<option value="">Load a model first</option>';
   elements.materialMeta.textContent = 'No scene materials detected yet.';
+  elements.selectedModelInfo.textContent = 'No model selected';
   updateAssetSummary();
+  syncModelUi();
+  syncModelTransformControls();
 }
 
 function frameObject(object) {
@@ -1014,6 +1338,7 @@ function frameObject(object) {
   camera.near = Math.max(sphere.radius / 500, 0.01);
   camera.far = Math.max(sphere.radius * 40, 100);
   camera.updateProjectionMatrix();
+  updateCameraReadouts();
   orbitControls.target.copy(center);
   orbitControls.minDistance = Math.max(sphere.radius * 0.35, 0.05);
   orbitControls.maxDistance = Math.max(sphere.radius * 18, 20);
@@ -1593,6 +1918,8 @@ async function loadModelSource(url, label = url, revokeAfter = false) {
     state.currentModelSource = label;
     collectMaterials(root);
     frameObject(root);
+    syncModelUi();
+    syncModelTransformControls();
     orbitControls.saveState();
     updateEnvironmentIntensity();
     setStatus(`Model loaded: ${label}`);
@@ -1913,10 +2240,14 @@ function setCameraMode(mode) {
   if (mode === 'orbit') {
     pointerControls.unlock();
     orbitControls.enabled = true;
+    orbitControls.autoRotate = state.flyaround;
   } else {
+    state.flyaround = false;
+    orbitControls.autoRotate = false;
     orbitControls.enabled = false;
     pointerControls.object.position.copy(camera.position);
   }
+  updateCameraReadouts();
   syncConfigOutput();
 }
 
@@ -2019,6 +2350,10 @@ async function applyConfig(config) {
 
   if (config?.viewer) {
     renderer.toneMappingExposure = sanitizeNumber(config.viewer.exposure, renderer.toneMappingExposure, 0);
+    if (config.viewer.focalLength != null) {
+      camera.setFocalLength(sanitizeNumber(config.viewer.focalLength, camera.getFocalLength(), 1));
+      updateCameraReadouts();
+    }
     state.envIntensity = sanitizeNumber(config.viewer.envIntensity, state.envIntensity, 0);
     elements.exposureInput.value = String(renderer.toneMappingExposure);
     elements.exposureValue.textContent = renderer.toneMappingExposure.toFixed(2);
@@ -2080,6 +2415,22 @@ async function applyConfig(config) {
       }
       material.needsUpdate = true;
     }
+  }
+
+
+  if (config?.modelTransform && state.modelRoot) {
+    if (Array.isArray(config.modelTransform.position) && config.modelTransform.position.length == 3) {
+      state.modelRoot.position.fromArray(config.modelTransform.position)
+    }
+    if (Array.isArray(config.modelTransform.rotation) && config.modelTransform.rotation.length == 3) {
+      state.modelRoot.rotation.set(
+        THREE.MathUtils.degToRad(sanitizeNumber(config.modelTransform.rotation[0], 0)),
+        THREE.MathUtils.degToRad(sanitizeNumber(config.modelTransform.rotation[1], 0)),
+        THREE.MathUtils.degToRad(sanitizeNumber(config.modelTransform.rotation[2], 0)),
+      )
+      state.modelRoot.updateMatrixWorld(true)
+    }
+    syncModelTransformControls()
   }
 
   if (Array.isArray(config?.extraLights)) {
@@ -2228,8 +2579,30 @@ function updateAtlasFrame() {
   uniforms.uAtlasTexture.value = state.atlasFrameTexture ?? state.atlasTexture;
 }
 
+function handleDroppedFiles(fileList) {
+  const files = Array.from(fileList ?? []);
+  files.forEach((file) => {
+    if (file.name.endsWith('.json')) {
+      importConfig(file);
+      return;
+    }
+    if (file.name.match(/\.(glb|gltf)$/i)) {
+      loadModelSource(createObjectUrl(file), file.name, true);
+      return;
+    }
+    if (file.name.match(/\.hdr$/i)) {
+      loadHdriSource(createObjectUrl(file), file.name, true);
+      return;
+    }
+    if (file.name.match(/\.(png|jpg|jpeg|webp)$/i)) {
+      loadAtlasSource(createObjectUrl(file), file.name, true);
+    }
+  });
+}
+
 function bindEvents() {
   document.querySelector('#openModelButton').addEventListener('click', () => elements.modelInput.click());
+  elements.openConfigButton.addEventListener('click', () => elements.configInput.click());
   document.querySelector('#openAtlasButton').addEventListener('click', () => elements.atlasInput.click());
   document.querySelector('#openHdriButton').addEventListener('click', () => elements.hdriInput.click());
   document.querySelector('#openPanoramaButton').addEventListener('click', () => elements.panoramaInput.click());
@@ -2330,6 +2703,22 @@ function bindEvents() {
       pointerControls.lock();
     }
   });
+  elements.flyaroundToggleButton.addEventListener('click', () => {
+    if (state.cameraMode !== 'orbit') {
+      setStatus('Switch to orbit mode to use auto flyaround.');
+      return;
+    }
+    state.flyaround = !state.flyaround;
+    orbitControls.autoRotate = state.flyaround;
+    updateCameraReadouts();
+    syncConfigOutput();
+  });
+  elements.focalLengthInput.addEventListener('input', () => {
+    camera.setFocalLength(sanitizeNumber(elements.focalLengthInput.value, camera.getFocalLength(), 1));
+    camera.updateProjectionMatrix();
+    updateCameraReadouts();
+    syncConfigOutput();
+  });
   elements.playPauseAtlasButton.addEventListener('click', () => {
     state.effect.play = !state.effect.play;
     elements.playToggle.checked = state.effect.play;
@@ -2368,6 +2757,38 @@ function bindEvents() {
     describeMaterial(getSelectedMaterialEntry());
     syncMaterialControls();
     applyEffectToAllMaterials();
+  });
+  [elements.activeModelSelect, elements.modelsActiveSelect].forEach((select) => {
+    select.addEventListener('change', () => {
+      if (select.value === 'current' && state.modelRoot) {
+        frameObject(state.modelRoot);
+      }
+    });
+  });
+  [
+    elements.modelPositionXInput,
+    elements.modelPositionYInput,
+    elements.modelPositionZInput,
+    elements.modelRotationXInput,
+    elements.modelRotationYInput,
+    elements.modelRotationZInput,
+  ].forEach((input) => input?.addEventListener('input', applyModelTransformControls));
+  elements.toggleModelVisibilityButton.addEventListener('click', () => {
+    if (!state.modelRoot) {
+      return;
+    }
+    state.modelRoot.visible = !state.modelRoot.visible;
+    syncModelUi();
+    setStatus(state.modelRoot.visible ? 'Active model shown.' : 'Active model hidden.');
+    syncConfigOutput();
+  });
+  elements.removeModelButton.addEventListener('click', () => {
+    if (!state.modelRoot) {
+      return;
+    }
+    clearCurrentModel();
+    setStatus('Model removed from scene.');
+    syncConfigOutput();
   });
 
   [
@@ -2489,6 +2910,12 @@ function bindEvents() {
     button.addEventListener('click', () => setCameraMode(button.dataset.cameraMode));
   });
 
+  document.querySelector('#modelsPanel > summary')?.addEventListener('click', (event) => {
+    if (!state.modelRoot) {
+      event.preventDefault();
+    }
+  });
+
   window.addEventListener('keydown', (event) => {
     if (event.code === 'KeyW') state.firstPerson.movement.forward = true;
     if (event.code === 'KeyS') state.firstPerson.movement.backward = true;
@@ -2502,42 +2929,27 @@ function bindEvents() {
     if (event.code === 'KeyD') state.firstPerson.movement.right = false;
   });
 
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
+    window.addEventListener(eventName, (event) => event.preventDefault());
+  });
   ['dragenter', 'dragover'].forEach((eventName) => {
-    window.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      document.querySelector('#dropzone').classList.add('active');
+    elements.viewportWrap.addEventListener(eventName, () => {
+      elements.viewportWrap.classList.add('drag-active');
     });
   });
   ['dragleave', 'drop'].forEach((eventName) => {
-    window.addEventListener(eventName, (event) => {
-      event.preventDefault();
+    elements.viewportWrap.addEventListener(eventName, (event) => {
       if (eventName === 'drop') {
-        const files = Array.from(event.dataTransfer?.files ?? []);
-        files.forEach((file) => {
-          if (file.name.endsWith('.json')) {
-            importConfig(file);
-            return;
-          }
-          if (file.name.match(/\.(glb|gltf)$/i)) {
-            loadModelSource(createObjectUrl(file), file.name, true);
-            return;
-          }
-          if (file.name.match(/\.hdr$/i)) {
-            loadHdriSource(createObjectUrl(file), file.name, true);
-            return;
-          }
-          if (file.name.match(/\.(png|jpg|jpeg|webp)$/i)) {
-            loadAtlasSource(createObjectUrl(file), file.name, true);
-          }
-        });
+        handleDroppedFiles(event.dataTransfer?.files);
       }
-      document.querySelector('#dropzone').classList.remove('active');
+      elements.viewportWrap.classList.remove('drag-active');
     });
   });
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    updateCameraReadouts();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 }
@@ -2580,11 +2992,13 @@ fillControlsFromState();
 applyLightingFromState();
 syncMaterialControls(null);
 syncExtraLightControls();
+syncModelUi();
+syncModelTransformControls();
+updateCameraReadouts();
 elements.exposureInput.value = String(renderer.toneMappingExposure);
 elements.exposureValue.textContent = renderer.toneMappingExposure.toFixed(2);
 elements.envIntensityInput.value = String(state.envIntensity);
 elements.envIntensityValue.textContent = state.envIntensity.toFixed(2);
-elements.playPauseAtlasButton.textContent = state.effect.play ? 'Pause atlas' : 'Play atlas';
 updateAssetSummary();
 updateAtlasPreview();
 setCameraMode('orbit');
