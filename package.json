@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "preview:local": "vite preview --host 127.0.0.1 --port 4174",
     "serve": "npm run build && npm run preview:local"
@@ -14,8 +15,20 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "leva": "^0.10.1",
     "lil-gui": "^0.21.0",
+    "postprocessing": "^6.39.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "three": "^0.183.2",
-    "vite": "^8.0.8"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.8",
+    "zustand": "^5.0.12"
   }
 }
