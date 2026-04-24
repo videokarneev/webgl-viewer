@@ -14,6 +14,11 @@ export function SceneBindings() {
   useFrame(() => {
     const fallbackEnvironment = scene.environment as THREE.Texture | null
     const reflectionsTexture = runtimeTextures.environmentMap ?? fallbackEnvironment
+    const shouldShowReflectionPreview =
+      environment.previewReflections &&
+      Boolean(environment.customHdriUrl) &&
+      Boolean(reflectionsTexture)
+
     if (runtimeTextures.environmentMap) {
       scene.environment = runtimeTextures.environmentMap
     }
@@ -27,7 +32,7 @@ export function SceneBindings() {
       0,
     )
 
-    if (environment.previewReflections && reflectionsTexture) {
+    if (shouldShowReflectionPreview && reflectionsTexture) {
       scene.background = reflectionsTexture
       return
     }

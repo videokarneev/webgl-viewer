@@ -9,19 +9,120 @@ function createObjectUrl(file: File) {
 }
 
 function getNodeIcon(type: SceneGraphNode['type']) {
+  const baseProps = {
+    className: `tree-node__icon is-${type}`,
+    viewBox: '0 0 16 16',
+    'aria-hidden': true,
+  }
+
   switch (type) {
     case 'group':
-      return 'F'
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M3.5 4.5h4l1 1h4v6h-9z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
     case 'mesh':
-      return 'M'
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M8 2.5 12.5 5v6L8 13.5 3.5 11V5z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <path d="M8 2.5v11M3.5 5 8 7.5 12.5 5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      )
     case 'light':
-      return 'L'
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M8 3.25a3 3 0 0 1 1.88 5.34c-.51.42-.8 1.01-.8 1.66H6.92c0-.65-.29-1.24-.8-1.66A3 3 0 0 1 8 3.25Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <path d="M6.5 11.25h3M6.9 13h2.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )
     case 'material':
-      return 'P'
+      return (
+        <svg {...baseProps}>
+          <circle cx="8" cy="8" r="3.25" fill="currentColor" />
+        </svg>
+      )
     case 'camera':
-      return 'C'
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M3.5 5.25h5.5l3.5-1.75v9L9 10.75H3.5z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )
     default:
-      return 'N'
+      return (
+        <svg {...baseProps}>
+          <circle cx="8" cy="8" r="2.75" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      )
+  }
+}
+
+function getActionIcon(kind: 'eye' | 'eyeOff' | 'trash') {
+  const baseProps = {
+    className: `tree-action__icon is-${kind}`,
+    viewBox: '0 0 16 16',
+    'aria-hidden': true,
+  }
+
+  switch (kind) {
+    case 'eyeOff':
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M2.25 8s1.9-3 5.75-3 5.75 3 5.75 3-1.9 3-5.75 3-5.75-3-5.75-3Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <circle cx="8" cy="8" r="1.7" fill="none" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M3 13 13 3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )
+    case 'trash':
+      return (
+        <svg {...baseProps}>
+          <path d="M5.5 4.25h5M6.25 2.75h3.5M4.5 4.25l.5 8h6l.5-8" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M6.75 6.25v4.25M9.25 6.25v4.25" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M2.25 8s1.9-3 5.75-3 5.75 3 5.75 3-1.9 3-5.75 3-5.75-3-5.75-3Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <circle cx="8" cy="8" r="1.7" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      )
   }
 }
 
@@ -49,42 +150,135 @@ function Accordion({
   )
 }
 
-function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
-  const node = useEditorStore((state) => state.sceneGraph[nodeId])
-  const objects = useEditorStore((state) => state.objects)
-  const sceneGraph = useEditorStore((state) => state.sceneGraph)
-  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
-  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
-
-  if (!node) return null
-
+function isIdentityWrapper(nodeId: string, sceneGraph: Record<string, SceneGraphNode>, objects: ReturnType<typeof useEditorStore.getState>['objects']) {
+  const node = sceneGraph[nodeId]
   const objectState = objects[nodeId]
-  const shouldFlatten =
-    node.type === 'group' &&
-    node.parentId !== null &&
-    node.children.length === 1 &&
-    sceneGraph[node.children[0]]?.type !== 'material' &&
-    objectState != null &&
+
+  if (!node || node.type !== 'group' || !objectState) {
+    return false
+  }
+
+  const visibleChildren = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+  if (visibleChildren.length !== 1) {
+    return false
+  }
+
+  return (
     objectState.position.every((value) => Math.abs(value) < 0.0001) &&
     objectState.rotation.every((value) => Math.abs(value) < 0.0001) &&
     objectState.scale.every((value) => Math.abs(value - 1) < 0.0001)
+  )
+}
 
-  if (shouldFlatten) {
-    return <TreeNode nodeId={node.children[0]} depth={depth} />
+function getOutlinerEntryIds({
+  nodeId,
+  sceneGraph,
+  objects,
+  promoteChildren = false,
+}: {
+  nodeId: string
+  sceneGraph: Record<string, SceneGraphNode>
+  objects: ReturnType<typeof useEditorStore.getState>['objects']
+  promoteChildren?: boolean
+}): string[] {
+  const node = sceneGraph[nodeId]
+  if (!node) {
+    return []
+  }
+
+  const visibleChildren = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+
+  if (promoteChildren && (node.type === 'group' || node.type === 'scene')) {
+    return visibleChildren.flatMap((childId) =>
+      getOutlinerEntryIds({ nodeId: childId, sceneGraph, objects }),
+    )
+  }
+
+  if (isIdentityWrapper(nodeId, sceneGraph, objects)) {
+    return visibleChildren.flatMap((childId) =>
+      getOutlinerEntryIds({ nodeId: childId, sceneGraph, objects }),
+    )
+  }
+
+  return [nodeId]
+}
+
+function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
+  const node = useEditorStore((state) => state.sceneGraph[nodeId])
+  const objects = useEditorStore((state) => state.objects)
+  const materials = useEditorStore((state) => state.materials)
+  const sceneGraph = useEditorStore((state) => state.sceneGraph)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const toggleObjectVisibility = useEditorStore((state) => state.toggleObjectVisibility)
+  const removeSceneNode = useEditorStore((state) => state.removeSceneNode)
+  const toggleMaterialSystemState = useEditorStore((state) => state.toggleMaterialSystemState)
+  const resetMaterial = useEditorStore((state) => state.resetMaterial)
+
+  if (!node) return null
+
+  const visibleChildren = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+  const isMesh = node.type === 'mesh'
+  const isMaterial = node.type === 'material'
+  const meshVisible = isMesh ? (objects[nodeId]?.visible ?? node.visible ?? true) : true
+  const materialUsesSystem = isMaterial ? Boolean(materials[nodeId]?.useSystemMaterial) : false
+
+  if (isIdentityWrapper(nodeId, sceneGraph, objects)) {
+    return (
+      <>
+        {visibleChildren.map((childId) => (
+          <TreeNode key={childId} nodeId={childId} depth={depth} />
+        ))}
+      </>
+    )
   }
 
   return (
     <>
       <button
-        className={`tree-node ${selectedObjectId === nodeId ? 'is-selected' : ''}`}
+        className={`tree-node ${selectedObjectId === nodeId ? 'is-selected' : ''} ${!meshVisible ? 'is-dimmed' : ''} ${materialUsesSystem ? 'is-dimmed' : ''}`}
         style={{ paddingLeft: `${10 + depth * 12}px` }}
         onClick={() => setSelectedObjectId(nodeId)}
         type="button"
       >
-        <span className="tree-node__branch" />
-        <span className={`tree-node__icon is-${node.type}`}>{getNodeIcon(node.type)}</span>
-        <span className="tree-node__type">{node.type}</span>
+        {getNodeIcon(node.type)}
         <span className="tree-node__label">{node.label}</span>
+        {(isMesh || isMaterial) ? (
+          <span className="tree-node__actions">
+            <button
+              type="button"
+              className="tree-action"
+              aria-label={isMesh ? (meshVisible ? 'Hide mesh' : 'Show mesh') : (materialUsesSystem ? 'Restore material' : 'Use system material')}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (isMesh) {
+                  toggleObjectVisibility(nodeId)
+                } else if (isMaterial) {
+                  toggleMaterialSystemState(nodeId)
+                }
+              }}
+            >
+              {getActionIcon(isMesh ? (meshVisible ? 'eye' : 'eyeOff') : (materialUsesSystem ? 'eyeOff' : 'eye'))}
+            </button>
+            <button
+              type="button"
+              className="tree-action"
+              aria-label={isMesh ? 'Delete mesh' : 'Reset material'}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (isMesh) {
+                  removeSceneNode(nodeId)
+                } else if (isMaterial) {
+                  resetMaterial(nodeId)
+                }
+              }}
+            >
+              {getActionIcon('trash')}
+            </button>
+          </span>
+        ) : null}
       </button>
       {node.children.map((childId) => (
         <TreeNode key={childId} nodeId={childId} depth={depth + 1} />
@@ -95,9 +289,11 @@ function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
 
 export function SceneManager() {
   const [sceneTab, setSceneTab] = useState<'reflections' | 'background'>('reflections')
-  const [cameraTabOpen, setCameraTabOpen] = useState(true)
+  const [cameraTabOpen, setCameraTabOpen] = useState(false)
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
   const extraLights = useEditorStore((state) => state.extraLights)
+  const sceneGraph = useEditorStore((state) => state.sceneGraph)
+  const objects = useEditorStore((state) => state.objects)
   const materialCount = useEditorStore((state) => Object.keys(state.materials).length)
   const objectCount = useEditorStore((state) => Object.keys(state.objects).length)
   const status = useEditorStore((state) => state.status)
@@ -128,6 +324,9 @@ export function SceneManager() {
   const reflectionsInputRef = useRef<HTMLInputElement | null>(null)
   const backgroundInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
+  const outlinerRootIds = rootNodeId
+    ? getOutlinerEntryIds({ nodeId: rootNodeId, sceneGraph, objects, promoteChildren: true })
+    : []
 
   const clearReflections = () => {
     const { runtimeTextures, environment: currentEnvironment } = useEditorStore.getState()
@@ -177,7 +376,36 @@ export function SceneManager() {
         </p>
       </div>
 
-      <div className="left-panel__scroll">
+      <div className="left-panel__body">
+        <section className="outliner-panel">
+          <div className="outliner-panel__header">
+            <span>OUTLINER</span>
+            <span className="left-accordion__meta">Scene Tree</span>
+          </div>
+          <div className="outliner-panel__content">
+            <div className="structure-toolbar">
+              <button type="button" className="tool-button tool-button--secondary left-full-button" onClick={addExtraLight}>
+                <span className="tool-button__glyph">LGT</span>
+                <span className="tool-button__label">Add Light</span>
+              </button>
+            </div>
+            <div className="tree-view tree-view--accordion">
+              {outlinerRootIds.length ? (
+                outlinerRootIds.map((nodeId: string) => <TreeNode key={nodeId} nodeId={nodeId} />)
+              ) : (
+                <p className="panel-empty">Scene is empty.</p>
+              )}
+              {extraLights.length ? (
+                <div className="tree-subgroup">
+                  <div className="tree-subgroup__title">Extra Lights</div>
+                  {extraLights.map((light) => (light ? <TreeNode key={light.id} nodeId={light.id} depth={0} /> : null))}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <div className="left-panel__scroll">
         <Accordion title="ASSETS" meta="Scene">
           <div className="inspector-action-row">
             <button type="button" className="tool-button tool-button--secondary" onClick={() => modelInputRef.current?.click()}>
@@ -192,24 +420,6 @@ export function SceneManager() {
               <span className="tool-button__glyph">RST</span>
               <span className="tool-button__label">Reset Scene</span>
             </button>
-          </div>
-        </Accordion>
-
-        <Accordion title="STRUCTURE" meta="Outliner" className="left-accordion--structure">
-          <div className="structure-toolbar">
-            <button type="button" className="tool-button tool-button--secondary left-full-button" onClick={addExtraLight}>
-              <span className="tool-button__glyph">LGT</span>
-              <span className="tool-button__label">Add Light</span>
-            </button>
-          </div>
-          <div className="tree-view tree-view--accordion">
-            {rootNodeId ? <TreeNode nodeId={rootNodeId} /> : <p className="panel-empty">Scene is empty.</p>}
-            {extraLights.length ? (
-              <div className="tree-subgroup">
-                <div className="tree-subgroup__title">Extra Lights</div>
-                {extraLights.map((light) => (light ? <TreeNode key={light.id} nodeId={light.id} depth={0} /> : null))}
-              </div>
-            ) : null}
           </div>
         </Accordion>
 
@@ -238,7 +448,6 @@ export function SceneManager() {
 
             {sceneTab === 'reflections' ? (
               <div className="left-controls__group">
-                <span className="left-controls__label">Reflections</span>
                 <div className="left-controls__value">{assets.reflections ?? 'No HDRI loaded'}</div>
                 <div className="inspector-action-row">
                   <button type="button" className="tool-button tool-button--secondary" onClick={() => reflectionsInputRef.current?.click()}>
@@ -282,18 +491,18 @@ export function SceneManager() {
 
             {sceneTab === 'background' ? (
               <div className="left-controls__group">
-                <span className="left-controls__label">Background</span>
-                <label className="left-select">
-                  <span>Mode</span>
-                  <select
-                    value={environment.background}
-                    onChange={(event) =>
-                      setEnvironment({
-                        background: event.currentTarget.value as typeof environment.background,
-                        backgroundVisible: event.currentTarget.value !== 'none',
-                      })
-                    }
-                  >
+                <div className="scene-inline-controls">
+                  <label className="left-select left-select--inline">
+                    <span>Mode</span>
+                    <select
+                      value={environment.background}
+                      onChange={(event) =>
+                        setEnvironment({
+                          background: event.currentTarget.value as typeof environment.background,
+                          backgroundVisible: event.currentTarget.value !== 'none',
+                        })
+                      }
+                    >
                     <option value="none">None / Transparent</option>
                     <option value="color">Color</option>
                     <option value="environment">360 Image</option>
@@ -301,15 +510,17 @@ export function SceneManager() {
                   </select>
                 </label>
                 {environment.background === 'color' ? (
-                  <label className="left-color-field">
-                    <span>Background Color</span>
+                  <label className="left-color-field left-color-field--swatch" aria-label="Background color">
+                    <span className="visually-hidden">Background Color</span>
                     <input
+                      aria-label="Background color"
                       type="color"
                       value={environment.backgroundColor}
                       onChange={(event) => setEnvironment({ backgroundColor: event.currentTarget.value })}
                     />
                   </label>
                 ) : null}
+                </div>
                 <div className="left-controls__value">{assets.background ?? 'No background loaded'}</div>
                 <div className="inspector-action-row">
                   <button type="button" className="tool-button tool-button--secondary" onClick={() => backgroundInputRef.current?.click()}>
@@ -470,7 +681,7 @@ export function SceneManager() {
           </div>
         </Accordion>
 
-        <Accordion title="EFFECTS" meta="Post">
+        <Accordion title="EFFECTS" meta="Post" defaultOpen={false}>
           <div className="left-controls">
             <div className="left-controls__group">
               <span className="left-controls__label">Bloom</span>
@@ -523,6 +734,7 @@ export function SceneManager() {
           </div>
         </Accordion>
 
+        </div>
       </div>
 
       <div className="import-export-footer">

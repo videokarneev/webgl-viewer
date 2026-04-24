@@ -19,8 +19,171 @@ import type { ExtraLightState } from '../store/editorStore'
 
 type RenderStats = {
   calls: number
-  triangles: number
+  fps: number
+  totalVertices: number
+  totalTriangles: number
+  selectedName: string
+  selectedVertices: number
   selectedTriangles: number
+  textureCount: number
+  textureMemoryMb: number
+}
+
+function formatCompactMetric(value: number, fractionDigits = 0) {
+  return new Intl.NumberFormat('en-US', {
+    notation: value >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: fractionDigits,
+  }).format(value)
+}
+
+function getMeshStats(object: THREE.Object3D | null) {
+  if (!object) {
+    return { vertices: 0, triangles: 0 }
+  }
+
+  let vertices = 0
+  let triangles = 0
+
+  object.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) {
+      return
+    }
+
+    const geometry = (child as THREE.Mesh).geometry
+    if (!geometry) {
+      return
+    }
+
+    const position = geometry.getAttribute('position')
+    if (position) {
+      vertices += position.count
+    }
+
+    if (geometry.index) {
+      triangles += geometry.index.count / 3
+    } else if (position) {
+      triangles += position.count / 3
+    }
+  })
+
+  return {
+    vertices: Math.round(vertices),
+    triangles: Math.round(triangles),
+  }
+}
+
+function calculateAssetTextures(
+  root: THREE.Object3D | null,
+  environment: ReturnType<typeof useEditorStore.getState>['environment'],
+  runtimeTextures: ReturnType<typeof useEditorStore.getState>['runtimeTextures'],
+) {
+  const uniqueTextures = new Map<string, THREE.Texture>()
+  const textureSlots = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'] as const
+
+  root?.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) {
+      return
+    }
+
+    const mesh = child as THREE.Mesh
+    const rawMaterial = mesh.material
+    const materials = Array.isArray(rawMaterial) ? rawMaterial : [rawMaterial]
+
+    materials.forEach((material: THREE.Material) => {
+      if (!material) {
+        return
+      }
+
+      textureSlots.forEach((mapType) => {
+        const texture = (material as THREE.MeshStandardMaterial)[mapType]
+        if (texture?.isTexture) {
+          uniqueTextures.set(texture.uuid, texture)
+        }
+      })
+    })
+  })
+
+  if (environment.background === 'environment' && runtimeTextures.environmentBackground?.isTexture) {
+    uniqueTextures.set(runtimeTextures.environmentBackground.uuid, runtimeTextures.environmentBackground)
+  }
+
+  if ((environment.kind === 'hdri' || environment.background === 'reflections') && runtimeTextures.environmentMap?.isTexture) {
+    uniqueTextures.set(runtimeTextures.environmentMap.uuid, runtimeTextures.environmentMap)
+  }
+
+  return [...uniqueTextures.values()]
+}
+
+function estimateTextureMemoryBytes(textures: THREE.Texture[]) {
+  let totalBytes = 0
+
+  textures.forEach((texture) => {
+    const source = texture.source?.data
+    const image = Array.isArray(source) ? source[0] : source ?? texture.image
+    const width = image?.width ?? image?.videoWidth ?? 0
+    const height = image?.height ?? image?.videoHeight ?? 0
+
+    if (!width || !height) {
+      return
+    }
+
+    const bytesPerPixel = 4
+    const mipFactor = 4 / 3
+    totalBytes += width * height * bytesPerPixel * mipFactor
+  })
+
+  return totalBytes
+}
+
+function getAdaptiveGridPalette(backgroundMode: 'none' | 'environment' | 'color' | 'reflections', backgroundColor: string) {
+  if (backgroundMode !== 'color') {
+    return {
+      cellColor: 'rgba(255,255,255,0.4)',
+      sectionColor: 'rgba(255,255,255,0.4)',
+    }
+  }
+
+  const color = new THREE.Color(backgroundColor)
+  const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+  const neutralColor = luminance < 0.5 ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'
+
+  return {
+    cellColor: neutralColor,
+    sectionColor: neutralColor,
+  }
+}
+
+function getAdaptiveHudStyle(backgroundMode: 'none' | 'environment' | 'color' | 'reflections', backgroundColor: string) {
+  if (backgroundMode !== 'color') {
+    return {
+      color: 'rgba(245, 248, 250, 0.94)',
+      textShadow: '0 1px 2px rgba(0, 0, 0, 0.65)',
+      mutedColor: 'rgba(255, 255, 255, 0.76)',
+      strongColor: 'rgba(255, 255, 255, 0.98)',
+      headerColor: 'rgba(255, 255, 255, 0.92)',
+    }
+  }
+
+  const color = new THREE.Color(backgroundColor)
+  const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+
+  if (luminance >= 0.5) {
+    return {
+      color: '#222222',
+      textShadow: 'none',
+      mutedColor: 'rgba(34, 34, 34, 0.82)',
+      strongColor: '#111111',
+      headerColor: '#000000',
+    }
+  }
+
+  return {
+    color: 'rgba(245, 248, 250, 0.94)',
+    textShadow: '0 1px 2px rgba(0, 0, 0, 0.65)',
+    mutedColor: 'rgba(255, 255, 255, 0.76)',
+    strongColor: 'rgba(255, 255, 255, 0.98)',
+    headerColor: 'rgba(255, 255, 255, 0.92)',
+  }
 }
 
 function RendererSettings() {
@@ -116,34 +279,86 @@ function FocusAreaVisualizer() {
   )
 }
 
-function getTriangleCount(object: THREE.Object3D | null) {
-  if (!object) {
-    return 0
-  }
+function FlightControls({ speed = 10 }: { speed?: number }) {
+  const { camera, gl } = useThree()
+  const controlsRef = useRef<any>(null)
+  const lockInitialized = useRef(false)
+  const keys = useRef({ KeyW: false, KeyA: false, KeyS: false, KeyD: false, KeyQ: false, KeyE: false })
+  const setHud = useEditorStore((state) => state.setHud)
+  const setViewer = useEditorStore((state) => state.setViewer)
 
-  let triangleCount = 0
-  object.traverse((child) => {
-    if (!(child as THREE.Mesh).isMesh) {
-      return
-    }
-    const mesh = child as THREE.Mesh
-    const geometry = mesh.geometry
-    if (!geometry) {
-      return
+  useEffect(() => {
+    const tryLock = () => {
+      controlsRef.current?.lock()
     }
 
-    if (geometry.index) {
-      triangleCount += geometry.index.count / 3
+    tryLock()
+    const frameId = window.requestAnimationFrame(tryLock)
+
+    const handlePointerLockChange = () => {
+      if (document.pointerLockElement) {
+        lockInitialized.current = true
+      } else if (lockInitialized.current) {
+        setHud({ orbitEnabled: true })
+        setViewer({ cameraMode: 'orbit' })
+      }
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code in keys.current) {
+        keys.current[event.code as keyof typeof keys.current] = true
+      }
+    }
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code in keys.current) {
+        keys.current[event.code as keyof typeof keys.current] = false
+      }
+    }
+
+    const handleViewportClick = () => {
+      if (!controlsRef.current?.isLocked) {
+        controlsRef.current?.lock()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    gl.domElement.addEventListener('click', handleViewportClick)
+    document.addEventListener('pointerlockchange', handlePointerLockChange)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      gl.domElement.removeEventListener('click', handleViewportClick)
+      document.removeEventListener('pointerlockchange', handlePointerLockChange)
+      lockInitialized.current = false
+      keys.current = { KeyW: false, KeyA: false, KeyS: false, KeyD: false, KeyQ: false, KeyE: false }
+      controlsRef.current?.unlock?.()
+      if (document.pointerLockElement) {
+        void document.exitPointerLock()
+      }
+    }
+  }, [gl])
+
+  useFrame((_, delta) => {
+    if (!controlsRef.current?.isLocked) {
       return
     }
 
-    const position = geometry.getAttribute('position')
-    if (position) {
-      triangleCount += position.count / 3
-    }
+    const moveSpeed = speed * delta
+    if (keys.current.KeyW) camera.translateZ(-moveSpeed)
+    if (keys.current.KeyS) camera.translateZ(moveSpeed)
+    if (keys.current.KeyA) camera.translateX(-moveSpeed)
+    if (keys.current.KeyD) camera.translateX(moveSpeed)
+    if (keys.current.KeyE) camera.position.y += moveSpeed
+    if (keys.current.KeyQ) camera.position.y -= moveSpeed
   })
 
-  return Math.round(triangleCount)
+  return (
+    <PointerLockControls ref={controlsRef} makeDefault />
+  )
 }
 
 function SelectedLightHelper() {
@@ -205,15 +420,30 @@ function SelectedLightHelper() {
   return null
 }
 
-function PerformanceProbe({ onStats }: { onStats: (stats: RenderStats) => void }) {
+function PerformanceProbe({
+  root,
+  onStats,
+}: {
+  root: THREE.Object3D | null
+  onStats: (stats: RenderStats) => void
+}) {
   const { gl } = useThree()
-  const lastUpdateRef = useRef(0)
+  const lastTelemetryRef = useRef(0)
+  const fpsWindowRef = useRef({ lastTime: 0, frames: 0, fps: 0 })
 
   useFrame((state) => {
-    if (state.clock.elapsedTime - lastUpdateRef.current < 0.2) {
+    fpsWindowRef.current.frames += 1
+    if (state.clock.elapsedTime - fpsWindowRef.current.lastTime >= 1) {
+      fpsWindowRef.current.fps =
+        fpsWindowRef.current.frames / Math.max(state.clock.elapsedTime - fpsWindowRef.current.lastTime, 0.0001)
+      fpsWindowRef.current.frames = 0
+      fpsWindowRef.current.lastTime = state.clock.elapsedTime
+    }
+
+    if (state.clock.elapsedTime - lastTelemetryRef.current < 0.2) {
       return
     }
-    lastUpdateRef.current = state.clock.elapsedTime
+    lastTelemetryRef.current = state.clock.elapsedTime
 
     const editorState = useEditorStore.getState()
     const selectedNode = editorState.selectedObjectId ? editorState.sceneGraph[editorState.selectedObjectId] : null
@@ -223,11 +453,24 @@ function PerformanceProbe({ onStats }: { onStats: (stats: RenderStats) => void }
         : selectedNode
           ? editorState.runtime.objectById[selectedNode.id]
           : null
-
+    const selectedMesh =
+      selectedRuntimeObject && (selectedRuntimeObject as THREE.Mesh).isMesh ? (selectedRuntimeObject as THREE.Mesh) : null
+    const totalStats = getMeshStats(root)
+    const selectedStats = getMeshStats(selectedMesh)
+    const environment = editorState.environment
+    const runtimeTextures = editorState.runtimeTextures
+    const assetTextures = calculateAssetTextures(root, environment, runtimeTextures)
+    const textureMemoryMb = estimateTextureMemoryBytes(assetTextures) / (1024 * 1024)
     onStats({
       calls: gl.info.render.calls,
-      triangles: gl.info.render.triangles,
-      selectedTriangles: getTriangleCount(selectedRuntimeObject ?? null),
+      fps: Math.round(fpsWindowRef.current.fps),
+      totalVertices: totalStats.vertices,
+      totalTriangles: totalStats.triangles,
+      selectedName: selectedNode?.label ?? selectedMesh?.name ?? 'None',
+      selectedVertices: selectedStats.vertices,
+      selectedTriangles: selectedStats.triangles,
+      textureCount: assetTextures.length,
+      textureMemoryMb,
     })
   })
 
@@ -317,10 +560,12 @@ function SceneRuntime({
   const hud = useEditorStore((state) => state.hud)
   const viewer = useEditorStore((state) => state.viewer)
   const runtimeTextures = useEditorStore((state) => state.runtimeTextures)
+  const environment = useEditorStore((state) => state.environment)
   const sceneResetNonce = useEditorStore((state) => state.sceneResetNonce)
   const [root, setRoot] = useState<THREE.Object3D | null>(null)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const gridPalette = getAdaptiveGridPalette(environment.background, environment.backgroundColor)
 
   useEffect(() => {
     setRoot(null)
@@ -330,7 +575,7 @@ function SceneRuntime({
     const perspectiveCamera = camera as THREE.PerspectiveCamera
 
     const resetCamera = () => {
-      const fallbackPosition: [number, number, number] = [3.4, 2.2, 5.6]
+      const fallbackPosition: [number, number, number] = [4, 3, 5]
       const fallbackTarget: [number, number, number] = [0, 0, 0]
       const framed = root ? fitCameraToObject(perspectiveCamera, controlsRef.current, root) : null
       const nextPosition: [number, number, number] = framed
@@ -366,28 +611,12 @@ function SceneRuntime({
   }, [camera, controlsRef, registerResetCamera, root, setHud, setViewer])
 
   useEffect(() => {
-    const perspectiveCamera = camera as THREE.PerspectiveCamera
     if (viewer.cameraMode !== 'firstPerson') {
       return
     }
 
-    const nextPosition: [number, number, number] = [0, 1.6, 5]
-    const lookTarget = new THREE.Vector3(0, 1.6, 0)
-
-    perspectiveCamera.position.set(...nextPosition)
-    perspectiveCamera.lookAt(lookTarget)
-    perspectiveCamera.updateProjectionMatrix()
-
-    if (controlsRef.current) {
-      controlsRef.current.target.set(0, 0, 0)
-      controlsRef.current.update()
-    }
-
     setHud({ orbitEnabled: false })
-    setViewer({
-      cameraPosition: nextPosition,
-      orbitTarget: [0, 0, 0],
-    })
+    setViewer({ cameraPosition: [camera.position.x, camera.position.y, camera.position.z] })
   }, [camera, controlsRef, setHud, setViewer, viewer.cameraMode])
 
   return (
@@ -400,13 +629,13 @@ function SceneRuntime({
       <color attach="background" args={['#808080']} />
       <SceneLights />
       <SelectedLightHelper />
-      <PerformanceProbe onStats={onStats} />
+      <PerformanceProbe root={root} onStats={onStats} />
       {hud.gridVisible ? (
         <Grid
           args={[6, 6]}
           position={[0, -0.002, 0]}
-          cellColor="#101418"
-          sectionColor="#171d22"
+          cellColor={gridPalette.cellColor}
+          sectionColor={gridPalette.sectionColor}
           fadeDistance={7}
           fadeStrength={1.7}
           cellSize={0.25}
@@ -437,7 +666,7 @@ function SceneRuntime({
           }}
         />
       ) : null}
-      {viewer.cameraMode === 'firstPerson' ? <PointerLockControls makeDefault /> : null}
+      {viewer.cameraMode === 'firstPerson' ? <FlightControls /> : null}
       <PostProcessingComposer />
       {hud.fpsEnabled ? <Stats showPanel={0} className="stats-panel" /> : null}
     </>
@@ -446,29 +675,71 @@ function SceneRuntime({
 
 export function SceneCanvas() {
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
-  const [stats, setStats] = useState<RenderStats>({ calls: 0, triangles: 0, selectedTriangles: 0 })
+  const environment = useEditorStore((state) => state.environment)
+  const [stats, setStats] = useState<RenderStats>({
+    calls: 0,
+    fps: 0,
+    totalVertices: 0,
+    totalTriangles: 0,
+    selectedName: 'None',
+    selectedVertices: 0,
+    selectedTriangles: 0,
+    textureCount: 0,
+    textureMemoryMb: 0,
+  })
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
+  const hudStyle = getAdaptiveHudStyle(environment.background, environment.backgroundColor)
 
   return (
     <div className="viewport-shell">
-      <div className="performance-stats">
-        <div>
-          <span>Draw Calls</span>
-          <strong>{stats.calls}</strong>
+      <div
+        className="performance-stats"
+        style={
+          {
+            color: hudStyle.color,
+            textShadow: hudStyle.textShadow,
+            '--performance-muted-color': hudStyle.mutedColor,
+            '--performance-strong-color': hudStyle.strongColor,
+            '--performance-header-color': hudStyle.headerColor,
+          } as React.CSSProperties
+        }
+      >
+        <div className="performance-stats__row performance-stats__row--header">
+          <span />
+          <span>TOTAL</span>
+          <span>{stats.selectedName}</span>
         </div>
-        <div>
-          <span>Triangles</span>
-          <strong>{stats.triangles.toLocaleString()}</strong>
+        <div className="performance-stats__row">
+          <span>VERTICES</span>
+          <strong>{formatCompactMetric(stats.totalVertices)}</strong>
+          <strong>{formatCompactMetric(stats.selectedVertices)}</strong>
         </div>
-        <div>
-          <span>Selected</span>
-          <strong>{stats.selectedTriangles.toLocaleString()}</strong>
+        <div className="performance-stats__row">
+          <span>TRIANGLES</span>
+          <strong>{formatCompactMetric(stats.totalTriangles)}</strong>
+          <strong>{formatCompactMetric(stats.selectedTriangles)}</strong>
+        </div>
+        <div className="performance-stats__spacer" />
+        <div className="performance-stats__row">
+          <span>VRAM TEXTURES</span>
+          <strong>{`${stats.textureCount} (${stats.textureMemoryMb.toFixed(1)} MB)`}</strong>
+          <strong />
+        </div>
+        <div className="performance-stats__row">
+          <span>DRAW CALLS</span>
+          <strong>{formatCompactMetric(stats.calls)}</strong>
+          <strong />
+        </div>
+        <div className="performance-stats__row">
+          <span>FPS</span>
+          <strong>{stats.fps}</strong>
+          <strong />
         </div>
       </div>
       <ViewportHud onResetCamera={() => resetCameraRef.current()} />
       <Canvas
-        camera={{ position: [3.4, 2.2, 5.6], fov: 55 }}
+        camera={{ position: [4, 3, 5], fov: 55 }}
         gl={{ antialias: true }}
         dpr={[1, 2]}
         onPointerMissed={(event) => {

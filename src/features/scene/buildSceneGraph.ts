@@ -74,6 +74,7 @@ export function buildSceneGraph(root: THREE.Object3D) {
           name: material.name || 'Unnamed material',
           type: material.type,
           meshIds: [mesh.uuid],
+          useSystemMaterial: false,
           color: 'color' in standardMaterial ? `#${standardMaterial.color.getHexString()}` : undefined,
           emissive: 'emissive' in standardMaterial ? `#${standardMaterial.emissive.getHexString()}` : undefined,
           metalness: 'metalness' in standardMaterial ? standardMaterial.metalness : undefined,

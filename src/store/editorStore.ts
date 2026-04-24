@@ -77,6 +77,7 @@ export interface PbrMaterialState {
   name: string
   type: string
   meshIds: string[]
+  useSystemMaterial?: boolean
   color?: string
   emissive?: string
   metalness?: number
@@ -249,6 +250,10 @@ interface EditorState {
   updateObjectTransform: (id: string, patch: Partial<ObjectTransformState>) => void
   updateMaterial: (id: string, patch: Partial<Omit<PbrMaterialState, 'id' | 'effect' | 'hasMaps' | 'meshIds'>>) => void
   updateMaterialEffect: (materialId: string, patch: Partial<AtlasEffectState>) => void
+  toggleObjectVisibility: (id: string) => void
+  removeSceneNode: (id: string) => void
+  toggleMaterialSystemState: (id: string) => void
+  resetMaterial: (id: string) => void
   setEnvironment: (patch: Partial<EnvironmentState>) => void
   setHud: (patch: Partial<ViewportHudState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
@@ -288,7 +293,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     source: null,
     customHdriUrl: null,
     kind: 'default',
-    intensity: 0.8,
+    intensity: 1.5,
     rotation: 0,
     background: 'color',
     backgroundVisible: true,
@@ -301,7 +306,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   hud: {
     orbitEnabled: true,
     fpsEnabled: false,
-    gridVisible: false,
+    gridVisible: true,
     axesVisible: false,
     transformMode: 'translate',
   },
@@ -309,7 +314,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     cameraMode: 'orbit',
     focalLength: 12,
     exposure: 1,
-    cameraPosition: [3.4, 2.2, 5.6],
+    cameraPosition: [4, 3, 5],
     orbitTarget: [0, 0, 0],
     dofEnabled: false,
     dofVisualizerEnabled: false,
@@ -410,6 +415,175 @@ export const useEditorStore = create<EditorState>((set) => ({
           [materialId]: {
             ...current,
             effect: nextEffect,
+          },
+        },
+      }
+    }),
+  toggleObjectVisibility: (id) =>
+    set((state) => {
+      const currentObject = state.objects[id]
+      const currentNode = state.sceneGraph[id]
+      if (!currentObject || !currentNode) {
+        return state
+      }
+
+      const nextVisible = !currentObject.visible
+      return {
+        objects: {
+          ...state.objects,
+          [id]: {
+            ...currentObject,
+            visible: nextVisible,
+          },
+        },
+        sceneGraph: {
+          ...state.sceneGraph,
+          [id]: {
+            ...currentNode,
+            visible: nextVisible,
+          },
+        },
+      }
+    }),
+  removeSceneNode: (id) =>
+    set((state) => {
+      const targetNode = state.sceneGraph[id]
+      if (!targetNode) {
+        return state
+      }
+
+      const collectDescendants = (nodeId: string): string[] => {
+        const node = state.sceneGraph[nodeId]
+        if (!node) {
+          return []
+        }
+
+        return [nodeId, ...node.children.flatMap(collectDescendants)]
+      }
+
+      const idsToRemove = new Set(collectDescendants(id))
+      const sceneGraph = { ...state.sceneGraph }
+      const objects = { ...state.objects }
+      const materials = { ...state.materials }
+      const runtimeObjectById = { ...state.runtime.objectById }
+      const runtimeMaterialById = { ...state.runtime.materialById }
+      const runtimeObject = runtimeObjectById[id]
+
+      if (runtimeObject?.parent) {
+        runtimeObject.parent.remove(runtimeObject)
+      }
+
+      if (targetNode.parentId && sceneGraph[targetNode.parentId]) {
+        sceneGraph[targetNode.parentId] = {
+          ...sceneGraph[targetNode.parentId],
+          children: sceneGraph[targetNode.parentId].children.filter((childId) => childId !== id),
+        }
+      }
+
+      idsToRemove.forEach((nodeId) => {
+        const node = sceneGraph[nodeId]
+        if (!node) {
+          return
+        }
+
+        delete sceneGraph[nodeId]
+        delete objects[nodeId]
+        delete runtimeObjectById[nodeId]
+
+        if (node.type === 'material') {
+          const materialState = materials[nodeId]
+          if (materialState && materialState.meshIds.length <= 1) {
+            delete materials[nodeId]
+            delete runtimeMaterialById[nodeId]
+          } else if (materialState) {
+            materials[nodeId] = {
+              ...materialState,
+              meshIds: materialState.meshIds.filter((meshId) => meshId !== id),
+            }
+          }
+        }
+      })
+
+      return {
+        sceneGraph,
+        objects,
+        materials,
+        runtime: {
+          objectById: runtimeObjectById,
+          materialById: runtimeMaterialById,
+        },
+        selectedObjectId:
+          state.selectedObjectId && idsToRemove.has(state.selectedObjectId) ? null : state.selectedObjectId,
+      }
+    }),
+  toggleMaterialSystemState: (id) =>
+    set((state) => {
+      const material = state.materials[id]
+      if (!material) {
+        return state
+      }
+
+      return {
+        materials: {
+          ...state.materials,
+          [id]: {
+            ...material,
+            useSystemMaterial: !material.useSystemMaterial,
+          },
+        },
+      }
+    }),
+  resetMaterial: (id) =>
+    set((state) => {
+      const material = state.materials[id]
+      const runtimeMaterial = state.runtime.materialById[id] as (THREE.MeshStandardMaterial & { clearcoat?: number }) | undefined
+      if (!material) {
+        return state
+      }
+
+      if (runtimeMaterial) {
+        runtimeMaterial.map = null
+        runtimeMaterial.normalMap = null
+        runtimeMaterial.roughnessMap = null
+        runtimeMaterial.metalnessMap = null
+        runtimeMaterial.aoMap = null
+        runtimeMaterial.emissiveMap = null
+        delete runtimeMaterial.userData.originalTextureSlots
+        runtimeMaterial.color.set('#ffffff')
+        runtimeMaterial.emissive.set('#000000')
+        runtimeMaterial.metalness = 0
+        runtimeMaterial.roughness = 1
+        runtimeMaterial.emissiveIntensity = 1
+        if ('envMapIntensity' in runtimeMaterial) {
+          runtimeMaterial.envMapIntensity = 1
+        }
+        if ('clearcoat' in runtimeMaterial) {
+          runtimeMaterial.clearcoat = 0
+        }
+        runtimeMaterial.needsUpdate = true
+      }
+
+      return {
+        materials: {
+          ...state.materials,
+          [id]: {
+            ...material,
+            useSystemMaterial: false,
+            color: '#ffffff',
+            emissive: '#000000',
+            metalness: 0,
+            roughness: 1,
+            envMapIntensity: 1,
+            emissiveIntensity: 1,
+            clearcoat: 0,
+            hasMaps: {
+              baseColor: false,
+              emissive: false,
+              normal: false,
+              ao: false,
+              roughness: false,
+              metalness: false,
+            },
           },
         },
       }
@@ -651,7 +825,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           source: null,
           customHdriUrl: null,
           kind: 'default',
-          intensity: 0.8,
+          intensity: 1.5,
           rotation: 0,
           background: 'color',
           backgroundVisible: true,
@@ -665,13 +839,20 @@ export const useEditorStore = create<EditorState>((set) => ({
           cameraMode: 'orbit',
           focalLength: 12,
           exposure: 1,
-          cameraPosition: [3.4, 2.2, 5.6],
+          cameraPosition: [4, 3, 5],
           orbitTarget: [0, 0, 0],
           dofEnabled: false,
           dofVisualizerEnabled: false,
           dofFocusDistance: 5,
           dofAperture: 2,
           dofManualBlur: 1.2,
+        },
+        hud: {
+          orbitEnabled: true,
+          fpsEnabled: false,
+          gridVisible: true,
+          axesVisible: false,
+          transformMode: 'translate',
         },
         assets: {
           model: null,

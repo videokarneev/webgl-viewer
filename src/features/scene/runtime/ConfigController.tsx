@@ -84,7 +84,7 @@ export function ConfigController({
     const cameraPerspective = camera as THREE.PerspectiveCamera
 
     if (config.viewer?.envIntensity != null) {
-      setEnvironment({ intensity: sanitizeNumber(config.viewer.envIntensity, 0.8, 0) })
+      setEnvironment({ intensity: sanitizeNumber(config.viewer.envIntensity, 1.5, 0) })
     }
 
     if (config.viewer?.cameraPosition && config.viewer.cameraPosition.length === 3) {

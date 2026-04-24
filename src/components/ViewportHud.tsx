@@ -12,7 +12,17 @@ function IconButton({
   children: React.ReactNode
 }) {
   return (
-    <button type="button" className={active ? 'is-active' : ''} onClick={onClick} title={title} aria-label={title}>
+    <button
+      type="button"
+      className={active ? 'is-active' : ''}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      title={title}
+      aria-label={title}
+    >
       {children}
     </button>
   )
@@ -25,8 +35,14 @@ export function ViewportHud({ onResetCamera }: { onResetCamera: () => void }) {
   const setViewer = useEditorStore((state) => state.setViewer)
 
   return (
-    <div className="viewport-hud">
-      <div className="viewport-hud__group" role="toolbar" aria-label="Viewport tools">
+    <div className="viewport-hud" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+      <div
+        className="viewport-hud__group"
+        role="toolbar"
+        aria-label="Viewport tools"
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
+      >
         <IconButton
           active={hud.gridVisible}
           title="Toggle grid"
@@ -53,13 +69,13 @@ export function ViewportHud({ onResetCamera }: { onResetCamera: () => void }) {
         </IconButton>
         <IconButton
           active={cameraMode === 'firstPerson'}
-          title="First person camera mode"
+          title="Flight camera mode"
           onClick={() => {
             setHud({ orbitEnabled: false })
             setViewer({ cameraMode: 'firstPerson' })
           }}
         >
-          First Person
+          Flight
         </IconButton>
         <IconButton title="Reset camera" onClick={onResetCamera}>
           Reset Camera

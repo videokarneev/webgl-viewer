@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-04-23
+Last updated: 2026-04-24
 
 ## Project
 
@@ -28,23 +28,20 @@ Legacy reference:
 The app is now a real 3-column editor:
 
 1. Left panel:
-   - assets
-   - structure / outliner
-   - scene
-   - camera
-   - effects
+   - dedicated top outliner panel
+   - separate scrollable control stack
    - export / config footer
 2. Center:
    - R3F viewport
    - floating viewport HUD
-   - performance stats
+   - technical performance HUD overlay
 3. Right panel:
    - contextual inspector for selected object only
 
 Important direction:
 
 - professional editor-style layout
-- not the earlier “minimal hidden UI” direction
+- not the earlier "minimal hidden UI" direction
 
 ## Key Files
 
@@ -56,7 +53,9 @@ Important direction:
 - `src/components/InspectorDock.tsx`
 - `src/components/AtlasVisualizer.tsx`
 - `src/store/editorStore.ts`
+- `src/features/scene/buildSceneGraph.ts`
 - `src/features/scene/runtime/AssetController.tsx`
+- `src/features/scene/runtime/LoadedSceneRoot.tsx`
 - `src/features/scene/runtime/SceneBindings.tsx`
 - `src/features/scene/runtime/ViewerSync.tsx`
 - `src/features/scene/runtime/ConfigController.tsx`
@@ -78,18 +77,49 @@ Known non-blocker:
 
 ## Left Panel State
 
-File:
+Main file:
 
 - `src/components/SceneManager.tsx`
 
-Current order:
+Current structure:
 
-1. `ASSETS`
-2. `STRUCTURE`
-3. `SCENE`
-4. `CAMERA`
-5. `EFFECTS`
-6. footer `EXPORT / CONFIG`
+1. fixed top `OUTLINER` panel
+2. independent scrollable accordion stack:
+   - `ASSETS`
+   - `SCENE`
+   - `CAMERA`
+   - `EFFECTS`
+3. footer `EXPORT / CONFIG`
+
+### OUTLINER
+
+Current behavior:
+
+- permanent non-collapsible panel at the top of the left sidebar
+- root technical container (`Loaded Model`) is hidden from the UI
+- top-level entries are promoted children of the loaded model
+- identity wrapper groups are flattened when they only add a useless transform shell
+- rows use icons only:
+  - mesh: cube icon
+  - material: circle icon
+  - light/camera/group: subdued SVG icons
+- rows render as:
+  - `[icon] [label] [quick actions]`
+
+Quick actions currently implemented:
+
+- mesh row:
+  - eye / eye-off toggles object visibility
+  - trash removes mesh node from scene graph/runtime and removes linked material node when orphaned
+- material row:
+  - eye toggles "system material" preview mode
+  - trash resets material state to default white PBR values and clears texture maps
+
+Important:
+
+- action buttons use `stopPropagation()` on both `pointerdown` and `click`
+- clicking the row itself still updates global selection normally
+- selection/highlight in viewport still works because outliner uses real `nodeId`s
 
 ### ASSETS
 
@@ -98,20 +128,6 @@ Contains:
 - `Load GLB`
 - `Load Config`
 - `Reset Scene`
-
-### STRUCTURE
-
-Contains:
-
-- `Add Light`
-- model hierarchy / outliner tree
-- material nodes
-- extra lights subgroup
-
-Important:
-
-- `STRUCTURE` is still the flexible panel
-- `left-accordion--structure` uses flex growth so the tree expands vertically
 
 ### SCENE
 
@@ -132,6 +148,10 @@ Contains:
 - `Rotation`
 - `Intensity`
 
+Current defaults:
+
+- `environment.intensity = 1.5`
+
 Current slider ranges:
 
 - `Rotation`: `-180..180`
@@ -140,7 +160,9 @@ Current slider ranges:
 Important behavior:
 
 - reflections preview while dragging rotation still works via `previewReflections`
-- `Clear` now resets back to default fallback lighting instead of leaving a dead custom HDRI state
+- temporary background preview during rotation is now allowed only for real custom HDRI loads
+- default preset rotation no longer flashes the fallback `city` background
+- `Clear` resets back to fallback lighting instead of leaving a dead custom HDRI state
 
 #### HDRI runtime notes
 
@@ -148,7 +170,6 @@ Important files:
 
 - `src/features/scene/runtime/AssetController.tsx`
 - `src/features/scene/runtime/SceneBindings.tsx`
-- `src/app/App.tsx`
 - `src/components/SceneManager.tsx`
 
 Current intended pipeline:
@@ -157,14 +178,7 @@ Current intended pipeline:
 - custom HDRI loading goes through the internal runtime pipeline in `AssetController`
 - `AssetController` loads HDR with `RGBELoader`, converts with PMREM, and stores result in `runtimeTextures.environmentMap`
 - `SceneBindings` uses `<Environment preset="city" />` only as fallback when no custom `environmentMap` exists
-- `SceneBindings` no longer uses `<Environment files={blobUrl}>` for custom HDRI
-
-Important:
-
-- this was changed because the previous setup loaded the same custom HDRI through two competing pipelines:
-  - internal PMREM pipeline
-  - Drei `<Environment files={...}>`
-- that double-loading path was the main suspected crash source
+- `SceneBindings` does not use Drei `<Environment files={...}>` for custom HDRI
 
 Current fallback logic:
 
@@ -175,12 +189,9 @@ Current fallback logic:
 
 Contains:
 
-- background mode selector:
-  - `none`
-  - `color`
-  - `environment`
-  - `reflections`
-- conditional color picker when mode is `color`
+- inline row for:
+  - background mode selector
+  - conditional color swatch when mode is `color`
 - current background file label
 - `Load Background` / `Replace`
 - `Clear`
@@ -189,10 +200,17 @@ Contains:
 - `Blur`
 - `Visible`
 
+Background modes:
+
+- `none`
+- `color`
+- `environment`
+- `reflections`
+
 Current background defaults:
 
-- `backgroundColor` default is now `#808080`
-- scene-level fallback color in canvas was also moved to `#808080`
+- `backgroundColor = #808080`
+- scene-level fallback color in canvas is also `#808080`
 
 Current slider ranges:
 
@@ -203,20 +221,21 @@ Important:
 
 - when mode is `color`, `SceneBindings` applies `scene.background = new THREE.Color(environment.backgroundColor)`
 
-## Camera State
+## Camera / Viewport State
 
 Files:
 
-- `src/components/SceneManager.tsx`
 - `src/components/SceneCanvas.tsx`
+- `src/components/ViewportHud.tsx`
 - `src/features/scene/runtime/shared.ts`
+- `src/store/editorStore.ts`
 
 ### CAMERA section UI
 
 Contains:
 
-- `Exposure` slider at the top
-- focal length preset row:
+- `Exposure`
+- focal length presets:
   - `8`
   - `12`
   - `17`
@@ -231,6 +250,7 @@ Current defaults:
 
 - `viewer.focalLength = 12`
 - `viewer.exposure = 1`
+- DoF subsection starts collapsed
 
 Current exposure slider range:
 
@@ -242,18 +262,18 @@ File:
 
 - `src/components/ViewportHud.tsx`
 
-Current controls in floating HUD:
+Current controls:
 
 - `Grid`
 - `Axes`
 - `Orbit`
-- `First Person`
+- `Flight`
 - `Reset Camera`
 
 Important:
 
-- HUD now lives inside viewport overlay, not as a global fixed strip
-- HUD uses `pointer-events: none` on wrapper and `pointer-events: auto` on buttons
+- HUD now stops event propagation on wrapper and buttons to prevent click-through into the canvas
+- this was required to stop unwanted pointer-lock re-engagement when switching away from flight mode
 
 ### Reset Camera / Fit Logic
 
@@ -272,36 +292,98 @@ Behavior:
 - calculates `Box3`
 - gets `center`
 - gets max dimension
-- computes distance from current camera FOV
-- sets camera position to `center.z + distance`
-- points camera at center
-- updates orbit target
-- updates viewer state
+- computes required fit distance from FOV
+- preserves current camera angle by using the normalized direction from center to camera
+- moves camera to `center + direction * distance`
+- updates orbit target and viewer state
 
-Trigger points:
+Current camera defaults:
 
-- automatically after successful model load
-- when user presses `Reset Camera` in the HUD
+- canvas default camera position: `[4, 3, 5]`
+- reset fallback camera position: `[4, 3, 5]`
 
-Important:
+### Flight Mode
 
-- margin was recently increased by 50%, from `1.3` to `1.95`
-- this was done to push the default framing farther back, especially with `12mm`
+Main file:
 
-### First Person
+- `src/components/SceneCanvas.tsx`
 
 Current behavior:
 
-- controls are conditionally mounted
-- only one control system exists at a time:
-  - `OrbitControls` for orbit mode
-  - `PointerLockControls` for first person mode
-- on entering first person:
-  - camera is moved to `[0, 1.6, 5]`
+- orbit and flight controls are conditionally mounted
+- flight mode uses a custom `FlightControls` wrapper around `PointerLockControls`
+- pointer lock is requested on mount
+- viewport click attempts to re-lock when flight mode is active and not currently locked
+- `pointerlockchange` is used to detect a real unlock after a successful lock
+- pressing `Esc` returns the app to `orbit` via the pointer-lock lifecycle, not via raw keydown
+
+Movement:
+
+- `W/S`: local forward/backward via `camera.translateZ()`
+- `A/D`: local strafe via `camera.translateX()`
+- `Q/E`: global down/up via `camera.position.y`
+- current default speed is back to `10`
+- key handling uses `event.code`, so layout is independent of OS keyboard language
 
 Important:
 
-- this fixed the earlier bug where orbit and first-person controls fought over the same camera
+- `lockInitialized` ref is required to avoid the race where `pointerlockchange` fires before the first successful lock and instantly reverts flight mode
+
+## Performance HUD
+
+Main file:
+
+- `src/components/SceneCanvas.tsx`
+
+Styling file:
+
+- `src/styles.css`
+
+Current implementation:
+
+- top-left viewport overlay
+- absolute positioned
+- no boxed background container
+- monospace styling
+- 3-column grid:
+  - label
+  - total
+  - selected
+
+Current metrics:
+
+- `VERTICES`
+- `TRIANGLES`
+- `VRAM TEXTURES`
+- `DRAW CALLS`
+- `FPS`
+
+Data rules:
+
+- `TOTAL` is calculated by traversing the loaded GLB root only
+- `SELECTED` is calculated from the currently selected mesh/runtime object
+- texture counting is now asset-only and does not use `gl.info.memory.textures`
+- asset texture profiler collects:
+  - PBR map slots from loaded GLB materials:
+    - `map`
+    - `normalMap`
+    - `roughnessMap`
+    - `metalnessMap`
+    - `aoMap`
+    - `emissiveMap`
+  - active environment/background textures when they are actual published assets
+- runtime render targets, post-processing buffers, and shadow maps are intentionally excluded from this texture budget
+
+Adaptive HUD color:
+
+- uses the same luminance logic as the scene grid
+- if background mode is `color` and luminance is light, HUD switches to dark text with no text-shadow
+- if background is dark or an HDRI/environment is active, HUD remains white with subtle shadow
+
+Positioning:
+
+- HUD is offset right of the fixed left panel using CSS `left: calc(sidebar width + margin)`
+- `pointer-events: none` is enabled so it never blocks viewport interaction
 
 ## Effects State
 
@@ -320,11 +402,13 @@ Now contains only Bloom controls:
 - intensity
 - luminance smoothing
 
+Default UX:
+
+- `EFFECTS` accordion starts collapsed
+
 ### Depth of Field
 
-DoF was moved out of `EFFECTS` and into `CAMERA`.
-
-State now lives in Zustand `viewer`:
+DoF lives in Zustand `viewer`:
 
 - `dofEnabled`
 - `dofVisualizerEnabled`
@@ -354,9 +438,7 @@ Current DoF implementation:
 - `EffectComposer` always mounts
 - global `ToneMapping` pass is always mounted
 - `DepthOfField` effect mounts only when `viewer.dofEnabled`
-- bokeh strength is derived from:
-  - aperture preset mapping
-  - plus `dofManualBlur`
+- bokeh strength is derived from aperture preset mapping plus `dofManualBlur`
 
 ## Focus Plane Visualizer
 
@@ -366,7 +448,7 @@ File:
 
 Current implementation:
 
-- uses a standalone mesh in scene graph
+- standalone mesh in scene graph
 - updates in `useFrame`
 - copies camera position and rotation each frame
 - then moves forward with `translateZ(-focusDistance)`
@@ -378,11 +460,6 @@ Current implementation:
   - `depthWrite={false}`
   - `DoubleSide`
   - `toneMapped={false}`
-
-Important:
-
-- this replaced the earlier camera-portal parenting approach because that version could become invisible
-- if the focus plane disappears again, inspect `FocusAreaVisualizer` in `SceneCanvas.tsx` first
 
 ## Global Tone Mapping / Exposure
 
@@ -401,8 +478,7 @@ Current pipeline:
 
 Important:
 
-- this was introduced to avoid desync where model responded to exposure but background did not
-- exposure now affects the whole final frame
+- exposure affects the whole final frame, not only the model
 
 ## Lighting
 
@@ -413,16 +489,14 @@ Files:
 
 Current behavior:
 
-- legacy light presets are removed
-- no default ambient / directional preset rig remains in React app
+- no legacy ambient/directional preset rig remains
 - lighting now comes from:
   - environment lighting
-  - user-added extra lights only
+  - user-added extra point lights only
 
 Extra lights:
 
-- still Zustand-backed
-- still only `point` lights
+- Zustand-backed
 - selectable in outliner
 - visible in viewport
 - editable in inspector
@@ -454,33 +528,36 @@ Still exported:
 - model transform
 - selected material effect
 
+Important:
+
+- background color/rotation/intensity/blur are still not fully serialized unless someone adds them next
+
 ## Current Known Risks
 
 1. Custom HDRI crash may still need one more pass if the uploaded `.hdr` itself is malformed or unsupported.
-   - The double-loading conflict was removed, but if crashes persist, next step is to capture the exact `RGBELoader` failure path and surface better diagnostics.
-2. `SceneBindings` creates `new THREE.Color(environment.backgroundColor)` during render.
-   - This is acceptable for now, but could be memoized later.
+   - The double-loading conflict was removed, but malformed user files may still need better surfaced diagnostics.
+2. Material reset / delete actions are now runtime-capable but should be watched if someone later introduces material sharing edge cases beyond the current graph assumptions.
 3. Bundle size warning still exists.
 
 ## If Something Breaks First
 
 Check in this order:
 
-1. `src/features/scene/runtime/SceneBindings.tsx`
-2. `src/features/scene/runtime/AssetController.tsx`
-3. `src/components/SceneCanvas.tsx`
-4. `src/components/SceneManager.tsx`
-5. `src/features/scene/runtime/shared.ts`
-6. `src/features/scene/runtime/ViewerSync.tsx`
+1. `src/components/SceneManager.tsx`
+2. `src/components/SceneCanvas.tsx`
+3. `src/features/scene/runtime/LoadedSceneRoot.tsx`
+4. `src/features/scene/runtime/SceneBindings.tsx`
+5. `src/features/scene/runtime/AssetController.tsx`
+6. `src/features/scene/runtime/shared.ts`
 7. `src/store/editorStore.ts`
 
 ## Recommended Next Steps
 
 Most likely useful next passes:
 
-1. If custom HDRI still crashes with a real user file, instrument `loadHdri` / `RGBELoader` with more explicit error reporting.
-2. Consider removing `AssetDock.tsx` entirely if it is no longer used, or keep its HDRI path aligned with the main left panel path.
-3. Consider exporting / importing more background settings:
+1. If custom HDRI still crashes with a real user file, instrument `loadHdri` / `RGBELoader` with explicit error diagnostics.
+2. Decide whether outliner destructive actions should gain confirmation UI or undo support.
+3. Consider serializing more background settings:
    - `backgroundColor`
    - `backgroundRotation`
    - `backgroundIntensity`

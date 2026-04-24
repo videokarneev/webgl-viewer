@@ -5,6 +5,50 @@ import { useEditorStore } from '../../../store/editorStore'
 import { applyPatchToMaterial, clearPatchFromMaterial, updatePatchedMaterialUniforms } from '../../atlas/atlasMaterialPatch'
 import { useAtlasAnimator } from '../../atlas/useAtlasAnimator'
 
+const MATERIAL_TEXTURE_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'] as const
+
+function ensureMaterialTextureBackup(material: THREE.Material) {
+  if (!material.userData.originalTextureSlots) {
+    material.userData.originalTextureSlots = Object.fromEntries(
+      MATERIAL_TEXTURE_SLOTS.map((slot) => [slot, (material as THREE.MeshStandardMaterial)[slot] ?? null]),
+    )
+  }
+}
+
+function applySystemMaterialView(material: THREE.Material) {
+  const standardMaterial = material as THREE.MeshStandardMaterial & { clearcoat?: number }
+  ensureMaterialTextureBackup(material)
+
+  MATERIAL_TEXTURE_SLOTS.forEach((slot) => {
+    standardMaterial[slot] = null
+  })
+  standardMaterial.color.set('#8e9399')
+  standardMaterial.emissive.set('#000000')
+  standardMaterial.metalness = 0
+  standardMaterial.roughness = 1
+  standardMaterial.emissiveIntensity = 1
+  if ('envMapIntensity' in standardMaterial) {
+    standardMaterial.envMapIntensity = 1
+  }
+  if ('clearcoat' in standardMaterial) {
+    standardMaterial.clearcoat = 0
+  }
+  material.needsUpdate = true
+}
+
+function restoreMaterialTextureSlots(material: THREE.Material) {
+  const standardMaterial = material as THREE.MeshStandardMaterial
+  const originalTextureSlots = material.userData.originalTextureSlots as Partial<Record<(typeof MATERIAL_TEXTURE_SLOTS)[number], THREE.Texture | null>> | undefined
+
+  if (!originalTextureSlots) {
+    return
+  }
+
+  MATERIAL_TEXTURE_SLOTS.forEach((slot) => {
+    standardMaterial[slot] = originalTextureSlots[slot] ?? null
+  })
+}
+
 export function LoadedSceneRoot({ root }: { root: THREE.Object3D }) {
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const registerObjectRef = useEditorStore((state) => state.registerObjectRef)
@@ -80,6 +124,12 @@ export function LoadedSceneRoot({ root }: { root: THREE.Object3D }) {
       }
       if (!material) return
 
+      if (materialState.useSystemMaterial) {
+        applySystemMaterialView(material)
+        return
+      }
+
+      restoreMaterialTextureSlots(material)
       if (materialState.color && 'color' in material) material.color.set(materialState.color)
       if (materialState.emissive && 'emissive' in material) material.emissive.set(materialState.emissive)
       if ('metalness' in material && materialState.metalness != null) material.metalness = materialState.metalness

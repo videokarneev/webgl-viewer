@@ -57,13 +57,21 @@ export function fitCameraToObject(
   const center = box.getCenter(new THREE.Vector3())
   const maxDim = Math.max(size.x, size.y, size.z)
   const fov = camera.fov * (Math.PI / 180)
-  let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2))
-  cameraZ *= margin
+  let cameraDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2))
+  cameraDistance *= margin
 
-  camera.position.set(center.x, center.y, center.z + cameraZ)
+  const viewDirection = camera.position.clone().sub(center)
+  if (viewDirection.lengthSq() < 0.0001) {
+    viewDirection.set(4, 3, 5)
+  }
+  viewDirection.normalize()
+
+  const nextPosition = center.clone().add(viewDirection.multiplyScalar(cameraDistance))
+
+  camera.position.copy(nextPosition)
   camera.lookAt(center)
-  camera.near = Math.max(cameraZ / 100, 0.1)
-  camera.far = Math.max(cameraZ * 100, 2000)
+  camera.near = Math.max(cameraDistance / 100, 0.1)
+  camera.far = Math.max(cameraDistance * 100, 2000)
   camera.updateProjectionMatrix()
 
   if (controls) {
@@ -79,6 +87,6 @@ export function fitCameraToObject(
   return {
     position: camera.position.clone(),
     target: center,
-    distance: cameraZ,
+    distance: cameraDistance,
   }
 }
