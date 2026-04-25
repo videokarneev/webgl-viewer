@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditorStore, type SceneGraphNode } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { copySceneConfigToClipboard, downloadSceneConfig } from '../features/config/buildSceneConfig'
+import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { useViewportPresentation } from '../features/viewport/ViewportPresentationContext'
+
+const focalPresets = [8, 12, 17, 35, 50, 85]
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -126,6 +128,50 @@ function getActionIcon(kind: 'eye' | 'eyeOff' | 'trash') {
   }
 }
 
+function getOutlinerModeIcon(kind: 'all' | 'meshes' | 'materials') {
+  const baseProps = {
+    className: 'outliner-filter__icon',
+    viewBox: '0 0 16 16',
+    'aria-hidden': true,
+  }
+
+  switch (kind) {
+    case 'all':
+      return (
+        <svg {...baseProps}>
+          <path d="M8 2.25 13 4.8 8 7.35 3 4.8z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          <path d="m3 7.05 5 2.55 5-2.55M3 9.3l5 2.55 5-2.55" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )
+    case 'meshes':
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M8 2.5 12.5 5v6L8 13.5 3.5 11V5z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <path d="M8 2.5v11M3.5 5 8 7.5 12.5 5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...baseProps}>
+          <circle cx="8" cy="8" r="4.15" fill="none" stroke="currentColor" strokeWidth="1.2" />
+          <path d="M4.7 8h6.6M8 3.85c1.1 1.08 1.66 2.46 1.66 4.15S9.1 11.07 8 12.15C6.9 11.07 6.34 9.69 6.34 8S6.9 4.93 8 3.85Z" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+        </svg>
+      )
+  }
+}
+
+type OutlinerMode = 'all' | 'meshes' | 'materials'
+
+function shouldSkipOutlinerRow(node: SceneGraphNode | undefined) {
+  return Boolean(node && node.label === 'Material')
+}
+
 function Accordion({
   title,
   meta,
@@ -203,7 +249,84 @@ function getOutlinerEntryIds({
   return [nodeId]
 }
 
-function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
+function nodeMatchesSearch(
+  nodeId: string,
+  sceneGraph: Record<string, SceneGraphNode>,
+  searchQuery: string,
+): boolean {
+  const node = sceneGraph[nodeId]
+  const normalizedQuery = searchQuery.trim().toLowerCase()
+
+  if (!node || !normalizedQuery) {
+    return true
+  }
+
+  if (shouldSkipOutlinerRow(node)) {
+    return node.children.some((childId) => nodeMatchesSearch(childId, sceneGraph, searchQuery))
+  }
+
+  if (node.label.toLowerCase().includes(normalizedQuery)) {
+    return true
+  }
+
+  return node.children.some((childId) => {
+    const child = sceneGraph[childId]
+    if (!child) {
+      return false
+    }
+
+    if (child.type === 'material') {
+      return child.label.toLowerCase().includes(normalizedQuery)
+    }
+
+    return nodeMatchesSearch(childId, sceneGraph, searchQuery)
+  })
+}
+
+function resolveHighlightedNodeId(
+  selectedObjectId: string | null,
+  sceneGraph: Record<string, SceneGraphNode>,
+  outlinerMode: OutlinerMode,
+) {
+  if (!selectedObjectId) {
+    return null
+  }
+
+  const selectedNode = sceneGraph[selectedObjectId]
+  if (!selectedNode) {
+    return null
+  }
+
+  if (outlinerMode === 'materials') {
+    if (selectedNode.type === 'material') {
+      return selectedNode.id
+    }
+    if (selectedNode.type === 'mesh') {
+      return selectedNode.children.find((childId) => sceneGraph[childId]?.type === 'material') ?? null
+    }
+    return null
+  }
+
+  if (selectedNode.type === 'material' && selectedNode.parentId) {
+    return selectedNode.parentId
+  }
+
+  return selectedNode.id
+}
+
+function TreeNode({
+  nodeId,
+  depth = 0,
+  searchQuery = '',
+  outlinerMode = 'meshes',
+  highlightedNodeId = null,
+}: {
+  nodeId: string
+  depth?: number
+  searchQuery?: string
+  outlinerMode?: OutlinerMode
+  highlightedNodeId?: string | null
+}) {
   const node = useEditorStore((state) => state.sceneGraph[nodeId])
   const objects = useEditorStore((state) => state.objects)
   const materials = useEditorStore((state) => state.materials)
@@ -214,20 +337,89 @@ function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
   const removeSceneNode = useEditorStore((state) => state.removeSceneNode)
   const toggleMaterialSystemState = useEditorStore((state) => state.toggleMaterialSystemState)
   const resetMaterial = useEditorStore((state) => state.resetMaterial)
+  const [isExpanded, setIsExpanded] = useState(outlinerMode === 'all')
 
   if (!node) return null
+  if (!nodeMatchesSearch(nodeId, sceneGraph, searchQuery)) return null
 
   const visibleChildren = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+  const materialChildren = node.children.filter((childId) => sceneGraph[childId]?.type === 'material')
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const nodeMatchesOwnLabel = normalizedSearch ? node.label.toLowerCase().includes(normalizedSearch) : true
+  const visibleMaterialChildren = normalizedSearch && !nodeMatchesOwnLabel
+    ? materialChildren.filter((childId) => sceneGraph[childId]?.label.toLowerCase().includes(normalizedSearch))
+    : materialChildren
   const isMesh = node.type === 'mesh'
   const isMaterial = node.type === 'material'
   const meshVisible = isMesh ? (objects[nodeId]?.visible ?? node.visible ?? true) : true
   const materialUsesSystem = isMaterial ? Boolean(materials[nodeId]?.useSystemMaterial) : false
+  const hasVisibleMaterials = visibleMaterialChildren.length > 0
+  const materialsExpanded = outlinerMode === 'all' || isExpanded
+
+  useEffect(() => {
+    if (outlinerMode === 'all') {
+      setIsExpanded(true)
+    } else if (outlinerMode === 'meshes') {
+      setIsExpanded(false)
+    }
+  }, [outlinerMode])
+
+  if (shouldSkipOutlinerRow(node)) {
+    return (
+      <>
+        {visibleChildren.map((childId) => (
+          <TreeNode
+            key={childId}
+            nodeId={childId}
+            depth={depth}
+            searchQuery={searchQuery}
+            outlinerMode={outlinerMode}
+            highlightedNodeId={highlightedNodeId}
+          />
+        ))}
+        {visibleMaterialChildren.map((childId) => (
+          <TreeNode
+            key={childId}
+            nodeId={childId}
+            depth={depth}
+            searchQuery={searchQuery}
+            outlinerMode={outlinerMode}
+            highlightedNodeId={highlightedNodeId}
+          />
+        ))}
+      </>
+    )
+  }
 
   if (isIdentityWrapper(nodeId, sceneGraph, objects)) {
     return (
       <>
         {visibleChildren.map((childId) => (
-          <TreeNode key={childId} nodeId={childId} depth={depth} />
+          <TreeNode
+            key={childId}
+            nodeId={childId}
+            depth={depth}
+            searchQuery={searchQuery}
+            outlinerMode={outlinerMode}
+            highlightedNodeId={highlightedNodeId}
+          />
+        ))}
+      </>
+    )
+  }
+
+  if (!isMesh && !isMaterial) {
+    return (
+      <>
+        {visibleChildren.map((childId) => (
+          <TreeNode
+            key={childId}
+            nodeId={childId}
+            depth={depth}
+            searchQuery={searchQuery}
+            outlinerMode={outlinerMode}
+            highlightedNodeId={highlightedNodeId}
+          />
         ))}
       </>
     )
@@ -236,11 +428,28 @@ function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
   return (
     <>
       <button
-        className={`tree-node ${selectedObjectId === nodeId ? 'is-selected' : ''} ${!meshVisible ? 'is-dimmed' : ''} ${materialUsesSystem ? 'is-dimmed' : ''}`}
+        className={`tree-node ${highlightedNodeId === nodeId ? 'is-selected' : ''} ${!meshVisible ? 'is-dimmed' : ''} ${materialUsesSystem ? 'is-dimmed' : ''}`}
+        data-outliner-node-id={nodeId}
         style={{ paddingLeft: `${10 + depth * 12}px` }}
         onClick={() => setSelectedObjectId(nodeId)}
         type="button"
       >
+        {isMesh && hasVisibleMaterials ? (
+          <button
+            type="button"
+            className={`tree-node__chevron ${materialsExpanded ? 'is-expanded' : ''}`}
+            aria-label={materialsExpanded ? 'Collapse materials' : 'Expand materials'}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              setIsExpanded((current) => !current)
+            }}
+          >
+            <span aria-hidden="true">›</span>
+          </button>
+        ) : (
+          <span className="tree-node__chevron tree-node__chevron--placeholder" aria-hidden="true" />
+        )}
         {getNodeIcon(node.type)}
         <span className="tree-node__label">{node.label}</span>
         {(isMesh || isMaterial) ? (
@@ -280,23 +489,118 @@ function TreeNode({ nodeId, depth = 0 }: { nodeId: string; depth?: number }) {
           </span>
         ) : null}
       </button>
-      {node.children.map((childId) => (
-        <TreeNode key={childId} nodeId={childId} depth={depth + 1} />
+      {isMesh && materialsExpanded ? (
+        <div className="tree-materials__list">
+          {visibleMaterialChildren.map((childId) => (
+            <TreeNode
+              key={childId}
+              nodeId={childId}
+              depth={depth + 1}
+              searchQuery={searchQuery}
+              outlinerMode={outlinerMode}
+              highlightedNodeId={highlightedNodeId}
+            />
+          ))}
+        </div>
+      ) : null}
+      {visibleChildren.map((childId) => (
+        <TreeNode
+          key={childId}
+          nodeId={childId}
+          depth={depth + 1}
+          searchQuery={searchQuery}
+          outlinerMode={outlinerMode}
+          highlightedNodeId={highlightedNodeId}
+        />
       ))}
     </>
+  )
+}
+
+function ProjectToolbar({
+  onLoadModel,
+  onAddLight,
+  onLoadConfig,
+  onSaveConfig,
+  onResetScene,
+}: {
+  onLoadModel: () => void
+  onAddLight: () => void
+  onLoadConfig: () => void
+  onSaveConfig: () => void
+  onResetScene: () => void
+}) {
+  const [isResetConfirming, setIsResetConfirming] = useState(false)
+
+  useEffect(() => {
+    if (!isResetConfirming) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setIsResetConfirming(false), 3000)
+    const handlePointerMissed = () => setIsResetConfirming(false)
+
+    window.addEventListener('scene-pointer-missed', handlePointerMissed)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('scene-pointer-missed', handlePointerMissed)
+    }
+  }, [isResetConfirming])
+
+  const handleResetClick = () => {
+    if (!isResetConfirming) {
+      setIsResetConfirming(true)
+      return
+    }
+
+    setIsResetConfirming(false)
+    onResetScene()
+  }
+
+  return (
+    <div className="project-toolbar" aria-label="Project actions">
+      <button type="button" className="tool-button tool-button--secondary" onClick={onLoadModel}>
+        <span className="tool-button__glyph">GLB</span>
+        <span className="tool-button__label">load GLB</span>
+      </button>
+      <button type="button" className="tool-button tool-button--secondary" onClick={onAddLight}>
+        <span className="tool-button__glyph">LGT</span>
+        <span className="tool-button__label">Add Light</span>
+      </button>
+      <button type="button" className="tool-button tool-button--secondary" onClick={onLoadConfig}>
+        <span className="tool-button__glyph">LOAD</span>
+        <span className="tool-button__label">config</span>
+      </button>
+      <button type="button" className="tool-button tool-button--secondary" onClick={onSaveConfig}>
+        <span className="tool-button__glyph">SAVE</span>
+        <span className="tool-button__label">Config</span>
+      </button>
+      <button
+        type="button"
+        className={`tool-button tool-button--secondary project-toolbar__reset ${isResetConfirming ? 'is-reset-confirming' : ''}`}
+        onClick={handleResetClick}
+      >
+        <span className="tool-button__glyph">{isResetConfirming ? 'SURE?' : 'RST'}</span>
+        <span className="tool-button__label">Reset Scene</span>
+      </button>
+    </div>
   )
 }
 
 export function SceneManager() {
   const [sceneTab, setSceneTab] = useState<'reflections' | 'background'>('reflections')
   const [cameraTabOpen, setCameraTabOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [outlinerMode, setOutlinerMode] = useState<OutlinerMode>('meshes')
+  const [snappedFocalLength, setSnappedFocalLength] = useState<number | null>(null)
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const extraLights = useEditorStore((state) => state.extraLights)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const objects = useEditorStore((state) => state.objects)
   const materialCount = useEditorStore((state) => Object.keys(state.materials).length)
   const objectCount = useEditorStore((state) => Object.keys(state.objects).length)
-  const status = useEditorStore((state) => state.status)
   const assets = useEditorStore((state) => state.assets)
   const environment = useEditorStore((state) => state.environment)
   const viewer = useEditorStore((state) => state.viewer)
@@ -324,9 +628,19 @@ export function SceneManager() {
   const reflectionsInputRef = useRef<HTMLInputElement | null>(null)
   const backgroundInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
+  const focalSnapTimeoutRef = useRef<number | null>(null)
+  const outlinerListRef = useRef<HTMLDivElement | null>(null)
   const outlinerRootIds = rootNodeId
     ? getOutlinerEntryIds({ nodeId: rootNodeId, sceneGraph, objects, promoteChildren: true })
     : []
+  const materialNodeIds = Object.values(sceneGraph)
+    .filter((node) => node.type === 'material' && !shouldSkipOutlinerRow(node))
+    .map((node) => node.id)
+  const filteredMaterialNodeIds = materialNodeIds.filter((nodeId) =>
+    nodeMatchesSearch(nodeId, sceneGraph, searchQuery),
+  )
+  const visibleRootIds = outlinerRootIds.filter((nodeId) => nodeMatchesSearch(nodeId, sceneGraph, searchQuery))
+  const highlightedNodeId = resolveHighlightedNodeId(selectedObjectId, sceneGraph, outlinerMode)
 
   const clearReflections = () => {
     const { runtimeTextures, environment: currentEnvironment } = useEditorStore.getState()
@@ -340,6 +654,8 @@ export function SceneManager() {
       kind: 'default',
       source: null,
       customHdriUrl: null,
+      rotation: 0,
+      intensity: 1,
       background: environment.background === 'reflections' ? 'none' : environment.background,
     })
     setStatus('Reflections cleared.')
@@ -358,23 +674,76 @@ export function SceneManager() {
     setEnvironment({
       background: 'none',
       backgroundVisible: false,
+      backgroundRotation: 0,
+      backgroundIntensity: 1,
       source: assets.reflections ?? null,
       kind: assets.reflections ? 'hdri' : 'default',
     })
     setStatus('Background cleared.')
   }
 
+  const handleDownloadConfig = () => {
+    try {
+      downloadSceneConfig()
+      setStatus('Scene config exported.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to export config.')
+    }
+  }
+
+  const handleFocalLengthChange = (nextValue: number) => {
+    const snappedPreset = focalPresets.find((preset) => Math.abs(nextValue - preset) <= 2)
+    const finalValue = snappedPreset ?? nextValue
+
+    setViewer({ focalLength: finalValue })
+
+    if (snappedPreset == null) {
+      setSnappedFocalLength(null)
+      if (focalSnapTimeoutRef.current) {
+        window.clearTimeout(focalSnapTimeoutRef.current)
+        focalSnapTimeoutRef.current = null
+      }
+      return
+    }
+
+    setSnappedFocalLength(snappedPreset)
+    if (navigator.vibrate) {
+      navigator.vibrate(12)
+    }
+    if (focalSnapTimeoutRef.current) {
+      window.clearTimeout(focalSnapTimeoutRef.current)
+    }
+    focalSnapTimeoutRef.current = window.setTimeout(() => {
+      setSnappedFocalLength(null)
+      focalSnapTimeoutRef.current = null
+    }, 180)
+  }
+
+  useEffect(() => {
+    if (!highlightedNodeId || !outlinerListRef.current) {
+      return
+    }
+
+    const target = outlinerListRef.current.querySelector<HTMLElement>(`[data-outliner-node-id="${highlightedNodeId}"]`)
+    target?.scrollIntoView({ block: 'nearest' })
+  }, [highlightedNodeId, outlinerMode])
+
   return (
     <aside className="left-panel">
       <div className="left-panel__title">
-        <div>
-          <p className="panel-eyebrow">GLB Viewer</p>
-          <p className="panel-heading">Scene Tool</p>
-        </div>
+        <p className="panel-eyebrow">GLB Viewer</p>
         <p className="panel-meta">
           {objectCount} objects / {materialCount} materials
         </p>
       </div>
+      <ProjectToolbar
+        onLoadModel={() => modelInputRef.current?.click()}
+        onAddLight={addExtraLight}
+        onLoadConfig={() => configInputRef.current?.click()}
+        onSaveConfig={handleDownloadConfig}
+        onResetScene={requestSceneReset}
+      />
 
       <div className="left-panel__body">
         <section className="outliner-panel">
@@ -383,47 +752,94 @@ export function SceneManager() {
             <span className="left-accordion__meta">Scene Tree</span>
           </div>
           <div className="outliner-panel__content">
-            <div className="structure-toolbar">
-              <button type="button" className="tool-button tool-button--secondary left-full-button" onClick={addExtraLight}>
-                <span className="tool-button__glyph">LGT</span>
-                <span className="tool-button__label">Add Light</span>
-              </button>
+            <div className="search-container">
+              <label className="outliner-search">
+                <span className="visually-hidden">Search outliner</span>
+                <input
+                  className="search-input"
+                  type="text"
+                  value={searchQuery}
+                  placeholder="Search objects or materials"
+                  onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                />
+                {searchQuery.length > 0 ? (
+                  <button
+                    type="button"
+                    className="search-clear"
+                    aria-label="Clear search"
+                    title="Clear search"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    <span aria-hidden="true">✕</span>
+                  </button>
+                ) : null}
+              </label>
+              <div className="outliner-filters" aria-label="Outliner display mode">
+                {(['all', 'meshes', 'materials'] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={`outliner-filter ${outlinerMode === mode ? 'is-active' : ''}`}
+                    aria-label={`Show ${mode}`}
+                    title={`Show ${mode}`}
+                    onClick={() => setOutlinerMode(mode)}
+                  >
+                    {getOutlinerModeIcon(mode)}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="tree-view tree-view--accordion">
-              {outlinerRootIds.length ? (
-                outlinerRootIds.map((nodeId: string) => <TreeNode key={nodeId} nodeId={nodeId} />)
+            <div ref={outlinerListRef} className="tree-view tree-view--accordion">
+              {outlinerMode === 'materials' ? (
+                filteredMaterialNodeIds.length ? (
+                  filteredMaterialNodeIds.map((nodeId) => (
+                    <TreeNode
+                      key={nodeId}
+                      nodeId={nodeId}
+                      searchQuery={searchQuery}
+                      outlinerMode={outlinerMode}
+                      highlightedNodeId={highlightedNodeId}
+                    />
+                  ))
+                ) : (
+                  <p className="panel-empty">{materialNodeIds.length ? 'No matches.' : 'No materials.'}</p>
+                )
+              ) : visibleRootIds.length ? (
+                visibleRootIds.map((nodeId: string) => (
+                  <TreeNode
+                    key={nodeId}
+                    nodeId={nodeId}
+                    searchQuery={searchQuery}
+                    outlinerMode={outlinerMode}
+                    highlightedNodeId={highlightedNodeId}
+                  />
+                ))
               ) : (
-                <p className="panel-empty">Scene is empty.</p>
+                <p className="panel-empty">{outlinerRootIds.length ? 'No matches.' : 'Scene is empty.'}</p>
               )}
-              {extraLights.length ? (
+              {outlinerMode !== 'materials' && extraLights.length ? (
                 <div className="tree-subgroup">
                   <div className="tree-subgroup__title">Extra Lights</div>
-                  {extraLights.map((light) => (light ? <TreeNode key={light.id} nodeId={light.id} depth={0} /> : null))}
+                  {extraLights.map((light) =>
+                    light && nodeMatchesSearch(light.id, sceneGraph, searchQuery) ? (
+                      <TreeNode
+                        key={light.id}
+                        nodeId={light.id}
+                        depth={0}
+                        searchQuery={searchQuery}
+                        outlinerMode={outlinerMode}
+                        highlightedNodeId={highlightedNodeId}
+                      />
+                    ) : null,
+                  )}
                 </div>
               ) : null}
             </div>
           </div>
         </section>
 
-        <div className="left-panel__scroll">
-        <Accordion title="ASSETS" meta="Scene">
-          <div className="inspector-action-row">
-            <button type="button" className="tool-button tool-button--secondary" onClick={() => modelInputRef.current?.click()}>
-              <span className="tool-button__glyph">GLB</span>
-              <span className="tool-button__label">Load GLB</span>
-            </button>
-            <button type="button" className="tool-button tool-button--secondary" onClick={() => configInputRef.current?.click()}>
-              <span className="tool-button__glyph">CFG</span>
-              <span className="tool-button__label">Load Config</span>
-            </button>
-            <button type="button" className="tool-button tool-button--secondary left-full-button" onClick={requestSceneReset}>
-              <span className="tool-button__glyph">RST</span>
-              <span className="tool-button__label">Reset Scene</span>
-            </button>
-          </div>
-        </Accordion>
-
-        <Accordion title="SCENE" meta="Global">
+        <div className="settings-container">
+        <Accordion title="SCENE" meta="Global" className="scene-panel">
           <div className="left-controls">
             <div className="scene-tabs" role="tablist" aria-label="Scene controls">
               <button
@@ -445,19 +861,28 @@ export function SceneManager() {
                 BACKGROUND
               </button>
             </div>
-
+            <div className="scene-panel__content">
             {sceneTab === 'reflections' ? (
               <div className="left-controls__group">
-                <div className="left-controls__value">{assets.reflections ?? 'No HDRI loaded'}</div>
-                <div className="inspector-action-row">
-                  <button type="button" className="tool-button tool-button--secondary" onClick={() => reflectionsInputRef.current?.click()}>
+                <div className="scene-asset-row">
+                  <button type="button" className="tool-button tool-button--secondary scene-asset-row__trigger" onClick={() => reflectionsInputRef.current?.click()}>
                     <span className="tool-button__glyph">HDR</span>
-                    <span className="tool-button__label">{assets.reflections ? 'Replace' : 'Load HDRI'}</span>
+                    <span className="tool-button__label">{assets.reflections ? 'Load' : 'HDR'}</span>
                   </button>
-                  <button type="button" className="tool-button tool-button--secondary" onClick={clearReflections}>
-                    <span className="tool-button__glyph">CLR</span>
-                    <span className="tool-button__label">Clear</span>
-                  </button>
+                  <div className="left-controls__value left-controls__value--with-action">
+                    <span>{assets.reflections ?? 'No HDRI loaded'}</span>
+                    {assets.reflections ? (
+                      <button
+                        type="button"
+                        className="inline-clear-button"
+                        aria-label="Clear reflections"
+                        title="Clear reflections"
+                        onClick={clearReflections}
+                      >
+                        <span aria-hidden="true">✕</span>
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <label className="left-slider">
                   <span>Rotation</span>
@@ -521,16 +946,25 @@ export function SceneManager() {
                   </label>
                 ) : null}
                 </div>
-                <div className="left-controls__value">{assets.background ?? 'No background loaded'}</div>
-                <div className="inspector-action-row">
-                  <button type="button" className="tool-button tool-button--secondary" onClick={() => backgroundInputRef.current?.click()}>
+                <div className="scene-asset-row">
+                  <button type="button" className="tool-button tool-button--secondary scene-asset-row__trigger" onClick={() => backgroundInputRef.current?.click()}>
                     <span className="tool-button__glyph">360</span>
-                    <span className="tool-button__label">{assets.background ? 'Replace' : 'Load Background'}</span>
+                    <span className="tool-button__label">{assets.background ? 'Load' : '360'}</span>
                   </button>
-                  <button type="button" className="tool-button tool-button--secondary" onClick={clearBackground}>
-                    <span className="tool-button__glyph">CLR</span>
-                    <span className="tool-button__label">Clear</span>
-                  </button>
+                  <div className="left-controls__value left-controls__value--with-action">
+                    <span>{assets.background ?? 'No background loaded'}</span>
+                    {assets.background ? (
+                      <button
+                        type="button"
+                        className="inline-clear-button"
+                        aria-label="Clear background"
+                        title="Clear background"
+                        onClick={clearBackground}
+                      >
+                        <span aria-hidden="true">✕</span>
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <label className="left-slider">
                   <span>Background Rotation</span>
@@ -578,6 +1012,7 @@ export function SceneManager() {
                 </label>
               </div>
             ) : null}
+            </div>
           </div>
         </Accordion>
 
@@ -595,29 +1030,26 @@ export function SceneManager() {
               />
               <strong>{viewer.exposure.toFixed(2)}</strong>
             </label>
-            <div className="lens-preset-row">
-              {[8, 12, 17, 35, 50, 85].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  className={Math.round(viewer.focalLength) === preset ? 'is-active' : ''}
-                  onClick={() => setViewer({ focalLength: preset })}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-            <label className="left-slider">
+            <label className="left-slider left-slider--focal">
               <span>Focal Length</span>
               <input
                 type="range"
-                min="8"
-                max="200"
+                min="1"
+                max="150"
                 step="1"
                 value={viewer.focalLength}
-                onChange={(event) => setViewer({ focalLength: Number(event.currentTarget.value) })}
+                onChange={(event) => handleFocalLengthChange(Number(event.currentTarget.value))}
               />
-              <strong>{viewer.focalLength.toFixed(0)} mm</strong>
+              <div className="left-slider__ticks" aria-hidden="true">
+                {focalPresets.map((preset) => (
+                  <span
+                    key={preset}
+                    className="left-slider__tick"
+                    style={{ left: `${((preset - 1) / (150 - 1)) * 100}%` }}
+                  />
+                ))}
+              </div>
+              <strong className={snappedFocalLength != null ? 'is-snapped' : ''}>{viewer.focalLength.toFixed(0)} mm</strong>
             </label>
             <details className="left-subsection" open={cameraTabOpen} onToggle={(event) => setCameraTabOpen((event.currentTarget as HTMLDetailsElement).open)}>
               <summary className="left-subsection__summary">Depth of Field</summary>
@@ -737,55 +1169,6 @@ export function SceneManager() {
         </div>
       </div>
 
-      <div className="import-export-footer">
-        <div className="panel-header">
-          <div className="panel-header__row">
-            <div className="panel-header__stack">
-              <p className="panel-eyebrow">EXPORT / CONFIG</p>
-              <p className="panel-heading">JSON</p>
-            </div>
-          </div>
-        </div>
-        <div className="left-panel__footer-actions">
-          <div className="outliner-actions outliner-actions--secondary">
-            <button
-              type="button"
-              className="tool-button tool-button--secondary"
-              onClick={async () => {
-                try {
-                  await copySceneConfigToClipboard()
-                  setStatus('Scene config copied to clipboard.')
-                } catch (error) {
-                  console.error(error)
-                  setStatus('Failed to copy config to clipboard.')
-                }
-              }}
-            >
-              <span className="tool-button__glyph">CPY</span>
-              <span className="tool-button__label">Copy JSON</span>
-            </button>
-            <button
-              type="button"
-              className="tool-button tool-button--secondary"
-              onClick={() => {
-                try {
-                  downloadSceneConfig()
-                  setStatus('Scene config exported.')
-                } catch (error) {
-                  console.error(error)
-                  setStatus('Failed to export config.')
-                }
-              }}
-            >
-              <span className="tool-button__glyph">JSON</span>
-              <span className="tool-button__label">Export JSON</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="panel-footer">{status}</div>
-
       <input
         ref={modelInputRef}
         hidden
@@ -794,7 +1177,7 @@ export function SceneManager() {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
           if (!file) return
-          requestModelLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true })
+          requestModelLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: file.size })
           event.currentTarget.value = ''
         }}
       />
@@ -816,6 +1199,7 @@ export function SceneManager() {
             label: file.name,
             kind: isHdr ? 'hdri' : 'image',
             revokeAfter: false,
+            fileSize: null,
           })
           event.currentTarget.value = ''
         }}
@@ -828,7 +1212,13 @@ export function SceneManager() {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
           if (!file) return
-          requestEnvironmentLoad({ url: createObjectUrl(file), label: file.name, kind: 'panorama', revokeAfter: true })
+          requestEnvironmentLoad({
+            url: createObjectUrl(file),
+            label: file.name,
+            kind: 'panorama',
+            revokeAfter: true,
+            fileSize: null,
+          })
           event.currentTarget.value = ''
         }}
       />

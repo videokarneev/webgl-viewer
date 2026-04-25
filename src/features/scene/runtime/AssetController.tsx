@@ -64,7 +64,7 @@ export function AssetController({
           nextGraph.rootNodeId,
           null,
         )
-        setAssets({ model: modelRequest.label })
+        setAssets({ model: modelRequest.label, fileSize: modelRequest.fileSize })
         setStatus(`Model loaded: ${modelRequest.label}`)
         onRootLoaded(root)
         setViewer({ cameraMode: 'orbit' })

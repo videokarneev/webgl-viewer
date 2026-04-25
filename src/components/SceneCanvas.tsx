@@ -11,7 +11,6 @@ import { AssetController } from '../features/scene/runtime/AssetController'
 import { ConfigController } from '../features/scene/runtime/ConfigController'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
 import { SceneBindings } from '../features/scene/runtime/SceneBindings'
-import { TransformGizmo } from '../features/scene/runtime/TransformGizmo'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import { fitCameraToObject } from '../features/scene/runtime/shared'
 import { useViewportPresentation } from '../features/viewport/ViewportPresentationContext'
@@ -27,6 +26,7 @@ type RenderStats = {
   selectedTriangles: number
   textureCount: number
   textureMemoryMb: number
+  fileSize: number | null
 }
 
 function formatCompactMetric(value: number, fractionDigits = 0) {
@@ -72,13 +72,29 @@ function getMeshStats(object: THREE.Object3D | null) {
   }
 }
 
+function countMeshObjects(object: THREE.Object3D | null) {
+  let meshes = 0
+
+  object?.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) {
+      meshes += 1
+    }
+  })
+
+  return meshes
+}
+
 function calculateAssetTextures(
   root: THREE.Object3D | null,
   environment: ReturnType<typeof useEditorStore.getState>['environment'],
   runtimeTextures: ReturnType<typeof useEditorStore.getState>['runtimeTextures'],
 ) {
-  const uniqueTextures = new Map<string, THREE.Texture>()
+  const uniqueTextures = new Map<unknown, THREE.Texture>()
   const textureSlots = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap'] as const
+
+  const addTexture = (texture: THREE.Texture) => {
+    uniqueTextures.set(texture.image ?? texture.source ?? texture.uuid, texture)
+  }
 
   root?.traverse((child) => {
     if (!(child as THREE.Mesh).isMesh) {
@@ -97,18 +113,18 @@ function calculateAssetTextures(
       textureSlots.forEach((mapType) => {
         const texture = (material as THREE.MeshStandardMaterial)[mapType]
         if (texture?.isTexture) {
-          uniqueTextures.set(texture.uuid, texture)
+          addTexture(texture)
         }
       })
     })
   })
 
   if (environment.background === 'environment' && runtimeTextures.environmentBackground?.isTexture) {
-    uniqueTextures.set(runtimeTextures.environmentBackground.uuid, runtimeTextures.environmentBackground)
+    addTexture(runtimeTextures.environmentBackground)
   }
 
   if ((environment.kind === 'hdri' || environment.background === 'reflections') && runtimeTextures.environmentMap?.isTexture) {
-    uniqueTextures.set(runtimeTextures.environmentMap.uuid, runtimeTextures.environmentMap)
+    addTexture(runtimeTextures.environmentMap)
   }
 
   return [...uniqueTextures.values()]
@@ -184,6 +200,51 @@ function getAdaptiveHudStyle(backgroundMode: 'none' | 'environment' | 'color' | 
     strongColor: 'rgba(255, 255, 255, 0.98)',
     headerColor: 'rgba(255, 255, 255, 0.92)',
   }
+}
+
+function FullscreenButton() {
+  const [isFullscreenActive, setIsFullscreenActive] = useState(Boolean(document.fullscreenElement))
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreenActive(active)
+      document.body.classList.toggle('is-fullscreen', active)
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    handleFullscreenChange()
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.body.classList.remove('is-fullscreen')
+    }
+  }, [])
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      void document.documentElement.requestFullscreen()
+    } else if (document.exitFullscreen) {
+      void document.exitFullscreen()
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className={`fullscreen-button ${isFullscreenActive ? 'is-active' : ''}`}
+      aria-label={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
+      title={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
+      onClick={(event) => {
+        event.stopPropagation()
+        toggleFullscreen()
+      }}
+    >
+      <svg className="fullscreen-button__icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </button>
+  )
 }
 
 function RendererSettings() {
@@ -279,11 +340,12 @@ function FocusAreaVisualizer() {
   )
 }
 
-function FlightControls({ speed = 10 }: { speed?: number }) {
+function FlightControls() {
   const { camera, gl } = useThree()
   const controlsRef = useRef<any>(null)
   const lockInitialized = useRef(false)
   const keys = useRef({ KeyW: false, KeyA: false, KeyS: false, KeyD: false, KeyQ: false, KeyE: false })
+  const flightSpeed = useEditorStore((state) => state.viewer.flightSpeed)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
 
@@ -305,6 +367,10 @@ function FlightControls({ speed = 10 }: { speed?: number }) {
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (/^Digit[1-9]$/.test(event.code)) {
+        setViewer({ flightSpeed: Number(event.key) })
+      }
+
       if (event.code in keys.current) {
         keys.current[event.code as keyof typeof keys.current] = true
       }
@@ -340,14 +406,15 @@ function FlightControls({ speed = 10 }: { speed?: number }) {
         void document.exitPointerLock()
       }
     }
-  }, [gl])
+  }, [gl, setHud, setViewer])
 
   useFrame((_, delta) => {
     if (!controlsRef.current?.isLocked) {
       return
     }
 
-    const moveSpeed = speed * delta
+    const speedMultiplier = Math.pow(1.7783, flightSpeed - 5)
+    const moveSpeed = 10 * speedMultiplier * delta
     if (keys.current.KeyW) camera.translateZ(-moveSpeed)
     if (keys.current.KeyS) camera.translateZ(moveSpeed)
     if (keys.current.KeyA) camera.translateX(-moveSpeed)
@@ -427,7 +494,6 @@ function PerformanceProbe({
   root: THREE.Object3D | null
   onStats: (stats: RenderStats) => void
 }) {
-  const { gl } = useThree()
   const lastTelemetryRef = useRef(0)
   const fpsWindowRef = useRef({ lastTime: 0, frames: 0, fps: 0 })
 
@@ -457,12 +523,13 @@ function PerformanceProbe({
       selectedRuntimeObject && (selectedRuntimeObject as THREE.Mesh).isMesh ? (selectedRuntimeObject as THREE.Mesh) : null
     const totalStats = getMeshStats(root)
     const selectedStats = getMeshStats(selectedMesh)
+    const meshCount = countMeshObjects(root)
     const environment = editorState.environment
     const runtimeTextures = editorState.runtimeTextures
     const assetTextures = calculateAssetTextures(root, environment, runtimeTextures)
     const textureMemoryMb = estimateTextureMemoryBytes(assetTextures) / (1024 * 1024)
     onStats({
-      calls: gl.info.render.calls,
+      calls: meshCount,
       fps: Math.round(fpsWindowRef.current.fps),
       totalVertices: totalStats.vertices,
       totalTriangles: totalStats.triangles,
@@ -471,6 +538,7 @@ function PerformanceProbe({
       selectedTriangles: selectedStats.triangles,
       textureCount: assetTextures.length,
       textureMemoryMb,
+      fileSize: editorState.assets.fileSize,
     })
   })
 
@@ -646,7 +714,6 @@ function SceneRuntime({
       {hud.axesVisible ? <axesHelper args={[2]} /> : null}
       <FocusAreaVisualizer />
       {root ? <LoadedSceneRoot root={root} /> : null}
-      <TransformGizmo />
       {viewer.cameraMode === 'orbit' ? (
         <OrbitControls
           ref={controlsRef}
@@ -686,6 +753,7 @@ export function SceneCanvas() {
     selectedTriangles: 0,
     textureCount: 0,
     textureMemoryMb: 0,
+    fileSize: null,
   })
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
@@ -693,6 +761,7 @@ export function SceneCanvas() {
 
   return (
     <div className="viewport-shell">
+      <FullscreenButton />
       <div
         className="performance-stats"
         style={
@@ -723,7 +792,12 @@ export function SceneCanvas() {
         <div className="performance-stats__spacer" />
         <div className="performance-stats__row">
           <span>VRAM TEXTURES</span>
-          <strong>{`${stats.textureCount} (${stats.textureMemoryMb.toFixed(1)} MB)`}</strong>
+          <strong>{`${stats.textureCount} (${(stats.textureMemoryMb + (stats.totalVertices * 44) / (1024 * 1024)).toFixed(1)} MB)`}</strong>
+          <strong />
+        </div>
+        <div className="performance-stats__row">
+          <span>DISK</span>
+          <strong>{stats.fileSize == null ? '--' : `${(stats.fileSize / 1000 / 1000).toFixed(2)} MB`}</strong>
           <strong />
         </div>
         <div className="performance-stats__row">
@@ -743,6 +817,7 @@ export function SceneCanvas() {
         gl={{ antialias: true }}
         dpr={[1, 2]}
         onPointerMissed={(event) => {
+          window.dispatchEvent(new Event('scene-pointer-missed'))
           const pointerEvent = event as MouseEvent & { delta?: number }
           if ((pointerEvent.delta ?? 0) <= 2) {
             setSelectedObjectId(null)

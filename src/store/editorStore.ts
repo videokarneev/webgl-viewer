@@ -121,6 +121,7 @@ export interface ViewportHudState {
 
 export interface ViewerState {
   cameraMode: 'orbit' | 'firstPerson'
+  flightSpeed: number
   focalLength: number
   exposure: number
   cameraPosition: [number, number, number]
@@ -161,12 +162,14 @@ export interface AssetSourceState {
   atlas: string | null
   reflections: string | null
   background: string | null
+  fileSize: number | null
 }
 
 export interface AssetRequest {
   url: string
   label: string
   revokeAfter: boolean
+  fileSize: number | null
   nonce: number
 }
 
@@ -312,6 +315,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   },
   viewer: {
     cameraMode: 'orbit',
+    flightSpeed: 5,
     focalLength: 12,
     exposure: 1,
     cameraPosition: [4, 3, 5],
@@ -327,6 +331,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     atlas: null,
     reflections: null,
     background: null,
+    fileSize: null,
   },
   extraLights: [],
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
@@ -837,6 +842,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         },
         viewer: {
           cameraMode: 'orbit',
+          flightSpeed: 5,
           focalLength: 12,
           exposure: 1,
           cameraPosition: [4, 3, 5],
@@ -859,6 +865,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           atlas: null,
           reflections: null,
           background: null,
+          fileSize: null,
         },
         extraLights: [],
         runtimeTextures: {

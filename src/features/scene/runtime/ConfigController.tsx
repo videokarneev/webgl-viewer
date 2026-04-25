@@ -44,6 +44,7 @@ export function ConfigController({
         url: configRequest.config.assets.model,
         label: configRequest.config.assets.model,
         revokeAfter: false,
+        fileSize: null,
       })
     }
     if (configRequest.config.assets?.atlas) {
@@ -51,6 +52,7 @@ export function ConfigController({
         url: configRequest.config.assets.atlas,
         label: configRequest.config.assets.atlas,
         revokeAfter: false,
+        fileSize: null,
       })
     }
     if (configRequest.config.assets?.hdri) {
@@ -59,6 +61,7 @@ export function ConfigController({
         label: configRequest.config.assets.hdri,
         kind: 'hdri',
         revokeAfter: false,
+        fileSize: null,
       })
     }
     if (configRequest.config.assets?.panorama) {
@@ -67,6 +70,7 @@ export function ConfigController({
         label: configRequest.config.assets.panorama,
         kind: 'panorama',
         revokeAfter: false,
+        fileSize: null,
       })
     }
   }, [configRequest, requestAtlasLoad, requestEnvironmentLoad, requestModelLoad, setStatus])

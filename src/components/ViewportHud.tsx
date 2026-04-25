@@ -31,11 +31,38 @@ function IconButton({
 export function ViewportHud({ onResetCamera }: { onResetCamera: () => void }) {
   const hud = useEditorStore((state) => state.hud)
   const cameraMode = useEditorStore((state) => state.viewer.cameraMode)
+  const flightSpeed = useEditorStore((state) => state.viewer.flightSpeed)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
 
   return (
     <div className="viewport-hud" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+      {cameraMode === 'firstPerson' ? (
+        <div
+          className="viewport-hud__speed-row"
+          role="toolbar"
+          aria-label="Flight speed"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              className={flightSpeed === speed ? 'is-active' : ''}
+              aria-label={`Set flight speed ${speed}`}
+              title={`Flight speed ${speed}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                setViewer({ flightSpeed: speed })
+              }}
+            >
+              {speed}
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div
         className="viewport-hud__group"
         role="toolbar"

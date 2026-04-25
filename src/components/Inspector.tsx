@@ -95,104 +95,6 @@ function LevaSection({ store }: { store: ReturnType<typeof useCreateStore> }) {
   )
 }
 
-function TransformSection({ objectId }: { objectId: string }) {
-  const store = useCreateStore()
-  const object = useEditorStore((state) => state.objects[objectId])
-  const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
-
-  if (!object) {
-    return null
-  }
-
-  useControls(
-    () => ({
-      positionX: {
-        value: object.position[0],
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, { position: [value, object.position[1], object.position[2]] }),
-      },
-      positionY: {
-        value: object.position[1],
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, { position: [object.position[0], value, object.position[2]] }),
-      },
-      positionZ: {
-        value: object.position[2],
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, { position: [object.position[0], object.position[1], value] }),
-      },
-      rotationX: {
-        value: THREE.MathUtils.radToDeg(object.rotation[0]),
-        min: -180,
-        max: 180,
-        step: 1,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, {
-            rotation: [THREE.MathUtils.degToRad(value), object.rotation[1], object.rotation[2]],
-          }),
-      },
-      rotationY: {
-        value: THREE.MathUtils.radToDeg(object.rotation[1]),
-        min: -180,
-        max: 180,
-        step: 1,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, {
-            rotation: [object.rotation[0], THREE.MathUtils.degToRad(value), object.rotation[2]],
-          }),
-      },
-      rotationZ: {
-        value: THREE.MathUtils.radToDeg(object.rotation[2]),
-        min: -180,
-        max: 180,
-        step: 1,
-        onChange: (value: number) =>
-          updateObjectTransform(objectId, {
-            rotation: [object.rotation[0], object.rotation[1], THREE.MathUtils.degToRad(value)],
-          }),
-      },
-      scaleX: {
-        value: object.scale[0],
-        min: 0.01,
-        max: 10,
-        step: 0.01,
-        onChange: (value: number) => updateObjectTransform(objectId, { scale: [value, object.scale[1], object.scale[2]] }),
-      },
-      scaleY: {
-        value: object.scale[1],
-        min: 0.01,
-        max: 10,
-        step: 0.01,
-        onChange: (value: number) => updateObjectTransform(objectId, { scale: [object.scale[0], value, object.scale[2]] }),
-      },
-      scaleZ: {
-        value: object.scale[2],
-        min: 0.01,
-        max: 10,
-        step: 0.01,
-        onChange: (value: number) => updateObjectTransform(objectId, { scale: [object.scale[0], object.scale[1], value] }),
-      },
-    }),
-    { store },
-    [object, objectId, updateObjectTransform],
-  )
-
-  return (
-    <SectionPanel title="Transform">
-      <LevaSection store={store} />
-    </SectionPanel>
-  )
-}
-
 function MaterialBaseSection({ materialId }: { materialId: string }) {
   const store = useCreateStore()
   const material = useEditorStore((state) => state.materials[materialId])
@@ -423,7 +325,7 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
           if (!file) return
-          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true })
+          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: null })
           event.currentTarget.value = ''
         }}
       />
@@ -434,9 +336,7 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
 function LightSection({ objectId }: { objectId: string }) {
   const store = useCreateStore()
   const light = useEditorStore((state) => state.runtime.objectById[objectId] as THREE.Light | undefined)
-  const object = useEditorStore((state) => state.objects[objectId])
   const extraLight = useEditorStore((state) => state.extraLights.find((entry) => entry.id === objectId))
-  const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
 
   const lightWithShadows = light as (THREE.Light & { castShadow?: boolean; shadow?: { bias: number } }) | undefined
@@ -461,42 +361,6 @@ function LightSection({ objectId }: { objectId: string }) {
           if (light) light.intensity = value
           updateExtraLight(objectId, { intensity: value })
         },
-      },
-      positionX: {
-        value: object?.position[0] ?? 0,
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          object &&
-          (updateObjectTransform(objectId, {
-            position: [value, object.position[1], object.position[2]],
-          }),
-          updateExtraLight(objectId, { position: [value, object.position[1], object.position[2]] })),
-      },
-      positionY: {
-        value: object?.position[1] ?? 0,
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          object &&
-          (updateObjectTransform(objectId, {
-            position: [object.position[0], value, object.position[2]],
-          }),
-          updateExtraLight(objectId, { position: [object.position[0], value, object.position[2]] })),
-      },
-      positionZ: {
-        value: object?.position[2] ?? 0,
-        min: -20,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) =>
-          object &&
-          (updateObjectTransform(objectId, {
-            position: [object.position[0], object.position[1], value],
-          }),
-          updateExtraLight(objectId, { position: [object.position[0], object.position[1], value] })),
       },
       distance: {
         value: extraLight?.distance ?? (pointLikeLight && 'distance' in pointLikeLight ? pointLikeLight.distance : 0),
@@ -553,7 +417,7 @@ function LightSection({ objectId }: { objectId: string }) {
       },
     }),
     { store },
-    [extraLight, light, lightWithShadows?.castShadow, lightWithShadows?.shadow?.bias, object, objectId, pointLikeLight, spotLight, updateExtraLight, updateObjectTransform],
+    [extraLight, light, lightWithShadows?.castShadow, lightWithShadows?.shadow?.bias, objectId, pointLikeLight, spotLight, updateExtraLight],
   )
 
   return (
@@ -576,7 +440,6 @@ export function InspectorContent() {
     return (
       <>
         <LightSection objectId={selectedNode.id} />
-        <TransformSection objectId={selectedNode.id} />
       </>
     )
   }
@@ -588,11 +451,8 @@ export function InspectorContent() {
         ? selectedNode.children.find((childId) => sceneGraph[childId]?.type === 'material') ?? null
         : null
 
-  const showTransform = selectedNode.type === 'mesh' || selectedNode.type === 'group'
-
   return (
     <>
-      {showTransform ? <TransformSection objectId={selectedNode.id} /> : null}
       {selectedMaterialId ? (
         <>
           <MaterialBaseSection materialId={selectedMaterialId} />

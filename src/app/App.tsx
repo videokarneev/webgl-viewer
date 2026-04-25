@@ -22,7 +22,7 @@ function routeDroppedFile(file: File) {
   }
 
   if (file.name.match(/\.(glb|gltf)$/i)) {
-    store.requestModelLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true })
+    store.requestModelLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true, fileSize: file.size })
     return
   }
 
@@ -34,12 +34,13 @@ function routeDroppedFile(file: File) {
       label: file.name,
       kind: 'hdri',
       revokeAfter: false,
+      fileSize: null,
     })
     return
   }
 
   if (file.name.match(/\.(png|jpg|jpeg|webp)$/i)) {
-    store.requestAtlasLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true })
+    store.requestAtlasLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true, fileSize: null })
   }
 }
 
@@ -53,8 +54,8 @@ export function App() {
       return
     }
     didBootstrapRef.current = true
-    requestModelLoad({ url: '/assets/ring.glb', label: 'demo://ring.glb', revokeAfter: false })
-    requestAtlasLoad({ url: '/assets/fire.jpg', label: 'demo://fire.jpg', revokeAfter: false })
+    requestModelLoad({ url: '/assets/ring.glb', label: 'demo://ring.glb', revokeAfter: false, fileSize: null })
+    requestAtlasLoad({ url: '/assets/fire.jpg', label: 'demo://fire.jpg', revokeAfter: false, fileSize: null })
   }, [requestAtlasLoad, requestModelLoad])
 
   return (

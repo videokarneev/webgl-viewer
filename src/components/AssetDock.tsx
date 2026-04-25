@@ -104,7 +104,7 @@ export function AssetDock() {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
           if (!file) return
-          requestModelLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true })
+          requestModelLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: file.size })
           event.currentTarget.value = ''
         }}
       />
@@ -117,7 +117,7 @@ export function AssetDock() {
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
           if (!file) return
-          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true })
+          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: null })
           event.currentTarget.value = ''
         }}
       />
@@ -137,6 +137,7 @@ export function AssetDock() {
             label: file.name,
             kind: 'hdri',
             revokeAfter: false,
+            fileSize: null,
           })
           event.currentTarget.value = ''
         }}
