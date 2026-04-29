@@ -28,7 +28,7 @@ function routeDroppedFile(file: File) {
 
   if (file.name.match(/\.hdr$/i)) {
     const url = URL.createObjectURL(file)
-    store.setEnvironment({ customHdriUrl: url })
+    store.setEnvironment({ customHdriUrl: url, isEnvironmentEnabled: true })
     store.requestEnvironmentLoad({
       url,
       label: file.name,

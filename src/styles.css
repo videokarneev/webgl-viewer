@@ -101,7 +101,7 @@ button {
   z-index: 10;
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.08fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.08fr);
   gap: 3px;
   padding: 7px 7px 6px;
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
@@ -155,13 +155,21 @@ button {
 }
 
 .outliner-panel {
-  flex: 1 1 auto;
-  min-height: 150px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  display: block;
+  flex: 0 1 auto;
+  min-height: 33vh;
+  max-height: 50vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border: 1px solid rgba(165, 197, 216, 0.07);
-  background: rgba(10, 13, 17, 0.92);
+  background: rgba(8, 10, 13, 0.94);
+}
+
+.outliner-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(8, 10, 13, 0.94);
 }
 
 .outliner-panel__header {
@@ -177,21 +185,177 @@ button {
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
 }
 
-.outliner-panel__content {
-  display: block;
-  padding: 0 8px 6px;
+.settings-container {
+  display: none;
 }
 
-.settings-container {
-  flex: 0 0 auto;
-  overflow-y: auto;
-  overflow-x: hidden;
-  max-height: 60vh;
-  border-top: 1px solid #333;
-  padding-top: 8px;
+.settings-panel {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid rgba(165, 197, 216, 0.07);
+  background: rgba(10, 13, 17, 0.92);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+}
+
+.settings-panel__tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 7px;
+  border-bottom: 1px solid rgba(165, 197, 216, 0.07);
+}
+
+.settings-panel__tabs button {
+  min-height: 24px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(11, 15, 19, 0.92);
+  color: rgba(171, 196, 208, 0.66);
+  font-size: 8px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+
+.settings-panel__tabs button:hover {
+  border-color: rgba(117, 185, 220, 0.18);
+  color: rgba(224, 238, 245, 0.82);
+}
+
+.settings-panel__tabs button.is-active {
+  border-color: rgba(117, 185, 220, 0.24);
+  background: rgba(73, 118, 144, 0.18);
+  color: rgba(239, 245, 248, 0.92);
+}
+
+.settings-panel__content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-tab {
+  flex: 1 1 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px;
+}
+
+.fx-buttons-row {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.fx-buttons-row .tool-button.is-active {
+  border-color: rgba(117, 185, 220, 0.24);
+  background: rgba(73, 118, 144, 0.18);
+  color: rgba(239, 245, 248, 0.92);
+}
+
+.light-type-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid rgba(165, 197, 216, 0.06);
+  background: rgba(11, 15, 19, 0.92);
+  overflow: hidden;
+}
+
+.light-type-grid .tool-button {
+  min-width: 0;
+  border-width: 0 1px 0 0;
+}
+
+.light-type-grid .tool-button:last-child {
+  border-right: 0;
+}
+
+.light-type-grid .tool-button__label {
+  font-size: 6px;
+}
+
+.tool-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.tool-button:disabled:hover {
+  border-color: rgba(165, 197, 216, 0.06);
+  background: linear-gradient(180deg, #10151a 0%, #0b1014 100%);
+}
+
+.light-type-grid .tool-button.is-occupied:disabled {
+  background: linear-gradient(180deg, #16171a 0%, #101215 100%);
+  border-right-color: rgba(220, 38, 38, 0.16);
+}
+
+.settings-note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgba(178, 201, 212, 0.62);
+}
+
+.light-intensity-row {
+  display: grid;
+  grid-template-columns: auto 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.light-intensity-row__label {
+  font-size: 10px;
+  color: rgba(219, 232, 239, 0.76);
+}
+
+.light-intensity-row__slider {
+  width: 100%;
+  margin: 0;
+  accent-color: #75b1d1;
+}
+
+.light-intensity-row__value {
+  font-size: 10px;
+  color: rgba(149, 192, 214, 0.86);
+}
+
+.light-color-swatch {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+}
+
+.light-color-swatch__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.light-color-swatch__chip {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 1px solid rgba(165, 197, 216, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.settings-block {
+  animation: slideIn 0.2s ease-out;
 }
 
 .panel-header {
@@ -248,7 +412,10 @@ button {
 }
 
 .scene-panel__content {
-  height: 180px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
@@ -323,7 +490,7 @@ button {
   align-items: center;
   position: relative;
   gap: 6px;
-  padding: 6px 0 4px;
+  padding: 0 8px 8px;
 }
 
 .outliner-search {
@@ -468,24 +635,13 @@ button {
 }
 
 .tree-view--accordion {
-  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
   padding: 2px 0 0;
 }
 
-.tree-subgroup {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(165, 197, 216, 0.06);
-}
-
-.tree-subgroup__title {
-  padding: 0 8px 4px;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: rgba(160, 186, 199, 0.5);
+.outliner-list {
+  overflow-y: auto;
+  flex: 1;
 }
 
 .tree-node {
@@ -619,6 +775,11 @@ button {
   color: rgba(245, 248, 250, 0.96);
 }
 
+.tree-action:disabled {
+  opacity: 0.22;
+  cursor: not-allowed;
+}
+
 .tree-action__icon {
   width: 16px;
   height: 16px;
@@ -724,7 +885,10 @@ button {
 }
 
 .left-controls {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   gap: 8px;
   padding-top: 6px;
 }
@@ -779,8 +943,18 @@ button {
   padding: 2px 6px;
 }
 
+.scene-asset-row__map {
+  min-width: 46px;
+}
+
 .scene-asset-row__trigger .tool-button__label {
   font-size: 6px;
+}
+
+.scene-asset-row__restore {
+  flex: 1 1 auto;
+  min-height: 24px;
+  padding: 2px 8px;
 }
 
 .scene-inline-controls {
@@ -868,6 +1042,22 @@ button {
 
 .inline-clear-button:hover {
   color: rgba(220, 38, 38, 0.74);
+}
+
+.settings-remove-button:hover {
+  color: rgba(220, 38, 38, 0.82);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .left-slider,
@@ -1128,19 +1318,21 @@ button {
   color: rgba(234, 243, 248, 0.9);
 }
 
-.fullscreen-button {
+.fullscreen-btn {
   position: absolute;
-  right: 340px;
-  bottom: 20px;
+  right: 12px;
+  bottom: 12px;
   z-index: 40;
-  width: 34px;
-  height: 34px;
+  width: 42px;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  background: none !important;
+  border: none;
+  border-radius: 0;
+  color: var(--fullscreen-color, rgba(209, 224, 232, 0.76));
+  box-shadow: none;
   padding: 0;
   cursor: pointer;
   transition:
@@ -1148,19 +1340,17 @@ button {
     opacity 120ms ease;
 }
 
-.fullscreen-button:hover {
-  color: rgba(255, 255, 255, 0.96);
+.fullscreen-btn:hover {
+  color: var(--fullscreen-hover-color, rgba(234, 243, 248, 0.9));
 }
 
-.fullscreen-button__icon {
-  width: 20px;
-  height: 20px;
+.fullscreen-btn__icon {
+  width: 16px;
+  height: 16px;
 }
 
-.fullscreen-button.is-active {
-  background-color: rgba(59, 130, 246, 0.2) !important;
-  color: #60a5fa !important;
-  border: 1px solid rgba(96, 165, 250, 0.5) !important;
+.fullscreen-btn.is-active {
+  color: var(--fullscreen-active-color, rgba(234, 243, 248, 0.9));
 }
 
 .performance-stats {
@@ -1238,9 +1428,6 @@ button {
     left: calc(292px + 20px);
   }
 
-  .fullscreen-button {
-    right: 304px;
-  }
 }
 
 @media (max-width: 980px) {
@@ -1277,9 +1464,9 @@ button {
     bottom: 12px;
   }
 
-  .fullscreen-button {
-    right: 14px;
-    bottom: calc(42vh + 14px);
+  .fullscreen-btn {
+    right: 12px;
+    bottom: calc(42vh + 12px);
   }
 
   .performance-stats {

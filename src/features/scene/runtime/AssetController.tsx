@@ -181,11 +181,12 @@ export function AssetController({
         setEnvironmentTextures({
           environmentMap: envMap,
         })
-        setEnvironment({
-          source: environmentRequest.label,
-          customHdriUrl: environmentRequest.url,
-          kind: 'hdri',
-        })
+          setEnvironment({
+            source: environmentRequest.label,
+            customHdriUrl: environmentRequest.url,
+            kind: 'hdri',
+            isEnvironmentEnabled: true,
+          })
         setAssets({ reflections: environmentRequest.label })
         setStatus(`Environment loaded: ${environmentRequest.label}`)
 
@@ -198,6 +199,7 @@ export function AssetController({
             customHdriUrl: null,
             kind: 'default',
             source: null,
+            isEnvironmentEnabled: true,
           })
           setAssets({ reflections: null })
         }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls, PointerLockControls, Stats } from '@react-three/drei'
 import { EffectComposer, Bloom, DepthOfField, ToneMapping } from '@react-three/postprocessing'
@@ -202,7 +202,161 @@ function getAdaptiveHudStyle(backgroundMode: 'none' | 'environment' | 'color' | 
   }
 }
 
-function FullscreenButton() {
+type OverlayTone = 'light' | 'dark'
+
+function getOverlayToneFromColor(backgroundColor: string): OverlayTone {
+  const color = new THREE.Color(backgroundColor)
+  const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b
+  return luminance >= 0.5 ? 'dark' : 'light'
+}
+
+function sampleTextureLuminance(texture: THREE.Texture | null) {
+  if (!texture) {
+    return null
+  }
+
+  const source = Array.isArray(texture.source?.data)
+    ? texture.source?.data[0]
+    : texture.source?.data ?? texture.image
+
+  if (!source) {
+    return null
+  }
+
+  if (
+    'data' in source &&
+    source.data &&
+    typeof source.width === 'number' &&
+    typeof source.height === 'number'
+  ) {
+    const typedData = source.data as ArrayLike<number>
+    const width = source.width
+    const height = source.height
+
+    if (!width || !height || typedData.length < 3) {
+      return null
+    }
+
+    const sampleSteps = 6
+    let total = 0
+    let samples = 0
+
+    for (let y = 0; y < sampleSteps; y += 1) {
+      for (let x = 0; x < sampleSteps; x += 1) {
+        const px = Math.min(width - 1, Math.floor((x / Math.max(sampleSteps - 1, 1)) * (width - 1)))
+        const py = Math.min(height - 1, Math.floor((y / Math.max(sampleSteps - 1, 1)) * (height - 1)))
+        const index = (py * width + px) * 4
+        const r = Math.min(1, Math.max(0, Number(typedData[index] ?? 0)))
+        const g = Math.min(1, Math.max(0, Number(typedData[index + 1] ?? 0)))
+        const b = Math.min(1, Math.max(0, Number(typedData[index + 2] ?? 0)))
+        total += 0.2126 * r + 0.7152 * g + 0.0722 * b
+        samples += 1
+      }
+    }
+
+    return samples ? total / samples : null
+  }
+
+  if (
+    source instanceof HTMLImageElement ||
+    source instanceof HTMLCanvasElement ||
+    source instanceof ImageBitmap
+  ) {
+    const width = 'naturalWidth' in source ? source.naturalWidth : source.width
+    const height = 'naturalHeight' in source ? source.naturalHeight : source.height
+
+    if (!width || !height) {
+      return null
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 8
+    canvas.height = 8
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+
+    if (!context) {
+      return null
+    }
+
+    context.drawImage(source, 0, 0, canvas.width, canvas.height)
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+
+    let total = 0
+    let samples = 0
+
+    for (let index = 0; index < data.length; index += 4) {
+      const r = data[index] / 255
+      const g = data[index + 1] / 255
+      const b = data[index + 2] / 255
+      total += 0.2126 * r + 0.7152 * g + 0.0722 * b
+      samples += 1
+    }
+
+    return samples ? total / samples : null
+  }
+
+  return null
+}
+
+function getAdaptiveOverlayTone(
+  backgroundMode: 'none' | 'environment' | 'color' | 'reflections',
+  backgroundColor: string,
+  environment: ReturnType<typeof useEditorStore.getState>['environment'],
+  runtimeTextures: ReturnType<typeof useEditorStore.getState>['runtimeTextures'],
+): OverlayTone {
+  if (backgroundMode === 'color') {
+    return getOverlayToneFromColor(backgroundColor)
+  }
+
+  if (backgroundMode === 'none') {
+    return 'light'
+  }
+
+  const texture =
+    backgroundMode === 'environment'
+      ? runtimeTextures.environmentBackground
+      : runtimeTextures.environmentMap
+
+  const sampledLuminance = sampleTextureLuminance(texture)
+  if (sampledLuminance != null) {
+    return sampledLuminance >= 0.52 ? 'dark' : 'light'
+  }
+
+  const intensityHint =
+    backgroundMode === 'environment'
+      ? environment.backgroundIntensity
+      : environment.intensity + (environment.isEnvironmentEnabled ? 0.15 : 0)
+
+  return intensityHint >= 0.95 ? 'dark' : 'light'
+}
+
+function getFullscreenButtonStyle(tone: OverlayTone, color: string): CSSProperties {
+  if (tone === 'dark') {
+    return {
+      '--fullscreen-bg': 'rgba(248, 250, 252, 0.74)',
+      '--fullscreen-border': 'rgba(15, 23, 42, 0.14)',
+      '--fullscreen-color': color,
+      '--fullscreen-hover-border': 'rgba(15, 23, 42, 0.28)',
+      '--fullscreen-hover-color': 'rgba(0, 0, 0, 0.92)',
+      '--fullscreen-active-bg': 'rgba(73, 118, 144, 0.18)',
+      '--fullscreen-active-border': 'rgba(39, 85, 110, 0.32)',
+      '--fullscreen-active-color': color,
+    } as CSSProperties
+  }
+
+  return {
+    '--fullscreen-bg': 'rgba(10, 14, 18, 0.82)',
+    '--fullscreen-border': 'rgba(165, 197, 216, 0.08)',
+    '--fullscreen-color': color,
+    '--fullscreen-hover-border': 'rgba(120, 194, 233, 0.18)',
+    '--fullscreen-hover-color': 'rgba(234, 243, 248, 0.9)',
+    '--fullscreen-active-bg': 'rgba(74, 119, 145, 0.24)',
+    '--fullscreen-active-border': 'rgba(120, 194, 233, 0.22)',
+    '--fullscreen-active-color': color,
+  } as CSSProperties
+}
+
+function FullscreenButton({ tone, color }: { tone: OverlayTone; color: string }) {
   const [isFullscreenActive, setIsFullscreenActive] = useState(Boolean(document.fullscreenElement))
 
   useEffect(() => {
@@ -232,7 +386,8 @@ function FullscreenButton() {
   return (
     <button
       type="button"
-      className={`fullscreen-button ${isFullscreenActive ? 'is-active' : ''}`}
+      className={`fullscreen-btn ${isFullscreenActive ? 'is-active' : ''}`}
+      style={getFullscreenButtonStyle(tone, color)}
       aria-label={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
       title={isFullscreenActive ? 'Exit fullscreen' : 'Enter fullscreen'}
       onClick={(event) => {
@@ -240,7 +395,7 @@ function FullscreenButton() {
         toggleFullscreen()
       }}
     >
-      <svg className="fullscreen-button__icon" viewBox="0 0 24 24" aria-hidden="true">
+      <svg className="fullscreen-btn__icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </button>
@@ -577,17 +732,18 @@ function ManagedExtraLight({
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
   updateObjectTransform: (id: string, patch: { position: [number, number, number] }) => void
 }) {
-  const ref = useRef<THREE.PointLight | null>(null)
+  const ref = useRef<THREE.Light | null>(null)
+  const targetRef = useRef<THREE.Object3D | null>(null)
 
   useEffect(() => {
     registerObjectRef(light.id, ref.current)
     return () => {
       registerObjectRef(light.id, null)
     }
-  }, [light.id, registerObjectRef])
+  }, [light.id, light.type, registerObjectRef])
 
   useFrame(() => {
-    if (!ref.current) {
+    if (!ref.current || light.type === 'ambient') {
       return
     }
 
@@ -600,17 +756,86 @@ function ManagedExtraLight({
       updateExtraLight(light.id, { position: nextPosition })
       updateObjectTransform(light.id, { position: nextPosition })
     }
+
+    if (light.type === 'directional' || light.type === 'spot') {
+      const target = targetRef.current
+      if (!target) {
+        return
+      }
+
+      const nextTargetPosition: [number, number, number] = [target.position.x, target.position.y, target.position.z]
+      if (
+        nextTargetPosition[0] !== light.targetPosition[0] ||
+        nextTargetPosition[1] !== light.targetPosition[1] ||
+        nextTargetPosition[2] !== light.targetPosition[2]
+      ) {
+        updateExtraLight(light.id, { targetPosition: nextTargetPosition })
+      }
+    }
   })
+
+  if (light.type === 'ambient') {
+    return (
+      <ambientLight
+        ref={ref as React.RefObject<THREE.AmbientLight>}
+        intensity={light.intensity}
+        color={light.color}
+        visible={light.visible}
+      />
+    )
+  }
+
+  if (light.type === 'directional') {
+    return (
+      <>
+        <directionalLight
+          ref={ref as React.RefObject<THREE.DirectionalLight>}
+          position={light.position}
+          intensity={light.intensity}
+          color={light.color}
+          visible={light.visible}
+          castShadow={light.castShadow}
+          shadow-bias={light.shadowBias}
+          target={targetRef.current ?? undefined}
+        />
+        <object3D ref={targetRef} position={light.targetPosition} />
+      </>
+    )
+  }
+
+  if (light.type === 'spot') {
+    return (
+      <>
+        <spotLight
+          ref={ref as React.RefObject<THREE.SpotLight>}
+          position={light.position}
+          intensity={light.intensity}
+          distance={light.distance}
+          decay={light.decay}
+          angle={THREE.MathUtils.degToRad(light.angle)}
+          penumbra={light.penumbra}
+          color={light.color}
+          visible={light.visible}
+          castShadow={light.castShadow}
+          shadow-bias={light.shadowBias}
+          target={targetRef.current ?? undefined}
+        />
+        <object3D ref={targetRef} position={light.targetPosition} />
+      </>
+    )
+  }
 
   return (
     <pointLight
-      ref={ref}
+      ref={ref as React.RefObject<THREE.PointLight>}
       position={light.position}
       intensity={light.intensity}
       distance={light.distance}
       decay={light.decay}
       color={light.color}
       visible={light.visible}
+      castShadow={light.castShadow}
+      shadow-bias={light.shadowBias}
     />
   )
 }
@@ -743,6 +968,7 @@ function SceneRuntime({
 export function SceneCanvas() {
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const environment = useEditorStore((state) => state.environment)
+  const runtimeTextures = useEditorStore((state) => state.runtimeTextures)
   const [stats, setStats] = useState<RenderStats>({
     calls: 0,
     fps: 0,
@@ -758,10 +984,17 @@ export function SceneCanvas() {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
   const hudStyle = getAdaptiveHudStyle(environment.background, environment.backgroundColor)
+  const gridPalette = getAdaptiveGridPalette(environment.background, environment.backgroundColor)
+  const fullscreenTone = getAdaptiveOverlayTone(
+    environment.background,
+    environment.backgroundColor,
+    environment,
+    runtimeTextures,
+  )
 
   return (
     <div className="viewport-shell">
-      <FullscreenButton />
+      <FullscreenButton tone={fullscreenTone} color={gridPalette.sectionColor} />
       <div
         className="performance-stats"
         style={
@@ -771,7 +1004,7 @@ export function SceneCanvas() {
             '--performance-muted-color': hudStyle.mutedColor,
             '--performance-strong-color': hudStyle.strongColor,
             '--performance-header-color': hudStyle.headerColor,
-          } as React.CSSProperties
+          } as CSSProperties
         }
       >
         <div className="performance-stats__row performance-stats__row--header">

@@ -3,8 +3,11 @@ import { useEditorStore, type SceneGraphNode } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
 import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { useViewportPresentation } from '../features/viewport/ViewportPresentationContext'
+import { TabbedSettingsPanel, type SettingsTab } from './TabbedSettingsPanel'
 
 const focalPresets = [8, 12, 17, 35, 50, 85]
+const hdriEnvironmentNodeId = 'environment:hdri'
+const ambientSystemLightNodeId = 'light:ambient:system'
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -128,7 +131,7 @@ function getActionIcon(kind: 'eye' | 'eyeOff' | 'trash') {
   }
 }
 
-function getOutlinerModeIcon(kind: 'all' | 'meshes' | 'materials') {
+function getOutlinerModeIcon(kind: 'all' | 'meshes' | 'materials' | 'lights') {
   const baseProps = {
     className: 'outliner-filter__icon',
     viewBox: '0 0 16 16',
@@ -156,6 +159,19 @@ function getOutlinerModeIcon(kind: 'all' | 'meshes' | 'materials') {
           <path d="M8 2.5v11M3.5 5 8 7.5 12.5 5" fill="none" stroke="currentColor" strokeWidth="1.2" />
         </svg>
       )
+    case 'lights':
+      return (
+        <svg {...baseProps}>
+          <path
+            d="M8 3.25a3 3 0 0 1 1.88 5.34c-.51.42-.8 1.01-.8 1.66H6.92c0-.65-.29-1.24-.8-1.66A3 3 0 0 1 8 3.25Z"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+            strokeLinejoin="round"
+          />
+          <path d="M6.5 11.25h3M6.9 13h2.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      )
     default:
       return (
         <svg {...baseProps}>
@@ -166,7 +182,7 @@ function getOutlinerModeIcon(kind: 'all' | 'meshes' | 'materials') {
   }
 }
 
-type OutlinerMode = 'all' | 'meshes' | 'materials'
+type OutlinerMode = 'all' | 'meshes' | 'materials' | 'lights'
 
 function shouldSkipOutlinerRow(node: SceneGraphNode | undefined) {
   return Boolean(node && node.label === 'Material')
@@ -249,6 +265,51 @@ function getOutlinerEntryIds({
   return [nodeId]
 }
 
+function countMeshOutlinerRows({
+  nodeId,
+  sceneGraph,
+  objects,
+  searchQuery,
+}: {
+  nodeId: string
+  sceneGraph: Record<string, SceneGraphNode>
+  objects: ReturnType<typeof useEditorStore.getState>['objects']
+  searchQuery: string
+}): number {
+  const node = sceneGraph[nodeId]
+  if (!node || !nodeMatchesSearch(nodeId, sceneGraph, searchQuery)) {
+    return 0
+  }
+
+  const visibleChildren = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+
+  if (shouldSkipOutlinerRow(node) || isIdentityWrapper(nodeId, sceneGraph, objects)) {
+    return visibleChildren.reduce(
+      (sum, childId) => sum + countMeshOutlinerRows({ nodeId: childId, sceneGraph, objects, searchQuery }),
+      0,
+    )
+  }
+
+  if (node.type === 'material') {
+    return 0
+  }
+
+  if (node.type !== 'mesh') {
+    return visibleChildren.reduce(
+      (sum, childId) => sum + countMeshOutlinerRows({ nodeId: childId, sceneGraph, objects, searchQuery }),
+      0,
+    )
+  }
+
+  return (
+    1 +
+    visibleChildren.reduce(
+      (sum, childId) => sum + countMeshOutlinerRows({ nodeId: childId, sceneGraph, objects, searchQuery }),
+      0,
+    )
+  )
+}
+
 function nodeMatchesSearch(
   nodeId: string,
   sceneGraph: Record<string, SceneGraphNode>,
@@ -292,6 +353,15 @@ function resolveHighlightedNodeId(
     return null
   }
 
+  if (outlinerMode === 'lights') {
+    if (selectedObjectId === hdriEnvironmentNodeId) {
+      return hdriEnvironmentNodeId
+    }
+    if (selectedObjectId === ambientSystemLightNodeId) {
+      return ambientSystemLightNodeId
+    }
+  }
+
   const selectedNode = sceneGraph[selectedObjectId]
   if (!selectedNode) {
     return null
@@ -307,11 +377,171 @@ function resolveHighlightedNodeId(
     return null
   }
 
+  if (outlinerMode === 'lights') {
+    return selectedNode.type === 'light' ? selectedNode.id : null
+  }
+
   if (selectedNode.type === 'material' && selectedNode.parentId) {
     return selectedNode.parentId
   }
 
   return selectedNode.id
+}
+
+function HdriLightRow({
+  isSelected,
+  isVisible,
+  label,
+  onSelect,
+  onToggleVisibility,
+  onReset,
+  resetLabel,
+}: {
+  isSelected: boolean
+  isVisible: boolean
+  label: string
+  onSelect: () => void
+  onToggleVisibility: () => void
+  onReset: () => void
+  resetLabel: string
+}) {
+  return (
+    <button className={`tree-node ${isSelected ? 'is-selected' : ''} ${!isVisible ? 'is-dimmed' : ''}`} data-outliner-node-id={hdriEnvironmentNodeId} style={{ paddingLeft: '10px' }} onClick={onSelect} type="button">
+      {getOutlinerModeIcon('all')}
+      <span className="tree-node__label">{label}</span>
+      <span className="tree-node__actions">
+        <button
+          type="button"
+          className="tree-action"
+          aria-label={isVisible ? 'Hide HDRI environment' : 'Show HDRI environment'}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleVisibility()
+          }}
+        >
+          {getActionIcon(isVisible ? 'eye' : 'eyeOff')}
+        </button>
+        <button
+          type="button"
+          className="tree-action"
+          aria-label={resetLabel}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onReset()
+          }}
+        >
+          {getActionIcon('trash')}
+        </button>
+      </span>
+    </button>
+  )
+}
+
+function AmbientLightRow({
+  isSelected,
+  isVisible,
+  label,
+  onSelect,
+  onToggleVisibility,
+  onDelete,
+}: {
+  isSelected: boolean
+  isVisible: boolean
+  label: string
+  onSelect: () => void
+  onToggleVisibility: () => void
+  onDelete: () => void
+}) {
+  return (
+    <button className={`tree-node ${isSelected ? 'is-selected' : ''} ${!isVisible ? 'is-dimmed' : ''}`} data-outliner-node-id={ambientSystemLightNodeId} style={{ paddingLeft: '10px' }} onClick={onSelect} type="button">
+      {getNodeIcon('light')}
+      <span className="tree-node__label">{label}</span>
+      <span className="tree-node__actions">
+        <button
+          type="button"
+          className="tree-action"
+          aria-label={isVisible ? 'Hide ambient light' : 'Show ambient light'}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onToggleVisibility()
+          }}
+        >
+          {getActionIcon(isVisible ? 'eye' : 'eyeOff')}
+        </button>
+        <button
+          type="button"
+          className="tree-action"
+          aria-label="Delete ambient light"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            onDelete()
+          }}
+        >
+          {getActionIcon('trash')}
+        </button>
+      </span>
+    </button>
+  )
+}
+
+function LightTreeRow({
+  lightId,
+  highlightedNodeId,
+}: {
+  lightId: string
+  highlightedNodeId: string | null
+}) {
+  const light = useEditorStore((state) => state.extraLights.find((entry) => entry.id === lightId))
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
+
+  if (!light) {
+    return null
+  }
+
+  return (
+    <button
+      className={`tree-node ${highlightedNodeId === light.id ? 'is-selected' : ''} ${!light.visible ? 'is-dimmed' : ''}`}
+      data-outliner-node-id={light.id}
+      style={{ paddingLeft: '10px' }}
+      onClick={() => setSelectedObjectId(light.id)}
+      type="button"
+    >
+      {getNodeIcon('light')}
+      <span className="tree-node__label">{light.label}</span>
+      <span className="tree-node__actions">
+        <button
+          type="button"
+          className="tree-action"
+          aria-label={light.visible ? 'Hide light' : 'Show light'}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            updateExtraLight(light.id, { visible: !light.visible })
+          }}
+        >
+          {getActionIcon(light.visible ? 'eye' : 'eyeOff')}
+        </button>
+        <button
+          type="button"
+          className="tree-action"
+          aria-label="Delete light"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            removeExtraLight(light.id)
+          }}
+        >
+          {getActionIcon('trash')}
+        </button>
+      </span>
+    </button>
+  )
 }
 
 function TreeNode({
@@ -519,13 +749,11 @@ function TreeNode({
 
 function ProjectToolbar({
   onLoadModel,
-  onAddLight,
   onLoadConfig,
   onSaveConfig,
   onResetScene,
 }: {
   onLoadModel: () => void
-  onAddLight: () => void
   onLoadConfig: () => void
   onSaveConfig: () => void
   onResetScene: () => void
@@ -564,10 +792,6 @@ function ProjectToolbar({
         <span className="tool-button__glyph">GLB</span>
         <span className="tool-button__label">load GLB</span>
       </button>
-      <button type="button" className="tool-button tool-button--secondary" onClick={onAddLight}>
-        <span className="tool-button__glyph">LGT</span>
-        <span className="tool-button__label">Add Light</span>
-      </button>
       <button type="button" className="tool-button tool-button--secondary" onClick={onLoadConfig}>
         <span className="tool-button__glyph">LOAD</span>
         <span className="tool-button__label">config</span>
@@ -593,6 +817,7 @@ export function SceneManager() {
   const [cameraTabOpen, setCameraTabOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [outlinerMode, setOutlinerMode] = useState<OutlinerMode>('meshes')
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('scene')
   const [snappedFocalLength, setSnappedFocalLength] = useState<number | null>(null)
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
@@ -603,13 +828,21 @@ export function SceneManager() {
   const objectCount = useEditorStore((state) => Object.keys(state.objects).length)
   const assets = useEditorStore((state) => state.assets)
   const environment = useEditorStore((state) => state.environment)
+  const ambientLight = useEditorStore((state) => state.lights.ambient)
   const viewer = useEditorStore((state) => state.viewer)
+  const runtimeTextures = useEditorStore((state) => state.runtimeTextures)
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
   const requestConfigImport = useEditorStore((state) => state.requestConfigImport)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const addExtraLight = useEditorStore((state) => state.addExtraLight)
+  const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
+  const removeAmbientLight = useEditorStore((state) => state.removeAmbientLight)
+  const removeSceneNode = useEditorStore((state) => state.removeSceneNode)
+  const restoreAmbientLight = useEditorStore((state) => state.restoreAmbientLight)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
+  const setLights = useEditorStore((state) => state.setLights)
   const setEnvironmentTextures = useEditorStore((state) => state.setEnvironmentTextures)
   const setAssets = useEditorStore((state) => state.setAssets)
   const setStatus = useEditorStore((state) => state.setStatus)
@@ -630,6 +863,7 @@ export function SceneManager() {
   const configInputRef = useRef<HTMLInputElement | null>(null)
   const focalSnapTimeoutRef = useRef<number | null>(null)
   const outlinerListRef = useRef<HTMLDivElement | null>(null)
+  const outlinerHeaderRef = useRef<HTMLDivElement | null>(null)
   const outlinerRootIds = rootNodeId
     ? getOutlinerEntryIds({ nodeId: rootNodeId, sceneGraph, objects, promoteChildren: true })
     : []
@@ -640,7 +874,21 @@ export function SceneManager() {
     nodeMatchesSearch(nodeId, sceneGraph, searchQuery),
   )
   const visibleRootIds = outlinerRootIds.filter((nodeId) => nodeMatchesSearch(nodeId, sceneGraph, searchQuery))
+  const meshRowCount = outlinerRootIds.reduce(
+    (sum, nodeId) => sum + countMeshOutlinerRows({ nodeId, sceneGraph, objects, searchQuery }),
+    0,
+  )
+  const visibleLightIds = extraLights
+    .filter((light) => nodeMatchesSearch(light.id, sceneGraph, searchQuery))
+    .map((light) => light.id)
   const highlightedNodeId = resolveHighlightedNodeId(selectedObjectId, sceneGraph, outlinerMode)
+  const hasHdriEnvironment = Boolean(runtimeTextures.environmentMap)
+  const hasEnvironmentRow = environment.isEnvironmentEnabled || hasHdriEnvironment
+  const hdriLabel = hasHdriEnvironment ? `HDRI: ${assets.reflections ?? 'Custom Environment'}` : 'Environment (Preset: City)'
+  const hdriMatchesSearch = !searchQuery.trim() || hdriLabel.toLowerCase().includes(searchQuery.trim().toLowerCase())
+  const isHdriVisible = environment.intensity > 0.001
+  const ambientMatchesSearch = !searchQuery.trim() || 'ambient light'.includes(searchQuery.trim().toLowerCase())
+  const [outlinerPanelHeight, setOutlinerPanelHeight] = useState<number | null>(null)
 
   const clearReflections = () => {
     const { runtimeTextures, environment: currentEnvironment } = useEditorStore.getState()
@@ -729,6 +977,51 @@ export function SceneManager() {
     target?.scrollIntoView({ block: 'nearest' })
   }, [highlightedNodeId, outlinerMode])
 
+  useEffect(() => {
+    const updateOutlinerHeight = () => {
+      const viewportHeight = window.innerHeight
+      const minHeight = viewportHeight * 0.33
+      const maxHeight = viewportHeight * 0.5
+      const headerHeight = outlinerHeaderRef.current?.offsetHeight ?? 72
+      const emptyHeight = 40
+      const rowHeight = 22
+      const listVerticalPadding = 10
+      const contentHeight =
+        headerHeight +
+        listVerticalPadding +
+        (meshRowCount > 0 ? meshRowCount * rowHeight : emptyHeight)
+
+      setOutlinerPanelHeight(Math.max(minHeight, Math.min(maxHeight, contentHeight)))
+    }
+
+    updateOutlinerHeight()
+    window.addEventListener('resize', updateOutlinerHeight)
+    return () => window.removeEventListener('resize', updateOutlinerHeight)
+  }, [meshRowCount, searchQuery])
+
+  useEffect(() => {
+    if (settingsTab === 'lights' && outlinerMode !== 'lights') {
+      setOutlinerMode('lights')
+    }
+  }, [outlinerMode, settingsTab])
+
+  useEffect(() => {
+    if (selectedObjectId === hdriEnvironmentNodeId) {
+      setSettingsTab('lights')
+      return
+    }
+
+    if (selectedObjectId === ambientSystemLightNodeId) {
+      setSettingsTab('lights')
+      return
+    }
+
+    const selectedNode = selectedObjectId ? sceneGraph[selectedObjectId] : null
+    if (selectedNode?.type === 'light') {
+      setSettingsTab('lights')
+    }
+  }, [sceneGraph, selectedObjectId])
+
   return (
     <aside className="left-panel">
       <div className="left-panel__title">
@@ -739,19 +1032,18 @@ export function SceneManager() {
       </div>
       <ProjectToolbar
         onLoadModel={() => modelInputRef.current?.click()}
-        onAddLight={addExtraLight}
         onLoadConfig={() => configInputRef.current?.click()}
         onSaveConfig={handleDownloadConfig}
         onResetScene={requestSceneReset}
       />
 
       <div className="left-panel__body">
-        <section className="outliner-panel">
-          <div className="outliner-panel__header">
-            <span>OUTLINER</span>
-            <span className="left-accordion__meta">Scene Tree</span>
-          </div>
-          <div className="outliner-panel__content">
+        <section className="outliner-panel" style={outlinerPanelHeight != null ? { height: `${outlinerPanelHeight}px` } : undefined}>
+          <div ref={outlinerHeaderRef} className="outliner-header">
+            <div className="outliner-panel__header">
+              <span>OUTLINER</span>
+              <span className="left-accordion__meta">Scene Tree</span>
+            </div>
             <div className="search-container">
               <label className="outliner-search">
                 <span className="visually-hidden">Search outliner</span>
@@ -775,7 +1067,7 @@ export function SceneManager() {
                 ) : null}
               </label>
               <div className="outliner-filters" aria-label="Outliner display mode">
-                {(['all', 'meshes', 'materials'] as const).map((mode) => (
+                {(['all', 'meshes', 'materials', 'lights'] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -789,23 +1081,44 @@ export function SceneManager() {
                 ))}
               </div>
             </div>
-            <div ref={outlinerListRef} className="tree-view tree-view--accordion">
-              {outlinerMode === 'materials' ? (
-                filteredMaterialNodeIds.length ? (
-                  filteredMaterialNodeIds.map((nodeId) => (
-                    <TreeNode
-                      key={nodeId}
-                      nodeId={nodeId}
-                      searchQuery={searchQuery}
-                      outlinerMode={outlinerMode}
-                      highlightedNodeId={highlightedNodeId}
-                    />
-                  ))
-                ) : (
-                  <p className="panel-empty">{materialNodeIds.length ? 'No matches.' : 'No materials.'}</p>
-                )
-              ) : visibleRootIds.length ? (
-                visibleRootIds.map((nodeId: string) => (
+          </div>
+          <div ref={outlinerListRef} className="outliner-list tree-view tree-view--accordion">
+            {outlinerMode === 'lights' ? (
+              <>
+                {hasEnvironmentRow && hdriMatchesSearch ? (
+                  <HdriLightRow
+                    isSelected={highlightedNodeId === hdriEnvironmentNodeId}
+                    isVisible={isHdriVisible}
+                    label={hdriLabel}
+                    onSelect={() => setSelectedObjectId(hdriEnvironmentNodeId)}
+                    onToggleVisibility={() => setEnvironment({ intensity: isHdriVisible ? 0 : 1 })}
+                    onReset={hasHdriEnvironment ? clearReflections : removeEnvironment}
+                    resetLabel={hasHdriEnvironment ? 'Delete HDRI environment' : 'Delete preset environment'}
+                  />
+                ) : null}
+                {ambientLight.exists && ambientMatchesSearch ? (
+                  <AmbientLightRow
+                    isSelected={highlightedNodeId === ambientSystemLightNodeId}
+                    isVisible={ambientLight.visible && ambientLight.intensity > 0.001}
+                    label="Ambient Light"
+                    onSelect={() => setSelectedObjectId(ambientSystemLightNodeId)}
+                    onToggleVisibility={() =>
+                      setLights({
+                        ambient: ambientLight.visible && ambientLight.intensity > 0.001
+                          ? { visible: false }
+                          : { visible: true, intensity: ambientLight.intensity <= 0.001 ? 0.5 : ambientLight.intensity },
+                      })
+                    }
+                    onDelete={removeAmbientLight}
+                  />
+                ) : null}
+                {visibleLightIds.length ? visibleLightIds.map((lightId) => (
+                  <LightTreeRow key={lightId} lightId={lightId} highlightedNodeId={highlightedNodeId} />
+                )) : null}
+              </>
+            ) : outlinerMode === 'materials' ? (
+              filteredMaterialNodeIds.length ? (
+                filteredMaterialNodeIds.map((nodeId) => (
                   <TreeNode
                     key={nodeId}
                     nodeId={nodeId}
@@ -815,28 +1128,109 @@ export function SceneManager() {
                   />
                 ))
               ) : (
-                <p className="panel-empty">{outlinerRootIds.length ? 'No matches.' : 'Scene is empty.'}</p>
-              )}
-              {outlinerMode !== 'materials' && extraLights.length ? (
-                <div className="tree-subgroup">
-                  <div className="tree-subgroup__title">Extra Lights</div>
-                  {extraLights.map((light) =>
-                    light && nodeMatchesSearch(light.id, sceneGraph, searchQuery) ? (
-                      <TreeNode
-                        key={light.id}
-                        nodeId={light.id}
-                        depth={0}
-                        searchQuery={searchQuery}
-                        outlinerMode={outlinerMode}
-                        highlightedNodeId={highlightedNodeId}
-                      />
-                    ) : null,
-                  )}
-                </div>
-              ) : null}
-            </div>
+                <p className="panel-empty">{materialNodeIds.length ? 'No matches.' : 'No materials.'}</p>
+              )
+            ) : visibleRootIds.length ? (
+              visibleRootIds.map((nodeId: string) => (
+                <TreeNode
+                  key={nodeId}
+                  nodeId={nodeId}
+                  searchQuery={searchQuery}
+                  outlinerMode={outlinerMode}
+                  highlightedNodeId={highlightedNodeId}
+                />
+              ))
+            ) : (
+              <p className="panel-empty">{outlinerRootIds.length ? 'No matches.' : 'Scene is empty.'}</p>
+            )}
           </div>
         </section>
+
+        <TabbedSettingsPanel
+          assets={{
+            reflections: assets.reflections,
+            background: assets.background,
+          }}
+          environment={environment}
+          viewer={viewer}
+          onLoadReflections={() => reflectionsInputRef.current?.click()}
+          onResetReflections={() => {
+            clearReflections()
+            setEnvironment({ isEnvironmentEnabled: true })
+            if (selectedObjectId === hdriEnvironmentNodeId) {
+              setSelectedObjectId(null)
+            }
+          }}
+          onRemoveEnvironment={() => {
+            removeEnvironment()
+            if (selectedObjectId === hdriEnvironmentNodeId) {
+              setSelectedObjectId(null)
+            }
+          }}
+          onRestoreEnvironmentPreset={() => setEnvironment({ isEnvironmentEnabled: true })}
+          onLoadBackground={() => backgroundInputRef.current?.click()}
+          onClearBackground={clearBackground}
+          onSetEnvironment={setEnvironment}
+          onSetViewer={setViewer}
+          onHandleFocalLengthChange={handleFocalLengthChange}
+          snappedFocalLength={snappedFocalLength}
+          bloomEnabled={bloomEnabled}
+          onSetBloomEnabled={setBloomEnabled}
+          bloomThreshold={bloomThreshold}
+          onSetBloomThreshold={setBloomThreshold}
+          bloomIntensity={bloomIntensity}
+          onSetBloomIntensity={setBloomIntensity}
+          bloomSmoothing={bloomSmoothing}
+          onSetBloomSmoothing={setBloomSmoothing}
+          onAddLight={(type) => {
+            if (type === 'ambient') {
+              if (!ambientLight.exists) {
+                restoreAmbientLight()
+              } else {
+                setLights({
+                  ambient: {
+                    visible: true,
+                    intensity: ambientLight.intensity <= 0.001 ? 0.5 : ambientLight.intensity,
+                  },
+                })
+                setSelectedObjectId(ambientSystemLightNodeId)
+              }
+              return
+            }
+
+            addExtraLight(type)
+          }}
+          onSelectEnvironment={() => {
+            setEnvironment({ isEnvironmentEnabled: true })
+            setSelectedObjectId(hdriEnvironmentNodeId)
+            setSettingsTab('lights')
+          }}
+          onDeleteSelectedObject={() => {
+            if (!selectedObjectId) {
+              return
+            }
+
+            if (selectedObjectId === hdriEnvironmentNodeId) {
+              setSelectedObjectId(null)
+              removeEnvironment()
+              return
+            }
+
+            if (selectedObjectId === ambientSystemLightNodeId) {
+              setSelectedObjectId(null)
+              removeAmbientLight()
+              return
+            }
+
+            setSelectedObjectId(null)
+            removeSceneNode(selectedObjectId)
+          }}
+          activeTab={settingsTab}
+          onActiveTabChange={setSettingsTab}
+          ambientLight={ambientLight}
+          onSetAmbientLight={(patch) => setLights({ ambient: patch })}
+          onRemoveAmbientLight={removeAmbientLight}
+        />
 
         <div className="settings-container">
         <Accordion title="SCENE" meta="Global" className="scene-panel">
@@ -1192,7 +1586,7 @@ export function SceneManager() {
           const isHdr = /\.hdr$/i.test(file.name)
           const url = createObjectUrl(file)
           if (isHdr) {
-            setEnvironment({ customHdriUrl: url })
+            setEnvironment({ customHdriUrl: url, isEnvironmentEnabled: true })
           }
           requestEnvironmentLoad({
             url,

@@ -100,6 +100,7 @@ export interface EnvironmentState {
   source: string | null
   customHdriUrl: string | null
   kind: 'default' | 'hdri' | 'panorama'
+  isEnvironmentEnabled: boolean
   intensity: number
   rotation: number
   background: 'none' | 'environment' | 'color' | 'reflections'
@@ -133,15 +134,29 @@ export interface ViewerState {
   dofManualBlur: number
 }
 
+export interface AmbientLightState {
+  exists: boolean
+  color: string
+  intensity: number
+  visible: boolean
+}
+
+export type ExtraLightType = 'ambient' | 'directional' | 'point' | 'spot'
+
 export interface ExtraLightState {
   id: string
   label: string
-  type: 'point'
+  type: ExtraLightType
   color: string
   intensity: number
   distance: number
   decay: number
+  angle: number
+  penumbra: number
+  castShadow: boolean
+  shadowBias: number
   position: [number, number, number]
+  targetPosition: [number, number, number]
   visible: boolean
 }
 
@@ -230,6 +245,9 @@ interface EditorState {
   objects: Record<string, ObjectTransformState>
   materials: Record<string, PbrMaterialState>
   environment: EnvironmentState
+  lights: {
+    ambient: AmbientLightState
+  }
   hud: ViewportHudState
   viewer: ViewerState
   assets: AssetSourceState
@@ -258,10 +276,14 @@ interface EditorState {
   toggleMaterialSystemState: (id: string) => void
   resetMaterial: (id: string) => void
   setEnvironment: (patch: Partial<EnvironmentState>) => void
+  removeEnvironment: () => void
+  setLights: (patch: Partial<{ ambient: Partial<AmbientLightState> }>) => void
+  removeAmbientLight: () => void
+  restoreAmbientLight: () => void
   setHud: (patch: Partial<ViewportHudState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
   setAssets: (patch: Partial<AssetSourceState>) => void
-  addExtraLight: () => void
+  addExtraLight: (type?: ExtraLightType) => void
   removeExtraLight: (id?: string) => void
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
   setStatus: (status: string) => void
@@ -296,6 +318,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     source: null,
     customHdriUrl: null,
     kind: 'default',
+    isEnvironmentEnabled: true,
     intensity: 1.5,
     rotation: 0,
     background: 'color',
@@ -305,6 +328,14 @@ export const useEditorStore = create<EditorState>((set) => ({
     backgroundIntensity: 1,
     backgroundBlur: 0,
     previewReflections: false,
+  },
+  lights: {
+    ambient: {
+      exists: true,
+      color: '#ffffff',
+      intensity: 0.5,
+      visible: true,
+    },
   },
   hud: {
     orbitEnabled: true,
@@ -518,7 +549,9 @@ export const useEditorStore = create<EditorState>((set) => ({
           materialById: runtimeMaterialById,
         },
         selectedObjectId:
-          state.selectedObjectId && idsToRemove.has(state.selectedObjectId) ? null : state.selectedObjectId,
+          state.selectedObjectId === id || (state.selectedObjectId && idsToRemove.has(state.selectedObjectId))
+            ? null
+            : state.selectedObjectId,
       }
     }),
   toggleMaterialSystemState: (id) =>
@@ -600,6 +633,60 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...patch,
       },
     })),
+  removeEnvironment: () =>
+    set((state) => {
+      state.runtimeTextures.environmentMap?.dispose()
+
+      return {
+        environment: {
+          ...state.environment,
+          source: null,
+          customHdriUrl: null,
+          kind: 'default',
+          isEnvironmentEnabled: false,
+        },
+        assets: {
+          ...state.assets,
+          reflections: null,
+        },
+        runtimeTextures: {
+          ...state.runtimeTextures,
+          environmentMap: null,
+        },
+      }
+    }),
+  setLights: (patch) =>
+    set((state) => ({
+      lights: {
+        ambient: {
+          ...state.lights.ambient,
+          ...(patch.ambient ?? {}),
+        },
+      },
+    })),
+  removeAmbientLight: () =>
+    set((state) => ({
+      lights: {
+        ambient: {
+          ...state.lights.ambient,
+          exists: false,
+          visible: false,
+        },
+      },
+      selectedObjectId: state.selectedObjectId === 'light:ambient:system' ? null : state.selectedObjectId,
+    })),
+  restoreAmbientLight: () =>
+    set((state) => ({
+      lights: {
+        ambient: {
+          exists: true,
+          color: state.lights.ambient.color || '#ffffff',
+          intensity: state.lights.ambient.intensity > 0.001 ? state.lights.ambient.intensity : 0.5,
+          visible: true,
+        },
+      },
+      selectedObjectId: 'light:ambient:system',
+    })),
   setHud: (patch) =>
     set((state) => ({
       hud: {
@@ -621,26 +708,40 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...patch,
       },
     })),
-  addExtraLight: () =>
+  addExtraLight: (type = 'point') =>
     set((state) => {
       const nextIndex = state.extraLights.length + 1
       const id = `light:extra:${nextIndex}:${Date.now()}`
       const light: ExtraLightState = {
         id,
-        label: `Extra Light ${nextIndex}`,
-        type: 'point',
-        color: nextIndex % 2 === 0 ? '#ffd9bf' : '#e5f4ff',
-        intensity: nextIndex === 1 ? 1.5 : 1.15,
-        distance: 12,
-        decay: 2,
+        label:
+          type === 'ambient'
+            ? `Ambient Light ${nextIndex}`
+            : type === 'directional'
+              ? `Directional Light ${nextIndex}`
+              : type === 'spot'
+                ? `Spot Light ${nextIndex}`
+                : `Point Light ${nextIndex}`,
+        type,
+        color: type === 'ambient' ? '#fff0d9' : nextIndex % 2 === 0 ? '#ffd9bf' : '#e5f4ff',
+        intensity: type === 'ambient' ? 0.45 : type === 'directional' ? 1.2 : nextIndex === 1 ? 1.5 : 1.15,
+        distance: type === 'ambient' || type === 'directional' ? 0 : 12,
+        decay: type === 'ambient' || type === 'directional' ? 0 : 2,
+        angle: 30,
+        penumbra: 0.2,
+        castShadow: type === 'directional' || type === 'spot',
+        shadowBias: -0.0003,
         position:
-          nextIndex === 1
-            ? [2.5, 1.4, -2.2]
-            : nextIndex === 2
-              ? [-2.4, 2.1, -1.6]
-              : nextIndex === 3
-                ? [0.4, 3.4, 2.6]
-                : [-0.6, 1.1, 3.1],
+          type === 'ambient'
+            ? [0, 0, 0]
+            : nextIndex === 1
+              ? [2.5, 1.4, -2.2]
+              : nextIndex === 2
+                ? [-2.4, 2.1, -1.6]
+                : nextIndex === 3
+                  ? [0.4, 3.4, 2.6]
+                  : [-0.6, 1.1, 3.1],
+        targetPosition: [0, 0, 0],
         visible: true,
       }
 
@@ -830,6 +931,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           source: null,
           customHdriUrl: null,
           kind: 'default',
+          isEnvironmentEnabled: true,
           intensity: 1.5,
           rotation: 0,
           background: 'color',
@@ -839,6 +941,14 @@ export const useEditorStore = create<EditorState>((set) => ({
           backgroundIntensity: 1,
           backgroundBlur: 0,
           previewReflections: false,
+        },
+        lights: {
+          ambient: {
+            exists: true,
+            color: '#ffffff',
+            intensity: 0.5,
+            visible: true,
+          },
         },
         viewer: {
           cameraMode: 'orbit',

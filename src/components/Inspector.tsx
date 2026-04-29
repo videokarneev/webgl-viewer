@@ -389,6 +389,7 @@ function LightSection({ objectId }: { objectId: string }) {
         step: 1,
         onChange: (value: number) => {
           if (spotLight && 'angle' in spotLight) spotLight.angle = THREE.MathUtils.degToRad(value)
+          updateExtraLight(objectId, { angle: value })
         },
       },
       penumbra: {
@@ -398,12 +399,14 @@ function LightSection({ objectId }: { objectId: string }) {
         step: 0.01,
         onChange: (value: number) => {
           if (spotLight && 'penumbra' in spotLight) spotLight.penumbra = value
+          updateExtraLight(objectId, { penumbra: value })
         },
       },
       castShadow: {
         value: Boolean(lightWithShadows?.castShadow),
         onChange: (value: boolean) => {
           if (lightWithShadows && 'castShadow' in lightWithShadows) lightWithShadows.castShadow = value
+          updateExtraLight(objectId, { castShadow: value })
         },
       },
       shadowBias: {
@@ -413,6 +416,7 @@ function LightSection({ objectId }: { objectId: string }) {
         step: 0.0001,
         onChange: (value: number) => {
           if (lightWithShadows?.shadow) lightWithShadows.shadow.bias = value
+          updateExtraLight(objectId, { shadowBias: value })
         },
       },
     }),
