@@ -1,10 +1,10 @@
-import { useEffect, useRef } from 'react'
-import { SceneCanvas } from '../components/SceneCanvas'
-import { SceneManager } from '../components/SceneManager'
-import { InspectorDock } from '../components/InspectorDock'
+import { useEffect, useState } from 'react'
+import { Sidebar } from '../components/Sidebar'
+import { Viewport } from '../components/Viewport'
+import { Inspector } from '../components/Inspector'
+import { AssetController } from '../components/AssetController'
 import { useEditorStore } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { ViewportPresentationProvider } from '../features/viewport/ViewportPresentationContext'
 
 function routeDroppedFile(file: File) {
   const store = useEditorStore.getState()
@@ -22,58 +22,81 @@ function routeDroppedFile(file: File) {
   }
 
   if (file.name.match(/\.(glb|gltf)$/i)) {
-    store.requestModelLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true, fileSize: file.size })
+    const objectUrl = URL.createObjectURL(file)
+    store.requestModelLoad({ url: objectUrl, label: file.name, revokeAfter: true, fileSize: file.size })
     return
   }
 
-  if (file.name.match(/\.hdr$/i)) {
-    const url = URL.createObjectURL(file)
-    store.setEnvironment({ customHdriUrl: url, isEnvironmentEnabled: true })
+  if (file.name.match(/\.(hdr|exr)$/i)) {
+    const objectUrl = URL.createObjectURL(file)
+    store.setEnvironment({ customHdriUrl: objectUrl, isEnvironmentEnabled: true })
     store.requestEnvironmentLoad({
-      url,
+      url: objectUrl,
       label: file.name,
       kind: 'hdri',
-      revokeAfter: false,
-      fileSize: null,
+      revokeAfter: true,
+      fileSize: file.size,
     })
     return
   }
 
-  if (file.name.match(/\.(png|jpg|jpeg|webp)$/i)) {
-    store.requestAtlasLoad({ url: URL.createObjectURL(file), label: file.name, revokeAfter: true, fileSize: null })
+  if (file.name.match(/\.(png|jpg|jpeg)$/i)) {
+    const objectUrl = URL.createObjectURL(file)
+    store.setEnvironment({
+      source: objectUrl,
+      kind: 'panorama',
+      background: 'environment',
+      backgroundVisible: true,
+    })
+    store.requestEnvironmentLoad({
+      url: objectUrl,
+      label: file.name,
+      kind: 'panorama',
+      revokeAfter: true,
+      fileSize: file.size,
+    })
   }
 }
 
 export function App() {
-  const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
-  const requestAtlasLoad = useEditorStore((state) => state.requestAtlasLoad)
-  const didBootstrapRef = useRef(false)
+  const sidebarVisible = useEditorStore((state) => state.hud.sidebarVisible)
+  const inspectorVisible = useEditorStore((state) => state.hud.inspectorVisible)
+  const [dragDepth, setDragDepth] = useState(0)
 
   useEffect(() => {
-    if (didBootstrapRef.current) {
-      return
+    document.body.classList.toggle('is-dragging', dragDepth > 0)
+    return () => {
+      document.body.classList.remove('is-dragging')
     }
-    didBootstrapRef.current = true
-    requestModelLoad({ url: '/assets/ring.glb', label: 'demo://ring.glb', revokeAfter: false, fileSize: null })
-    requestAtlasLoad({ url: '/assets/fire.jpg', label: 'demo://fire.jpg', revokeAfter: false, fileSize: null })
-  }, [requestAtlasLoad, requestModelLoad])
+  }, [dragDepth])
 
   return (
-    <ViewportPresentationProvider>
-      <main
-        className="app-shell"
-        onDragOver={(event) => {
-          event.preventDefault()
-        }}
-        onDrop={(event) => {
-          event.preventDefault()
-          Array.from(event.dataTransfer.files ?? []).forEach(routeDroppedFile)
-        }}
-      >
-        <SceneCanvas />
-        <SceneManager />
-        <InspectorDock />
-      </main>
-    </ViewportPresentationProvider>
+    <main
+      className="app-shell"
+      onDragEnter={(event) => {
+        event.preventDefault()
+        setDragDepth((value) => value + 1)
+      }}
+      onDragOver={(event) => {
+        event.preventDefault()
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'copy'
+        }
+      }}
+      onDragLeave={(event) => {
+        event.preventDefault()
+        setDragDepth((value) => Math.max(0, value - 1))
+      }}
+      onDrop={(event) => {
+        event.preventDefault()
+        setDragDepth(0)
+        Array.from(event.dataTransfer.files ?? []).forEach(routeDroppedFile)
+      }}
+    >
+      <AssetController />
+      {sidebarVisible ? <Sidebar /> : null}
+      <Viewport />
+      {inspectorVisible ? <Inspector /> : null}
+    </main>
   )
 }

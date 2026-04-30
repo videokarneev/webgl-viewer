@@ -22,6 +22,24 @@ body {
   background: #0a0a0a;
 }
 
+body.is-dragging::before {
+  content: "Drop files to load model, environment, or config";
+  position: fixed;
+  inset: 18px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed rgba(123, 197, 233, 0.64);
+  background: rgba(6, 10, 13, 0.82);
+  color: rgba(236, 244, 248, 0.94);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
 button,
 input,
 select {
@@ -48,8 +66,11 @@ button {
 
 .app-shell {
   position: relative;
+  display: grid;
+  grid-template-columns: 382px minmax(0, 1fr) 336px;
   width: 100%;
-  height: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .viewport-shell {
@@ -58,31 +79,388 @@ button {
   height: 100%;
 }
 
+.viewport-wrap {
+  position: relative;
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(40, 71, 88, 0.34), transparent 42%),
+    linear-gradient(180deg, #0d1116 0%, #080b0f 100%);
+}
+
+.viewport-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 18px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.hud span {
+  max-width: min(860px, 100%);
+  padding: 10px 14px;
+  border: 1px solid rgba(165, 197, 216, 0.12);
+  background: rgba(8, 12, 16, 0.72);
+  color: rgba(232, 242, 247, 0.86);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+.viewport-toggle-bar {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+  transform: translateX(-50%);
+}
+
+.dashboard-stat {
+  font-family: "IBM Plex Mono", "Consolas", monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(244, 247, 249, 0.94);
+}
+
+.dashboard-stat--label {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(176, 198, 210, 0.68);
+}
+
+.panel {
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(10, 13, 17, 0.9);
+}
+
+.panel-accordion {
+  padding: 0;
+  overflow: hidden;
+}
+
+.panel-accordion__summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px;
+}
+
+.panel-accordion__summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-accordion__summary h2 {
+  margin: 6px 0 0;
+}
+
+.panel-accordion__body {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(165, 197, 216, 0.08);
+}
+
+.panel--inspector {
+  min-height: 100%;
+}
+
+.hero-panel__header,
+.section-head,
+.inline-actions,
+.toggle-row,
+.grid-two,
+.readout-row {
+  display: flex;
+}
+
+.hero-panel__header,
+.section-head,
+.readout-row {
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.section-head {
+  margin-bottom: 12px;
+}
+
+.section-head h2,
+.hero-panel h1,
+.subheading {
+  margin: 0;
+}
+
+.eyebrow,
+.small-muted,
+.muted,
+.material-meta {
+  color: rgba(176, 198, 210, 0.68);
+}
+
+.eyebrow,
+.small-muted {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero-panel h1 {
+  margin-top: 8px;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.muted,
+.field span,
+.checkbox span,
+.readout-row,
+.material-meta,
+.small-muted {
+  font-size: 11px;
+}
+
+.dropzone,
+.material-meta,
+textarea,
+input,
+select,
+button {
+  border-radius: 0;
+}
+
+.dropzone {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed rgba(117, 185, 220, 0.22);
+  background: rgba(12, 17, 22, 0.84);
+  display: grid;
+  gap: 6px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.field input,
+.field select,
+.field textarea,
+.checkbox,
+.inline-actions button,
+.segmented,
+.toggle-row label {
+  width: 100%;
+}
+
+.field input,
+.field select,
+.field textarea,
+.checkbox,
+.mode-button,
+.inline-actions button,
+.ghost,
+.panel-visibility-toggle {
+  border: 1px solid rgba(165, 197, 216, 0.12);
+  background: rgba(12, 17, 22, 0.92);
+  color: rgba(234, 243, 248, 0.92);
+}
+
+.field input,
+.field select,
+.field textarea,
+.checkbox {
+  padding: 10px 12px;
+}
+
+.hidden-input {
+  display: none;
+}
+
+.inline-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.inline-actions button,
+.ghost,
+.mode-button,
+.panel-visibility-toggle {
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.ghost {
+  background: rgba(15, 22, 28, 0.72);
+}
+
+.small {
+  font-size: 10px;
+}
+
+.asset-summary,
+.simple-list,
+.toggle-row,
+.checkbox,
+.atlas-preview-wrap,
+.material-meta,
+.readout-row {
+  margin-bottom: 12px;
+}
+
+.asset-summary {
+  display: grid;
+  gap: 6px;
+}
+
+.simple-list {
+  margin-top: 0;
+  padding-left: 18px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mode-button.is-active {
+  border-color: rgba(117, 185, 220, 0.28);
+  background: rgba(73, 118, 144, 0.18);
+}
+
+.toggle-row {
+  gap: 12px;
+}
+
+.toggle-row label,
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox input,
+.toggle-row input {
+  width: auto;
+}
+
+.panel-subsection {
+  margin-bottom: 12px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(8, 12, 16, 0.48);
+}
+
+.panel-subsection > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 11px;
+  color: rgba(232, 242, 247, 0.86);
+}
+
+.panel-subsection > :not(summary) {
+  padding: 0 12px 12px;
+}
+
+.grid-two {
+  gap: 8px;
+}
+
+.grid-two > * {
+  flex: 1 1 0;
+}
+
+.atlas-preview-wrap {
+  padding: 10px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(6, 9, 12, 0.8);
+}
+
+.atlas-preview-wrap canvas {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.model-hierarchy {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.model-hierarchy__item {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.model-hierarchy__item.is-active .model-hierarchy__node {
+  border-color: rgba(117, 185, 220, 0.28);
+  background: rgba(73, 118, 144, 0.18);
+}
+
+.model-hierarchy__visibility,
+.model-hierarchy__node {
+  border: 1px solid rgba(165, 197, 216, 0.12);
+  background: rgba(12, 17, 22, 0.92);
+  color: rgba(234, 243, 248, 0.92);
+  min-height: 34px;
+  cursor: pointer;
+}
+
+.model-hierarchy__node {
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.inspector-placeholder-block {
+  padding: 14px;
+  border: 1px dashed rgba(117, 185, 220, 0.18);
+  background: rgba(9, 13, 17, 0.68);
+}
+
 .left-panel,
 .inspector-dock {
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  z-index: 30;
   display: flex;
   flex-direction: column;
   background: rgba(8, 10, 13, 0.94);
   backdrop-filter: blur(10px);
+  min-height: 0;
 }
 
 .left-panel {
-  left: 0;
-  width: 320px;
+  position: relative;
+  width: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
-  height: 100vh;
   border-right: 1px solid rgba(165, 197, 216, 0.07);
   overflow: hidden;
 }
 
 .inspector-dock {
-  right: 0;
-  width: 308px;
+  position: relative;
+  width: 100%;
+  height: 100vh;
   border-left: 1px solid rgba(165, 197, 216, 0.07);
 }
 
@@ -148,16 +526,16 @@ button {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 10px 8px 8px;
+  gap: 8px;
+  padding: 8px;
   min-height: 0;
   overflow: hidden;
 }
 
 .outliner-panel {
   flex: 0 1 auto;
-  min-height: 33vh;
-  max-height: 50vh;
+  min-height: 29vh;
+  max-height: 46vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -174,7 +552,7 @@ button {
 
 .outliner-panel__header {
   list-style: none;
-  padding: 5px 9px;
+  padding: 7px 10px 6px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -202,7 +580,7 @@ button {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
-  padding: 7px;
+  padding: 8px 8px 7px;
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
 }
 
@@ -248,7 +626,7 @@ button {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px;
+  padding: 8px 10px 10px;
 }
 
 .fx-buttons-row {
@@ -567,25 +945,35 @@ button {
   justify-content: center;
   border: 0;
   background: transparent;
-  color: rgba(218, 229, 235, 0.62);
+  color: rgba(255, 255, 255, 0.5);
   padding: 0;
   cursor: pointer;
+  opacity: 0.5;
   transition:
     color 120ms ease,
-    opacity 120ms ease;
+    opacity 120ms ease,
+    transform 120ms ease;
 }
 
 .outliner-filter:hover {
-  color: rgba(245, 248, 250, 0.9);
+  color: rgba(255, 255, 255, 1);
+  opacity: 1;
 }
 
 .outliner-filter.is-active {
-  color: #75b9dc;
+  color: rgba(255, 255, 255, 1);
+  opacity: 1;
 }
 
 .outliner-filter__icon {
   width: 16px;
   height: 16px;
+}
+
+.outliner-filter__text {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
 }
 
 .tool-button {
@@ -785,6 +1173,14 @@ button {
   height: 16px;
 }
 
+.left-panel__collapse,
+.inspector-dock__hide {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 6;
+}
+
 .tree-materials__list {
   display: grid;
   gap: 1px;
@@ -797,7 +1193,7 @@ button {
 }
 
 .inspector-dock__header {
-  padding: 7px 8px 6px;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
   display: flex;
   align-items: center;
@@ -809,7 +1205,7 @@ button {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: 8px 10px 34px;
   display: grid;
   gap: 8px;
 }
@@ -1356,7 +1752,7 @@ button {
 .performance-stats {
   position: absolute;
   top: 10px;
-  left: calc(320px + 20px);
+  left: 10px;
   z-index: 36;
   display: grid;
   gap: 3px;
@@ -1366,6 +1762,8 @@ button {
   color: rgba(245, 248, 250, 0.94);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
   pointer-events: none;
+  background: none;
+  border: 0;
 }
 
 .performance-stats__row {
@@ -1412,12 +1810,8 @@ button {
 }
 
 @media (max-width: 1180px) {
-  .left-panel {
-    width: 292px;
-  }
-
-  .inspector-dock {
-    width: 292px;
+  .app-shell {
+    grid-template-columns: 320px minmax(0, 1fr) 300px;
   }
 
   .stats-panel {
@@ -1425,23 +1819,21 @@ button {
   }
 
   .performance-stats {
-    left: calc(292px + 20px);
+    left: 16px;
   }
 
 }
 
 @media (max-width: 980px) {
-  .left-panel,
-  .inspector-dock {
-    width: 100%;
-    height: auto;
-    position: fixed;
-    top: 0;
-    bottom: auto;
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+    height: 100vh;
   }
 
   .left-panel {
     max-height: 46vh;
+    height: auto;
   }
 
   .left-panel__body {
@@ -1455,9 +1847,8 @@ button {
   }
 
   .inspector-dock {
-    top: auto;
-    bottom: 0;
     max-height: 42vh;
+    height: auto;
   }
 
   .viewport-hud {

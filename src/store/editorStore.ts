@@ -117,6 +117,9 @@ export interface ViewportHudState {
   fpsEnabled: boolean
   gridVisible: boolean
   axesVisible: boolean
+  postEffectsEnabled: boolean
+  sidebarVisible: boolean
+  inspectorVisible: boolean
   transformMode: TransformMode
 }
 
@@ -125,6 +128,11 @@ export interface ViewerState {
   flightSpeed: number
   focalLength: number
   exposure: number
+  bloomIntensity: number
+  bloomRadius: number
+  bloomThreshold: number
+  toneMappingWhitePoint: number
+  toneMappingAdaptation: number
   cameraPosition: [number, number, number]
   orbitTarget: [number, number, number]
   dofEnabled: boolean
@@ -139,6 +147,13 @@ export interface AmbientLightState {
   color: string
   intensity: number
   visible: boolean
+}
+
+export interface LightRigState {
+  hemisphere: number
+  key: number
+  fill: number
+  rim: number
 }
 
 export type ExtraLightType = 'ambient' | 'directional' | 'point' | 'spot'
@@ -170,6 +185,13 @@ export interface RuntimeTextureState {
 export interface RuntimeRegistryState {
   objectById: Record<string, THREE.Object3D>
   materialById: Record<string, THREE.Material>
+}
+
+export interface ViewportMetricsState {
+  fps: number
+  vertices: number
+  triangles: number
+  drawCalls: number
 }
 
 export interface AssetSourceState {
@@ -204,6 +226,11 @@ export interface SceneConfig {
     cameraMode?: string | null
     focalLength?: number | null
     exposure?: number | null
+    bloomIntensity?: number | null
+    bloomRadius?: number | null
+    bloomThreshold?: number | null
+    toneMappingWhitePoint?: number | null
+    toneMappingAdaptation?: number | null
     envIntensity?: number | null
     cameraPosition?: number[] | null
     orbitTarget?: number[] | null
@@ -242,11 +269,13 @@ interface EditorState {
   sceneGraph: Record<string, SceneGraphNode>
   rootNodeId: string | null
   selectedObjectId: string | null
+  selectedMaterialId: string | null
   objects: Record<string, ObjectTransformState>
   materials: Record<string, PbrMaterialState>
   environment: EnvironmentState
   lights: {
     ambient: AmbientLightState
+    rig: LightRigState
   }
   hud: ViewportHudState
   viewer: ViewerState
@@ -255,12 +284,14 @@ interface EditorState {
   status: string
   runtimeTextures: RuntimeTextureState
   runtime: RuntimeRegistryState
+  viewportMetrics: ViewportMetricsState
   modelRequest: AssetRequest | null
   atlasRequest: AssetRequest | null
   environmentRequest: EnvironmentRequest | null
   configRequest: SceneConfigRequest | null
   sceneResetNonce: number
   setSelectedObjectId: (id: string | null) => void
+  setSelectedMaterialId: (id: string | null) => void
   setSceneGraph: (
     sceneGraph: Record<string, SceneGraphNode>,
     objects: Record<string, ObjectTransformState>,
@@ -277,7 +308,7 @@ interface EditorState {
   resetMaterial: (id: string) => void
   setEnvironment: (patch: Partial<EnvironmentState>) => void
   removeEnvironment: () => void
-  setLights: (patch: Partial<{ ambient: Partial<AmbientLightState> }>) => void
+  setLights: (patch: Partial<{ ambient: Partial<AmbientLightState>; rig: Partial<LightRigState> }>) => void
   removeAmbientLight: () => void
   restoreAmbientLight: () => void
   setHud: (patch: Partial<ViewportHudState>) => void
@@ -292,6 +323,7 @@ interface EditorState {
   setAtlasTexture: (texture: THREE.Texture | null) => void
   setAtlasFrameTexture: (texture: THREE.CanvasTexture | null) => void
   setEnvironmentTextures: (patch: Partial<RuntimeTextureState>) => void
+  setViewportMetrics: (patch: Partial<ViewportMetricsState>) => void
   requestModelLoad: (payload: Omit<AssetRequest, 'nonce'>) => void
   requestAtlasLoad: (payload: Omit<AssetRequest, 'nonce'>) => void
   requestEnvironmentLoad: (payload: Omit<EnvironmentRequest, 'nonce'>) => void
@@ -308,10 +340,63 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
   }
 }
 
+function resolveSelectedMaterialId(
+  selectedObjectId: string | null,
+  sceneGraph: Record<string, SceneGraphNode>,
+) {
+  if (!selectedObjectId) {
+    return null
+  }
+
+  const selectedNode = sceneGraph[selectedObjectId]
+  if (!selectedNode) {
+    return null
+  }
+
+  if (selectedNode.type === 'material') {
+    return selectedNode.id
+  }
+
+  const visited = new Set<string>()
+  const findFirstMaterialInBranch = (nodeId: string): string | null => {
+    if (visited.has(nodeId)) {
+      return null
+    }
+    visited.add(nodeId)
+
+    const node = sceneGraph[nodeId]
+    if (!node) {
+      return null
+    }
+
+    for (const childId of node.children) {
+      if (sceneGraph[childId]?.type === 'material') {
+        return childId
+      }
+    }
+
+    for (const childId of node.children) {
+      const nestedMaterialId = findFirstMaterialInBranch(childId)
+      if (nestedMaterialId) {
+        return nestedMaterialId
+      }
+    }
+
+    return null
+  }
+
+  if (selectedNode.type === 'mesh' || selectedNode.type === 'group' || selectedNode.type === 'scene') {
+    return findFirstMaterialInBranch(selectedNode.id)
+  }
+
+  return null
+}
+
 export const useEditorStore = create<EditorState>((set) => ({
   sceneGraph: {},
   rootNodeId: null,
   selectedObjectId: null,
+  selectedMaterialId: null,
   objects: {},
   materials: {},
   environment: {
@@ -336,12 +421,21 @@ export const useEditorStore = create<EditorState>((set) => ({
       intensity: 0.5,
       visible: true,
     },
+    rig: {
+      hemisphere: 0.9,
+      key: 1.8,
+      fill: 0.85,
+      rim: 0.65,
+    },
   },
   hud: {
     orbitEnabled: true,
     fpsEnabled: false,
     gridVisible: true,
     axesVisible: false,
+    postEffectsEnabled: true,
+    sidebarVisible: true,
+    inspectorVisible: true,
     transformMode: 'translate',
   },
   viewer: {
@@ -349,6 +443,11 @@ export const useEditorStore = create<EditorState>((set) => ({
     flightSpeed: 5,
     focalLength: 12,
     exposure: 1,
+    bloomIntensity: 0.95,
+    bloomRadius: 0.32,
+    bloomThreshold: 0.18,
+    toneMappingWhitePoint: 4,
+    toneMappingAdaptation: 1,
     cameraPosition: [4, 3, 5],
     orbitTarget: [0, 0, 0],
     dofEnabled: false,
@@ -376,12 +475,40 @@ export const useEditorStore = create<EditorState>((set) => ({
     objectById: {},
     materialById: {},
   },
+  viewportMetrics: {
+    fps: 0,
+    vertices: 0,
+    triangles: 0,
+    drawCalls: 0,
+  },
   modelRequest: null,
   atlasRequest: null,
   environmentRequest: null,
   configRequest: null,
   sceneResetNonce: 0,
-  setSelectedObjectId: (id) => set({ selectedObjectId: id }),
+  setSelectedObjectId: (id) =>
+    set((state) => ({
+      selectedObjectId: id,
+      selectedMaterialId: resolveSelectedMaterialId(id, state.sceneGraph),
+    })),
+  setSelectedMaterialId: (id) =>
+    set((state) => {
+      if (!id) {
+        return {
+          selectedMaterialId: null,
+        }
+      }
+
+      const material = state.materials[id]
+      if (!material) {
+        return state
+      }
+
+      return {
+        selectedMaterialId: id,
+        selectedObjectId: material.meshIds[0] ?? state.selectedObjectId,
+      }
+    }),
   setSceneGraph: (sceneGraph, objects, materials, rootNodeId, selectedObjectId) =>
     set((state) => {
       const nextSceneGraph = { ...sceneGraph }
@@ -405,12 +532,15 @@ export const useEditorStore = create<EditorState>((set) => ({
         }
       })
 
+      const nextSelectedObjectId = selectedObjectId === undefined ? rootNodeId : selectedObjectId
+
       return {
         sceneGraph: nextSceneGraph,
         objects: nextObjects,
         materials,
         rootNodeId,
-        selectedObjectId: selectedObjectId === undefined ? rootNodeId : selectedObjectId,
+        selectedObjectId: nextSelectedObjectId,
+        selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
       }
     }),
   updateObjectTransform: (id, patch) =>
@@ -552,6 +682,10 @@ export const useEditorStore = create<EditorState>((set) => ({
           state.selectedObjectId === id || (state.selectedObjectId && idsToRemove.has(state.selectedObjectId))
             ? null
             : state.selectedObjectId,
+        selectedMaterialId:
+          state.selectedObjectId === id || (state.selectedObjectId && idsToRemove.has(state.selectedObjectId))
+            ? null
+            : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
       }
     }),
   toggleMaterialSystemState: (id) =>
@@ -662,6 +796,10 @@ export const useEditorStore = create<EditorState>((set) => ({
           ...state.lights.ambient,
           ...(patch.ambient ?? {}),
         },
+        rig: {
+          ...state.lights.rig,
+          ...(patch.rig ?? {}),
+        },
       },
     })),
   removeAmbientLight: () =>
@@ -672,8 +810,13 @@ export const useEditorStore = create<EditorState>((set) => ({
           exists: false,
           visible: false,
         },
+        rig: state.lights.rig,
       },
       selectedObjectId: state.selectedObjectId === 'light:ambient:system' ? null : state.selectedObjectId,
+      selectedMaterialId:
+        state.selectedObjectId === 'light:ambient:system'
+          ? null
+          : resolveSelectedMaterialId(state.selectedObjectId, state.sceneGraph),
     })),
   restoreAmbientLight: () =>
     set((state) => ({
@@ -684,8 +827,10 @@ export const useEditorStore = create<EditorState>((set) => ({
           intensity: state.lights.ambient.intensity > 0.001 ? state.lights.ambient.intensity : 0.5,
           visible: true,
         },
+        rig: state.lights.rig,
       },
       selectedObjectId: 'light:ambient:system',
+      selectedMaterialId: null,
     })),
   setHud: (patch) =>
     set((state) => ({
@@ -769,6 +914,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           },
         },
         selectedObjectId: id,
+        selectedMaterialId: null,
       }
     }),
   removeExtraLight: (id) =>
@@ -794,6 +940,10 @@ export const useEditorStore = create<EditorState>((set) => ({
           objectById: runtimeObjectById,
         },
         selectedObjectId: state.selectedObjectId === targetId ? null : state.selectedObjectId,
+        selectedMaterialId:
+          state.selectedObjectId === targetId
+            ? null
+            : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
       }
     }),
   updateExtraLight: (id, patch) =>
@@ -881,6 +1031,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...patch,
       },
     })),
+  setViewportMetrics: (patch) =>
+    set((state) => ({
+      viewportMetrics: {
+        ...state.viewportMetrics,
+        ...patch,
+      },
+    })),
   requestModelLoad: (payload) =>
     set((state) => ({
       modelRequest: {
@@ -925,6 +1082,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         sceneGraph: {},
         rootNodeId: null,
         selectedObjectId: null,
+        selectedMaterialId: null,
         objects: {},
         materials: {},
         environment: {
@@ -949,12 +1107,23 @@ export const useEditorStore = create<EditorState>((set) => ({
             intensity: 0.5,
             visible: true,
           },
+          rig: {
+            hemisphere: 0.9,
+            key: 1.8,
+            fill: 0.85,
+            rim: 0.65,
+          },
         },
         viewer: {
           cameraMode: 'orbit',
           flightSpeed: 5,
           focalLength: 12,
           exposure: 1,
+          bloomIntensity: 0.95,
+          bloomRadius: 0.32,
+          bloomThreshold: 0.18,
+          toneMappingWhitePoint: 4,
+          toneMappingAdaptation: 1,
           cameraPosition: [4, 3, 5],
           orbitTarget: [0, 0, 0],
           dofEnabled: false,
@@ -968,6 +1137,9 @@ export const useEditorStore = create<EditorState>((set) => ({
           fpsEnabled: false,
           gridVisible: true,
           axesVisible: false,
+          postEffectsEnabled: true,
+          sidebarVisible: true,
+          inspectorVisible: true,
           transformMode: 'translate',
         },
         assets: {
@@ -987,6 +1159,12 @@ export const useEditorStore = create<EditorState>((set) => ({
         runtime: {
           objectById: {},
           materialById: {},
+        },
+        viewportMetrics: {
+          fps: 0,
+          vertices: 0,
+          triangles: 0,
+          drawCalls: 0,
         },
         modelRequest: null,
         atlasRequest: null,

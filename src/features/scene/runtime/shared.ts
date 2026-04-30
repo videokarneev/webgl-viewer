@@ -1,4 +1,5 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
@@ -7,6 +8,7 @@ import { useEditorStore } from '../../../store/editorStore'
 const gltfLoader = new GLTFLoader()
 const textureLoader = new THREE.TextureLoader()
 const rgbeLoader = new RGBELoader()
+const exrLoader = new EXRLoader()
 
 export function loadGltf(url: string) {
   return new Promise<import('three/examples/jsm/loaders/GLTFLoader.js').GLTF>((resolve, reject) => {
@@ -22,6 +24,11 @@ export function loadTexture(url: string) {
 
 export function loadHdri(url: string) {
   return new Promise<THREE.DataTexture>((resolve, reject) => {
+    if (/\.exr($|\?)/i.test(url)) {
+      exrLoader.load(url, resolve, undefined, reject)
+      return
+    }
+
     rgbeLoader.load(url, resolve, undefined, reject)
   })
 }

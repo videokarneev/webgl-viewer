@@ -4,6 +4,7 @@ import type { AtlasEffectState } from '../../store/editorStore'
 type AtlasShaderUniforms = {
   uAtlasTexture: { value: THREE.Texture | null }
   uAtlasOpacity: { value: number }
+  uTime: { value: number }
   uAtlasTransform: { value: THREE.Vector4 }
   uAtlasRotation: { value: number }
   uAtlasEnabled: { value: number }
@@ -101,6 +102,7 @@ export function applyPatchToMaterial(
       atlas: shouldPatch,
       targetSlot: effect.targetSlot,
       uvChannel: effect.uvChannel,
+      frameBlend: effect.frameBlend,
       swapXY: effect.swapXY,
       frameOrder: effect.frameOrder,
       wrapMode: effect.wrapMode,
@@ -117,6 +119,7 @@ export function applyPatchToMaterial(
 
     shader.uniforms.uAtlasTexture = { value: atlasFrameTexture ?? atlasTexture }
     shader.uniforms.uAtlasOpacity = { value: effect.opacity }
+    shader.uniforms.uTime = { value: 0 }
     shader.uniforms.uAtlasTransform = {
       value: new THREE.Vector4(effect.offsetX, effect.offsetY, effect.scaleX, effect.scaleY),
     }
@@ -156,6 +159,7 @@ vAtlasUv2 = vec2(0.0);
       `#include <common>
 uniform sampler2D uAtlasTexture;
 uniform float uAtlasOpacity;
+uniform float uTime;
 uniform vec4 uAtlasTransform;
 uniform float uAtlasRotation;
 uniform float uAtlasEnabled;
@@ -311,6 +315,7 @@ export function updatePatchedMaterialUniforms(
   effect: AtlasEffectState,
   atlasTexture: THREE.Texture | null,
   atlasFrameTexture: THREE.Texture | null,
+  elapsedTime = 0,
 ) {
   const target = material as PatchedMaterial
   const uniforms = target.userData.atlasUniforms
@@ -320,6 +325,7 @@ export function updatePatchedMaterialUniforms(
 
   uniforms.uAtlasTexture.value = atlasFrameTexture ?? atlasTexture
   uniforms.uAtlasOpacity.value = effect.opacity
+  uniforms.uTime.value = elapsedTime
   uniforms.uAtlasTransform.value.set(effect.offsetX, effect.offsetY, effect.scaleX, effect.scaleY)
   uniforms.uAtlasRotation.value = toRadians(effect.rotation)
   uniforms.uAtlasEnabled.value = effect.enabled ? 1 : 0

@@ -1,27 +1,29 @@
 # Codex Handoff
 
-Last updated: 2026-04-25
+Last updated: 2026-05-01
 
 ## Project
 
-React + TypeScript + Vite refactor of the legacy `Three.js` configurator.
+React + TypeScript + Vite rewrite of the old WebGL scene editor.
 
-Core stack:
+Current stack:
 
 - React
-- React Three Fiber
-- Drei
 - Zustand
 - Three.js
+- `@react-three/fiber`
+- `@react-three/drei`
 - `@react-three/postprocessing`
 
 Entry point:
 
-- `src/main.tsx`
+- [`src/main.tsx`](/d:/Work/Projects/WebGL/src/main.tsx:1)
 
-Legacy reference:
+Important:
 
-- `src/main.js`
+- legacy `src/main.js` is gone
+- the editor now boots entirely through React
+- the store in [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1) is the source of truth
 
 ## Validation
 
@@ -32,477 +34,466 @@ Passing now:
 
 Known non-blocker:
 
-- Vite large chunk warning still remains
+- Vite still warns about a large `drei` chunk
 
-Latest pushed baseline:
+## Current Layout
 
-- `ed87401 Checkpoint current editor version`
+Main shell:
 
-There are many local unpushed changes after that commit.
+- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
 
-## Current UI Shape
+Current structure:
 
-The app is a 3-column editor:
+1. `<AssetController />`
+2. optional `<Sidebar />`
+3. `<Viewport />`
+4. optional `<Inspector />`
 
-1. Left panel:
-   - title/header
-   - sticky `ProjectToolbar`
-   - `OUTLINER`
-   - `SCENE`, `CAMERA`, `EFFECTS`
-2. Center:
-   - R3F viewport
-   - floating viewport HUD
-   - floating performance HUD
-   - fullscreen button
-3. Right panel:
-   - contextual inspector
+There is no standalone top bar anymore.
 
-Keep the editor-style UI. Do not regress toward a minimal hidden-controls layout.
+The app is now a 3-column shell:
 
-## Key Files
+- left sidebar
+- center viewport
+- right inspector
 
-- `src/components/SceneManager.tsx`
-- `src/components/SceneCanvas.tsx`
-- `src/components/ViewportHud.tsx`
-- `src/components/Inspector.tsx`
-- `src/store/editorStore.ts`
-- `src/features/scene/runtime/AssetController.tsx`
-- `src/features/scene/runtime/SceneBindings.tsx`
-- `src/features/scene/runtime/LoadedSceneRoot.tsx`
-- `src/features/scene/runtime/ConfigController.tsx`
-- `src/features/config/buildSceneConfig.ts`
-- `src/styles.css`
+Relevant layout styles:
 
-## Left Panel
-
-Main file:
-
-- `src/components/SceneManager.tsx`
-
-Current order:
-
-1. `.left-panel__title`
-2. sticky `ProjectToolbar`
-3. `OUTLINER`
-4. `settings-container`
-
-Removed already:
-
-- old `Scene Tool` line
-- old `ASSETS` block
-- `import-export-footer`
-- `panel-footer`
-
-### ProjectToolbar
-
-Buttons are now:
-
-- `GLB`
-- `LGT`
-- `LOAD`
-- `SAVE`
-- `RST`
-
-Notes:
-
-- `RST` is separated slightly by left margin
-- toolbar is sticky and sits directly under the title
-- buttons were compacted to stay on one row
-
-Reset confirmation:
-
-- local state: `isResetConfirming`
-- first click sets it to `true`
-- button glyph changes to `SURE?`
-- button class becomes `is-reset-confirming`
-- second click calls `requestSceneReset()`
-- auto-reset after 3 seconds
-- also resets on `scene-pointer-missed`
-
-Important CSS:
-
-- `.tool-button.is-reset-confirming`
-- `.tool-button.is-reset-confirming:hover`
-- `.tool-button.is-reset-confirming:focus`
-- `.tool-button.is-reset-confirming:active`
-
-These force immediate dark-red confirmation styling.
-
-## Outliner
-
-### Structure
-
-- `OUTLINER` is a dedicated section above the settings accordions
-- it has its own scroll
-- search and outliner mode filters live at the top
-
-### Search
-
-State:
-
-- `searchQuery`
-
-UX:
-
-- search input is inside `.search-container`
-- clear button `search-clear` appears only when text exists
-- filter icons stay outside the search input, on the right
-
-Important styling:
-
-- input uses class `search-input`
-- `padding-right: 32px !important`
-- clear button is positioned inside the field
-
-### Outliner Modes
-
-State:
-
-- `outlinerMode: 'all' | 'meshes' | 'materials'`
-
-Default:
-
-- `'meshes'`
-
-Behavior:
-
-- `meshes`
-  - shows mesh rows
-  - materials are hidden unless manually expanded with chevron
-- `all`
-  - shows mesh rows
-  - materials under meshes are auto-expanded
-- `materials`
-  - shows a flat materials list only
-  - mesh rows are hidden
-
-### TreeNode rules
-
-- nodes with `label === 'Material'` are pass-through wrappers only
-- they must not render their own row
-- mesh rows can show a chevron before the cube icon
-- chevron appears only if the mesh has child materials
-- nested materials render only as:
-  - circle icon + material name
-
-### Selection Sync
-
-Implemented:
-
-- automatic scroll to the highlighted outliner row when `selectedObjectId` changes
-- uses `data-outliner-node-id`
-- uses `scrollIntoView({ block: 'nearest' })`
-
-Highlight logic:
-
-- in `all` and `meshes`, selecting a mesh highlights the mesh row
-- in `materials`, selecting a mesh highlights its first material row
-- selecting a material in non-material modes highlights its parent mesh row
-
-CSS:
-
-- `.tree-node.is-selected` uses blue-tinted background plus a bright left inset stripe
-
-## SCENE Section
-
-Main file:
-
-- `src/components/SceneManager.tsx`
-
-The `SCENE` accordion now has class:
-
-- `scene-panel`
-
-Its tab content lives in:
-
-- `.scene-panel__content`
-
-Current SCENE tabs:
-
-- `REFLECTIONS`
-- `BACKGROUND`
-
-### SCENE layout behavior
-
-- `scene-panel__content` has fixed height `180px`
-- `overflow-y: auto`
-- `overflow-x: hidden`
-- `BACKGROUND` scrolls internally if needed
-- `REFLECTIONS` fits without growing the section
-
-Scrollbar styling:
-
-- thin
-- subtle
-- should not visually dominate the left column
-
-### Reflections row
-
-Current row structure:
-
-- compact `HDR` button
-- filename field
-- inline `✕` clear button inside the filename field
-
-Removed:
-
-- standalone `CLR` button
-
-Clear behavior:
-
-- clears reflections asset
-- resets:
-  - `environment.rotation = 0`
-  - `environment.intensity = 1`
-- reverts to fallback environment lighting state
-
-### Background row
-
-Current row structure:
-
-- compact `360` button
-- filename field
-- inline `✕` clear button
-
-Removed:
-
-- standalone `CLR` button
-
-Clear behavior:
-
-- clears background asset
-- resets:
-  - `environment.backgroundRotation = 0`
-  - `environment.backgroundIntensity = 1`
-- also sets `background = 'none'`
-- `backgroundVisible = false`
-
-### Background modes
-
-Current modes:
-
-- `none`
-- `color`
-- `environment`
-- `reflections`
-
-There is still an inline color swatch when mode is `color`.
-
-## CAMERA Section
-
-Key state lives in:
-
-- `viewer` in `src/store/editorStore.ts`
-
-Important current values:
-
-- `viewer.focalLength`
-- `viewer.exposure`
-- `viewer.flightSpeed`
-- DoF controls
-
-### Focal Length
-
-Current slider:
-
-- `min=1`
-- `max=150`
-
-Preset buttons were removed.
-
-Magnet behavior:
-
-- presets: `8, 12, 17, 35, 50, 85`
-- if slider value is within `±2`, it snaps to preset
-- snapped value briefly highlights
-- optional `navigator.vibrate(12)` feedback is used when available
-
-Ticks:
-
-- thin visual ticks are rendered under the slider
-
-### Flight Speed
-
-Store:
-
-- `viewer.flightSpeed: number`
-- default `5`
-
-HUD:
-
-- speed row `1..9` appears only in first-person mode
-- active value gets `is-active`
-
-Keyboard:
-
-- `Digit1` through `Digit9` update speed
-
-Current formula in `SceneCanvas.tsx`:
-
-- `const speedMultiplier = Math.pow(1.7783, flightSpeed - 5)`
-- `const moveSpeed = 10 * speedMultiplier * delta`
-
-Target behavior:
-
-- `1` is about `1.0`
-- `5` is `10.0`
-- `9` is about `100.0`
+- [`src/styles.css`](/d:/Work/Projects/WebGL/src/styles.css:1)
 
 Important:
 
-- do not reintroduce speed-based FOV changes
-- FOV should stay fixed
+- `App.tsx` still owns drag-and-drop routing
+- `Viewport` starts from the top edge of the app
+- stats are now rendered inside the viewport, not in a global header
 
-## Viewport / SceneCanvas
+## Drag And Drop
 
 Main file:
 
-- `src/components/SceneCanvas.tsx`
+- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
 
-### Fullscreen
+Current routing:
 
-Fullscreen button exists in the viewport shell.
+- `.glb/.gltf` -> `requestModelLoad`
+- `.hdr/.exr` -> `requestEnvironmentLoad`
+- `.png/.jpg/.jpeg` dropped into app -> `requestEnvironmentLoad` as panorama
+- `.json` -> `requestConfigImport`
 
-Behavior:
+Blob URLs are created in `App.tsx` and consumed by the asset pipeline through store requests.
 
-- toggles fullscreen on `document.documentElement`
-- tracks actual fullscreen state via `fullscreenchange`
-- applies `.is-active` when fullscreen is real
+Global visual state:
 
-Styling:
+- `body.is-dragging`
 
-- anchored near the left edge of Inspector
-- uses focus-corner SVG icon
+## Key Files
 
-### Transform Manipulation
+- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
+- [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
+- [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
+- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
+- [`src/components/ViewportHud.tsx`](/d:/Work/Projects/WebGL/src/components/ViewportHud.tsx:1)
+- [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
+- [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
+- [`src/components/MaterialEffectController.tsx`](/d:/Work/Projects/WebGL/src/components/MaterialEffectController.tsx:1)
+- [`src/components/viewport/PostEffects.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/PostEffects.tsx:1)
+- [`src/components/viewport/EnvironmentManager.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/EnvironmentManager.tsx:1)
+- [`src/components/viewport/LightRig.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/LightRig.tsx:1)
+- [`src/components/viewport/ViewportContactShadows.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/ViewportContactShadows.tsx:1)
+- [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
+- [`src/features/scene/runtime/shared.ts`](/d:/Work/Projects/WebGL/src/features/scene/runtime/shared.ts:1)
+- [`src/features/atlas/atlasMaterialPatch.ts`](/d:/Work/Projects/WebGL/src/features/atlas/atlasMaterialPatch.ts:1)
+- [`src/features/atlas/useAtlasAnimator.ts`](/d:/Work/Projects/WebGL/src/features/atlas/useAtlasAnimator.ts:1)
+- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
+- [`src/styles.css`](/d:/Work/Projects/WebGL/src/styles.css:1)
+- [`vite.config.ts`](/d:/Work/Projects/WebGL/vite.config.ts:1)
 
-Important recent cleanup:
+## Sidebar
 
-- `TransformGizmo` was removed from `SceneCanvas.tsx`
-- scene objects should not be draggable/manipulable with mouse gizmos anymore
-- raycasting selection remains
+Main file:
 
-### Pointer Missed
+- [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
 
-Canvas `onPointerMissed`:
+Current responsibilities:
 
-- emits `scene-pointer-missed`
-- clears selection for low-delta clicks
+- left header with `GLB VIEWER`
+- dynamic object/material counts
+- 4-button toolbar:
+  - `GLB`
+  - `LOAD`
+  - `SAVE`
+  - `RST`
+- tabbed settings panel:
+  - `SCN`
+  - `CAM`
+  - `LGT`
+  - `FX`
 
-This is used by reset confirmation cleanup too.
+Important:
+
+- the toolbar is part of the sidebar now
+- no horizontal `TopBar` should be reintroduced
+- scene/camera/light/fx settings are all store-driven
+
+Current sidebar actions:
+
+- model file load
+- config import
+- config export
+- scene reset
+- scene environment controls
+- camera/navigation toggles
+- light preset application and extra light creation
+- post-processing controls
+
+## Outliner
+
+Main file:
+
+- [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
+
+This is now a dedicated component used by `Sidebar`.
+
+Current modes:
+
+- `layers`
+- `meshes`
+- `materials`
+- `lights`
+
+Mode behavior:
+
+- `layers`:
+  - mesh/group/scene hierarchy
+  - mesh rows can show nested material rows
+- `meshes`:
+  - only geometry tree
+  - no material expansion
+- `materials`:
+  - only scene materials
+  - clicking a material selects that exact material in store
+- `lights`:
+  - always shows `Environment` and `Ambient Light`
+  - also shows all user-added extra lights
+
+Important current details:
+
+- filter icons are inline SVG, not text letters anymore
+- active icon uses `.is-active`
+- default mode is `layers`
+- search is local to the outliner
+- row actions still support visibility and remove flows
+
+Store integration:
+
+- object selection: `setSelectedObjectId`
+- exact material selection: `setSelectedMaterialId`
+- visibility: `toggleObjectVisibility`
+- scene node removal: `removeSceneNode`
+- ambient/environment/extra light remove or toggle paths stay store-driven
+
+## Selection Flow
+
+Main files:
+
+- [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
+- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
+- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
+
+Current behavior:
+
+- clicking on model content in viewport selects the nearest registered scene object
+- `e.stopPropagation()` is used to avoid click-through selection
+- clicking empty space clears selection
+- selected object automatically resolves `selectedMaterialId`
+- selected object gets a helper highlight in viewport
+
+Important store behavior:
+
+- `setSelectedObjectId(id)` updates `selectedObjectId` and auto-resolves the first material in branch
+- `setSelectedMaterialId(id)` now exists and selects an exact material while preserving mesh context for inspector use
+
+## Viewport
+
+Main file:
+
+- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
+
+Viewport is fully declarative R3F.
+
+Current scene structure:
+
+- `<Canvas />`
+- renderer bridge
+- camera bridge
+- performance probe
+- lazy environment manager
+- lazy light rig
+- lazy contact shadows
+- scene root / scene bridge
+- material effect controller
+- optional lazy post effects
+- helpers and controls
+
+Current overlay behavior:
+
+- performance stats live inside viewport
+- stats block is absolutely positioned
+- no background or frame
+- `pointer-events: none`
+
+Stats source:
+
+- `viewportMetrics` in store
+
+Currently tracked:
+
+- FPS
+- Vertices
+- Triangles
+- Draw Calls
+- VRAM Textures
+- Disk
+
+## Asset Loading
+
+Main file:
+
+- [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
+
+This is still the active asset ingestion layer.
+
+It reacts to:
+
+- `modelRequest`
+- `atlasRequest`
+- `environmentRequest`
+- `configRequest`
+
+Current behavior:
+
+- GLTF loading
+- atlas texture loading
+- HDRI and panorama loading
+- scene graph rebuild
+- runtime object/material registration
+- camera framing
+- cleanup of previous assets and blob URLs
+
+Important nuance:
+
+- there are multiple similarly named runtime-era files in the repo
+- the active app shell entrypoint is:
+  - [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
+
+Environment loader support:
+
+- HDR
+- EXR
+- panorama images
+
+EXR support was added in:
+
+- [`src/features/scene/runtime/shared.ts`](/d:/Work/Projects/WebGL/src/features/scene/runtime/shared.ts:1)
 
 ## Inspector
 
 Main file:
 
-- `src/components/Inspector.tsx`
+- [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
 
-Recent cleanup:
+Current behavior:
 
-- the old `TRANSFORM` block was removed
-- transform editing UI for position/rotation/scale was removed
-- related transform editing helpers were removed from inspector flow
+- object selection shows name/type summary
+- material-driven sections open automatically through `selectedMaterialId`
+- light selections show light controls
 
-Current inspector behavior:
+Current material controls already restored:
 
-- selected light shows light controls
-- selected mesh/material shows material-related sections
+- color
+- emissive
+- metalness
+- roughness
+- envMapIntensity
+- emissiveIntensity
+- clearcoat
 
-## Performance HUD
+Atlas section:
+
+- emissive atlas controls are active again
+- preview canvas exists
+- atlas settings are store-driven
+
+## Post-processing
 
 Main file:
 
-- `src/components/SceneCanvas.tsx`
+- [`src/components/viewport/PostEffects.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/PostEffects.tsx:1)
 
-Current metrics shown:
+Current stack:
 
-- `VERTICES`
-- `TRIANGLES`
-- `VRAM TEXTURES`
-- `DISK`
-- `DRAW CALLS`
-- `FPS`
+- `EffectComposer`
+- `Bloom`
+- `ToneMapping`
+- `Selection` wrapper for debug-oriented selective workflows
 
-Important calculation changes:
+Driven by:
 
-- `DRAW CALLS` now uses mesh count from traversing root, not `gl.info.render.calls`
-- texture dedupe uses `texture.image ?? texture.source ?? texture.uuid`
-- VRAM estimate adds geometry approximation:
-  - `(stats.totalVertices * 44) / (1024 * 1024)`
-- disk size comes from `assets.fileSize`
-- disk size is shown in decimal MB:
-  - `(size / 1000 / 1000).toFixed(2)`
+- `hud.postEffectsEnabled`
+- `viewer.bloomIntensity`
+- `viewer.bloomRadius`
+- `viewer.bloomThreshold`
+- `viewer.exposure`
+- `viewer.toneMappingWhitePoint`
+- `viewer.toneMappingAdaptation`
+
+Loaded lazily:
+
+- yes
+
+## Environment And Lights
+
+Main files:
+
+- [`src/components/viewport/EnvironmentManager.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/EnvironmentManager.tsx:1)
+- [`src/components/viewport/LightRig.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/LightRig.tsx:1)
+
+Current behavior:
+
+- environment/background are store-driven
+- fallback city preset is used only when no custom environment texture is active
+- ambient light is modeled in store as a system light
+- extra lights are stored in `extraLights`
+- sidebar can create:
+  - ambient
+  - directional
+  - point
+  - spot
+
+Light preset flow:
+
+- presets are applied from `Sidebar`
+- presets update `lights.rig`
 
 ## Store Notes
 
 Main file:
 
-- `src/store/editorStore.ts`
+- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
 
-Important fields already present:
+Important current fields:
 
-- `viewer.flightSpeed`
-- `AssetSourceState.fileSize`
-- `AssetRequest.fileSize`
+- `sceneGraph`
+- `rootNodeId`
+- `selectedObjectId`
+- `selectedMaterialId`
+- `objects`
+- `materials`
+- `environment`
+- `lights`
+- `extraLights`
+- `hud`
+- `viewer`
+- `assets`
+- `runtimeTextures`
+- `runtime`
+- `viewportMetrics`
 
-Note:
+Important current actions:
 
-- `flightSpeed` is currently not called out as serialized config state
-- `fileSize` is runtime/editor metadata for HUD, not a scene rendering parameter
+- `setSelectedObjectId`
+- `setSelectedMaterialId`
+- `updateObjectTransform`
+- `updateMaterial`
+- `updateMaterialEffect`
+- `setEnvironment`
+- `setLights`
+- `setViewer`
+- `setHud`
+- `setViewportMetrics`
+- `requestModelLoad`
+- `requestAtlasLoad`
+- `requestEnvironmentLoad`
+- `requestConfigImport`
+- `requestSceneReset`
 
-## Serialization Notes
+Important HUD fields:
 
-Config import/export is handled through:
+- `orbitEnabled`
+- `fpsEnabled`
+- `gridVisible`
+- `axesVisible`
+- `postEffectsEnabled`
+- `sidebarVisible`
+- `inspectorVisible`
+- `transformMode`
 
-- `src/features/config/buildSceneConfig.ts`
-- `src/features/scene/runtime/ConfigController.tsx`
+Important viewer fields:
 
-Useful reminder:
+- `cameraMode`
+- `flightSpeed`
+- `focalLength`
+- `exposure`
+- `bloomIntensity`
+- `bloomRadius`
+- `bloomThreshold`
+- `toneMappingWhitePoint`
+- `toneMappingAdaptation`
+- `cameraPosition`
+- `orbitTarget`
+- `dofEnabled`
 
-- many editor-only UI states are still not serialized
-- outliner mode/search are UI-only
-- `fileSize` is UI/runtime-only
-
-Double-check before adding more viewer/environment serialization because this area has already drifted from older handoffs.
-
-## Current CSS Structure To Remember
+## Build Splitting
 
 Main file:
 
-- `src/styles.css`
+- [`vite.config.ts`](/d:/Work/Projects/WebGL/vite.config.ts:1)
 
-Important current layout pieces:
+Current manual chunks still include:
 
-- `.left-panel`
-- `.project-toolbar`
-- `.outliner-panel`
-- `.settings-container`
-- `.scene-panel`
-- `.scene-panel__content`
-- `.viewport-hud`
-- `.fullscreen-button`
-- `.tree-node.is-selected`
-- `.search-clear`
+- `three`
+- `postfx`
+- `vendor`
+
+Observed lazy chunks include:
+
+- `EnvironmentManager-*`
+- `LightRig-*`
+- `ViewportContactShadows-*`
+- `PostEffects-*`
+
+Known issue:
+
+- `drei` is still the largest chunk and triggers the Vite warning
 
 ## Known Risks / Watchouts
 
-1. `CODEX_HANDOFF.md` had drifted before this rewrite, so if behavior and docs diverge again, trust the code first.
-2. There are still many local modified files in the worktree.
-3. Bundle size warning still exists.
-4. Background/reflection clear logic is compact now; if environment state changes again, re-test those defaults.
-5. The SCENE panel height is now controlled by `.scene-panel__content`; avoid reintroducing dynamic height jumps there.
+1. There are still duplicate-era files in the repo; verify imports before editing similarly named runtime files.
+2. The active asset loader is [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1), not the older runtime variant.
+3. `selectedMaterialId` now has two entry paths:
+   - auto-resolution from object selection
+   - explicit `setSelectedMaterialId`
+   Re-test inspector and atlas overlay flow if selection logic changes.
+4. `MaterialEffectController` still patches only the selected material. Multi-material atlas playback is not implemented.
+5. `Outliner.tsx` now owns view-mode logic. Do not move filtering state back into `Sidebar.tsx`.
+6. The old `TopBar.tsx` may still exist in the repo but is not part of the active layout.
+7. `main.js` is gone. Do not reintroduce imperative legacy UI wiring.
 
 ## Good First Checks If Something Breaks
 
-1. `src/components/SceneManager.tsx`
-2. `src/components/SceneCanvas.tsx`
-3. `src/components/Inspector.tsx`
-4. `src/store/editorStore.ts`
-5. `src/styles.css`
+1. [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
+2. [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
+3. [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
+4. [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
+5. [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
+6. [`src/components/MaterialEffectController.tsx`](/d:/Work/Projects/WebGL/src/components/MaterialEffectController.tsx:1)
+7. [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
+8. [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
 
 ## Recommended Next Steps
 
-1. If desired, serialize `viewer.flightSpeed` explicitly in config.
-2. Decide whether the fullscreen button should change position on responsive breakpoints more aggressively.
-3. Consider further bundle splitting to address the Vite warning.
-4. If more environment UI is added, keep `SCENE` tab content inside the fixed-height scroll area rather than growing the whole accordion.
+1. If startup size matters, keep reducing `drei` surface area or split more imports dynamically.
+2. Decide whether `TopBar.tsx` should be deleted outright to reduce confusion.
+3. Consider consolidating duplicate runtime-era files to reduce import ambiguity.
+4. Re-test first-person controls, reset camera, and selection highlight after any viewport helper changes.
+5. If outliner UX expands, keep the mode logic inside `Outliner.tsx` and keep selection store-driven.

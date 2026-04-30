@@ -85,6 +85,13 @@ export function ViewportHud({ onResetCamera }: { onResetCamera: () => void }) {
           Axes
         </IconButton>
         <IconButton
+          active={hud.postEffectsEnabled}
+          title="Toggle post-processing"
+          onClick={() => setHud({ postEffectsEnabled: !hud.postEffectsEnabled })}
+        >
+          FX
+        </IconButton>
+        <IconButton
           active={cameraMode === 'orbit'}
           title="Orbit camera mode"
           onClick={() => {
