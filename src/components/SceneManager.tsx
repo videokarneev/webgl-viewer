@@ -1187,13 +1187,7 @@ export function SceneManager() {
               if (!ambientLight.exists) {
                 restoreAmbientLight()
               } else {
-                setLights({
-                  ambient: {
-                    visible: true,
-                    intensity: ambientLight.intensity <= 0.001 ? 0.5 : ambientLight.intensity,
-                  },
-                })
-                setSelectedObjectId(ambientSystemLightNodeId)
+                addExtraLight('ambient')
               }
               return
             }

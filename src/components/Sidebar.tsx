@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
 import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { useEditorStore } from '../store/editorStore'
+import { useEditorStore, type ExtraLightState } from '../store/editorStore'
 
 type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx'
 
@@ -13,12 +13,8 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   fx: 'FX',
 }
 
-const LIGHT_PRESETS = {
-  studio: { hemisphere: 0.9, key: 1.8, fill: 0.85, rim: 0.65 },
-  product: { hemisphere: 0.72, key: 2.2, fill: 1.1, rim: 0.9 },
-  sunset: { hemisphere: 0.45, key: 1.4, fill: 0.55, rim: 1.15 },
-  night: { hemisphere: 0.2, key: 0.9, fill: 0.24, rim: 0.48 },
-} as const
+const ambientSystemLightNodeId = 'light:ambient:system'
+const environmentNodeIds = new Set(['environment:system', 'environment:hdri'])
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -28,14 +24,166 @@ function formatNumber(value: number, digits = 2) {
   return value.toFixed(digits)
 }
 
+function LightColorIntensityControl({
+  label,
+  color,
+  intensity,
+  max = 20,
+  onColorChange,
+  onIntensityChange,
+}: {
+  label: string
+  color: string
+  intensity: number
+  max?: number
+  onColorChange: (value: string) => void
+  onIntensityChange: (value: number) => void
+}) {
+  return (
+    <label className="light-intensity-row">
+      <span className="light-intensity-row__label">{label}</span>
+      <span className="light-color-swatch">
+        <input
+          aria-label={`${label} color`}
+          className="light-color-swatch__input"
+          type="color"
+          value={color}
+          onChange={(event) => onColorChange(event.currentTarget.value)}
+        />
+        <span className="light-color-swatch__chip" style={{ backgroundColor: color }} aria-hidden="true" />
+      </span>
+      <input
+        className="light-intensity-row__slider"
+        type="range"
+        min="0"
+        max={String(max)}
+        step="0.01"
+        value={intensity}
+        onChange={(event) => onIntensityChange(Number(event.currentTarget.value))}
+      />
+      <strong className="light-intensity-row__value">{formatNumber(intensity)}</strong>
+    </label>
+  )
+}
+
+function ExtraLightSettings({
+  light,
+  onPatch,
+}: {
+  light: ExtraLightState
+  onPatch: (patch: Partial<ExtraLightState>) => void
+}) {
+  return (
+    <>
+      <label className="left-toggle">
+        <input
+          type="checkbox"
+          checked={light.visible}
+          onChange={(event) => onPatch({ visible: event.currentTarget.checked })}
+        />
+        <span>Enabled</span>
+      </label>
+      <LightColorIntensityControl
+        label="Intensity"
+        color={light.color}
+        intensity={light.intensity}
+        onColorChange={(value) => onPatch({ color: value })}
+        onIntensityChange={(value) => onPatch({ intensity: value })}
+      />
+      {light.type === 'point' || light.type === 'spot' ? (
+        <>
+          <label className="left-slider">
+            <span>Distance</span>
+            <input
+              type="range"
+              min="0"
+              max="50"
+              step="0.1"
+              value={light.distance}
+              onInput={(event) => onPatch({ distance: Number(event.currentTarget.value) })}
+            />
+            <strong>{formatNumber(light.distance, 1)}</strong>
+          </label>
+          <label className="left-slider">
+            <span>Decay</span>
+            <input
+              type="range"
+              min="0"
+              max="4"
+              step="0.01"
+              value={light.decay}
+              onInput={(event) => onPatch({ decay: Number(event.currentTarget.value) })}
+            />
+            <strong>{formatNumber(light.decay)}</strong>
+          </label>
+        </>
+      ) : null}
+      {light.type === 'spot' ? (
+        <>
+          <label className="left-slider">
+            <span>Angle</span>
+            <input
+              type="range"
+              min="1"
+              max="90"
+              step="1"
+              value={light.angle}
+              onInput={(event) => onPatch({ angle: Number(event.currentTarget.value) })}
+            />
+            <strong>{light.angle.toFixed(0)} deg</strong>
+          </label>
+          <label className="left-slider">
+            <span>Penumbra</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={light.penumbra}
+              onInput={(event) => onPatch({ penumbra: Number(event.currentTarget.value) })}
+            />
+            <strong>{formatNumber(light.penumbra)}</strong>
+          </label>
+        </>
+      ) : null}
+      {light.type !== 'ambient' ? (
+        <label className="left-toggle">
+          <input
+            type="checkbox"
+            checked={light.castShadow}
+            onChange={(event) => onPatch({ castShadow: event.currentTarget.checked })}
+          />
+          <span>Cast Shadow</span>
+        </label>
+      ) : null}
+    </>
+  )
+}
+
 function SceneTabContent() {
-  const environment = useEditorStore((state) => state.environment)
-  const setEnvironment = useEditorStore((state) => state.setEnvironment)
+  const backgroundMode = useEditorStore((state) => state.backgroundMode)
+  const backgroundColor = useEditorStore((state) => state.backgroundColor)
+  const backgroundRotation = useEditorStore((state) => state.backgroundRotation)
+  const setBackgroundMode = useEditorStore((state) => state.setBackgroundMode)
+  const setBackgroundColor = useEditorStore((state) => state.setBackgroundColor)
+  const setBackgroundPanoramaUrl = useEditorStore((state) => state.setBackgroundPanoramaUrl)
+  const setBackgroundRotation = useEditorStore((state) => state.setBackgroundRotation)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
-  const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
-  const hdriInputRef = useRef<HTMLInputElement | null>(null)
-  const panoramaInputRef = useRef<HTMLInputElement | null>(null)
-  const [panoramaUrl, setPanoramaUrl] = useState(environment.source ?? '')
+  const backgroundInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handleBackgroundFile = (file: File) => {
+    const url = createObjectUrl(file)
+    const isHdr = file.name.match(/\.(hdr|exr)$/i)
+    setBackgroundPanoramaUrl(url)
+    setBackgroundMode('background')
+    requestEnvironmentLoad({
+      url,
+      label: file.name,
+      kind: isHdr ? 'background' : 'panorama',
+      revokeAfter: true,
+      fileSize: file.size,
+    })
+  }
 
   return (
     <div className="settings-tab">
@@ -43,188 +191,77 @@ function SceneTabContent() {
         <span className="left-controls__label">Background</span>
         <label className="left-select">
           <span>Mode</span>
-          <select
-            value={environment.background}
-            onChange={(event) =>
-              setEnvironment({
-                background: event.currentTarget.value as typeof environment.background,
-              })
-            }
-          >
-            <option value="color">Color</option>
-            <option value="environment">Environment</option>
-            <option value="none">None</option>
-            <option value="reflections">Reflections</option>
+          <select value={backgroundMode} onChange={(event) => setBackgroundMode(event.currentTarget.value as typeof backgroundMode)}>
+            <option value="none">NONE</option>
+            <option value="color">COLOR</option>
+            <option value="background">BACKGROUND</option>
+            <option value="hdri">HDRI</option>
           </select>
         </label>
-        <div className="scene-inline-controls">
-          <label className="left-select left-select--inline">
-            <span>HDRI</span>
-            <select
-              value={environment.kind}
-              onChange={(event) =>
-                setEnvironment({
-                  kind: event.currentTarget.value as typeof environment.kind,
-                })
-              }
-            >
-              <option value="default">Default</option>
-              <option value="hdri">HDRI</option>
-              <option value="panorama">Panorama</option>
-            </select>
-          </label>
+
+        {backgroundMode === 'color' ? (
           <label className="left-color-field left-color-field--swatch">
-            <span className="visually-hidden">Background color</span>
+            <span>Color</span>
             <input
               type="color"
-              value={environment.backgroundColor}
-              onChange={(event) => setEnvironment({ backgroundColor: event.currentTarget.value })}
+              value={backgroundColor}
+              onChange={(event) => setBackgroundColor(event.currentTarget.value)}
             />
           </label>
-        </div>
-        <label className="left-slider">
-          <span>Background Rotation</span>
-          <input
-            type="range"
-            min="-180"
-            max="180"
-            step="1"
-            value={environment.backgroundRotation}
-            onInput={(event) => setEnvironment({ backgroundRotation: Number(event.currentTarget.value) })}
-          />
-          <strong>{environment.backgroundRotation.toFixed(0)} deg</strong>
-        </label>
-        <label className="left-slider">
-          <span>Background Intensity</span>
-          <input
-            type="range"
-            min="0"
-            max="4"
-            step="0.01"
-            value={environment.backgroundIntensity}
-            onInput={(event) => setEnvironment({ backgroundIntensity: Number(event.currentTarget.value) })}
-          />
-          <strong>{formatNumber(environment.backgroundIntensity)}</strong>
-        </label>
-        <label className="left-slider">
-          <span>Blur</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={environment.backgroundBlur}
-            onInput={(event) => setEnvironment({ backgroundBlur: Number(event.currentTarget.value) })}
-          />
-          <strong>{formatNumber(environment.backgroundBlur)}</strong>
-        </label>
-        <label className="left-toggle">
-          <input
-            type="checkbox"
-            checked={environment.backgroundVisible}
-            onChange={(event) => setEnvironment({ backgroundVisible: event.currentTarget.checked })}
-          />
-          <span>Visible</span>
-        </label>
-        <input
-          ref={hdriInputRef}
-          className="hidden-input"
-          type="file"
-          accept=".hdr,.exr"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0]
-            if (!file) return
-            const url = createObjectUrl(file)
-            setEnvironment({ customHdriUrl: url, kind: 'hdri', isEnvironmentEnabled: true })
-            requestEnvironmentLoad({
-              url,
-              label: file.name,
-              kind: 'hdri',
-              revokeAfter: true,
-              fileSize: file.size,
-            })
-            event.currentTarget.value = ''
-          }}
-        />
-        <input
-          ref={panoramaInputRef}
-          className="hidden-input"
-          type="file"
-          accept="image/*"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0]
-            if (!file) return
-            const url = createObjectUrl(file)
-            setPanoramaUrl(url)
-            setEnvironment({
-              source: url,
-              kind: 'panorama',
-              background: 'environment',
-              backgroundVisible: true,
-            })
-            requestEnvironmentLoad({
-              url,
-              label: file.name,
-              kind: 'panorama',
-              revokeAfter: true,
-              fileSize: file.size,
-            })
-            event.currentTarget.value = ''
-          }}
-        />
-        <div className="outliner-actions outliner-actions--secondary">
-          <button type="button" className="tool-button" onClick={() => hdriInputRef.current?.click()}>
-            <span className="tool-button__glyph">HDR</span>
-            <span className="tool-button__label">Load HDRI</span>
-          </button>
-          <button type="button" className="tool-button" onClick={() => panoramaInputRef.current?.click()}>
-            <span className="tool-button__glyph">360</span>
-            <span className="tool-button__label">Load Pano</span>
-          </button>
-        </div>
-        <label className="left-select">
-          <span>Panorama URL</span>
-          <select
-            value=""
-            onChange={() => undefined}
-            style={{ display: 'none' }}
-          />
-          <input
-            className="search-input"
-            type="text"
-            placeholder="Paste panorama URL"
-            value={panoramaUrl}
-            onChange={(event) => setPanoramaUrl(event.currentTarget.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="tool-button"
-          onClick={() => {
-            const url = panoramaUrl.trim()
-            if (!url) return
-            setEnvironment({
-              source: url,
-              kind: 'panorama',
-              background: 'environment',
-              backgroundVisible: true,
-            })
-            requestEnvironmentLoad({
-              url,
-              label: url,
-              kind: 'panorama',
-              revokeAfter: false,
-              fileSize: null,
-            })
-          }}
-        >
-          <span className="tool-button__glyph">360</span>
-          <span className="tool-button__label">Apply URL</span>
-        </button>
-        <button type="button" className="tool-button" onClick={() => removeEnvironment()}>
-          <span className="tool-button__glyph">CLR</span>
-          <span className="tool-button__label">Reset Environment</span>
-        </button>
+        ) : null}
+
+        {backgroundMode === 'background' ? (
+          <>
+            <input
+              ref={backgroundInputRef}
+              className="hidden-input"
+              type="file"
+              accept=".hdr,.exr,.jpg,.jpeg,.png,image/*"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                if (!file) {
+                  return
+                }
+                handleBackgroundFile(file)
+                event.currentTarget.value = ''
+              }}
+            />
+            <button type="button" className="tool-button" onClick={() => backgroundInputRef.current?.click()}>
+              <span className="tool-button__glyph">360</span>
+              <span className="tool-button__label">Load 360 Panorama</span>
+            </button>
+            <label className="left-slider">
+              <span>Rotation</span>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                value={backgroundRotation}
+                onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
+              />
+              <strong>{backgroundRotation.toFixed(0)} deg</strong>
+            </label>
+          </>
+        ) : null}
+
+        {backgroundMode === 'hdri' ? (
+          <>
+            <p className="settings-note">Using Environment map from LGT tab</p>
+            <label className="left-slider">
+              <span>Rotation</span>
+              <input
+                type="range"
+                min="0"
+                max="360"
+                step="1"
+                value={backgroundRotation}
+                onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
+              />
+              <strong>{backgroundRotation.toFixed(0)} deg</strong>
+            </label>
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -272,28 +309,6 @@ function CameraTabContent() {
           </div>
           <strong>{Math.round(viewer.focalLength)} mm</strong>
         </label>
-        <div className="scene-tabs">
-          <button
-            type="button"
-            className={viewer.cameraMode === 'orbit' ? 'is-active' : ''}
-            onClick={() => {
-              setHud({ orbitEnabled: true })
-              setViewer({ cameraMode: 'orbit' })
-            }}
-          >
-            Orbit
-          </button>
-          <button
-            type="button"
-            className={viewer.cameraMode === 'firstPerson' ? 'is-active' : ''}
-            onClick={() => {
-              setHud({ orbitEnabled: false })
-              setViewer({ cameraMode: 'firstPerson' })
-            }}
-          >
-            Flight
-          </button>
-        </div>
         <label className="left-toggle">
           <input
             type="checkbox"
@@ -310,14 +325,6 @@ function CameraTabContent() {
           />
           <span>Axes</span>
         </label>
-        <label className="left-toggle">
-          <input
-            type="checkbox"
-            checked={viewer.dofEnabled}
-            onChange={(event) => setViewer({ dofEnabled: event.currentTarget.checked })}
-          />
-          <span>Depth Of Field</span>
-        </label>
       </div>
     </div>
   )
@@ -328,12 +335,16 @@ function LightTabContent() {
   const extraLights = useEditorStore((state) => state.extraLights)
   const setLights = useEditorStore((state) => state.setLights)
   const addExtraLight = useEditorStore((state) => state.addExtraLight)
+  const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
   const restoreAmbientLight = useEditorStore((state) => state.restoreAmbientLight)
   const environment = useEditorStore((state) => state.environment)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
-  const [lightPreset, setLightPreset] = useState<keyof typeof LIGHT_PRESETS>('studio')
-
-  const ambientExists = lights.ambient.exists
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const selectedExtraLight = extraLights.find((light) => light.id === selectedObjectId) ?? null
+  const isAmbientSelected = selectedObjectId === ambientSystemLightNodeId && lights.ambient.exists
+  const isEnvironmentSelected =
+    Boolean(selectedObjectId && environmentNodeIds.has(selectedObjectId)) && environment.isEnvironmentEnabled
 
   return (
     <div className="settings-tab">
@@ -342,9 +353,15 @@ function LightTabContent() {
         <div className="light-type-grid">
           <button
             type="button"
-            className={`tool-button${ambientExists ? ' is-occupied' : ''}`}
-            onClick={() => restoreAmbientLight()}
-            disabled={ambientExists}
+            className={`tool-button${lights.ambient.exists ? ' is-occupied' : ''}`}
+            onClick={() => {
+              if (!lights.ambient.exists) {
+                restoreAmbientLight()
+                return
+              }
+
+              addExtraLight('ambient')
+            }}
           >
             <span className="tool-button__glyph">AMB</span>
             <span className="tool-button__label">Ambient</span>
@@ -352,10 +369,18 @@ function LightTabContent() {
           <button
             type="button"
             className={`tool-button${environment.isEnvironmentEnabled ? ' is-occupied' : ''}`}
-            onClick={() => setEnvironment({ isEnvironmentEnabled: !environment.isEnvironmentEnabled })}
+            disabled={environment.isEnvironmentEnabled}
+            onClick={() => {
+              if (environment.isEnvironmentEnabled) {
+                return
+              }
+
+              setEnvironment({ isEnvironmentEnabled: true })
+              setSelectedObjectId('environment:system')
+            }}
           >
             <span className="tool-button__glyph">HDR</span>
-            <span className="tool-button__label">Active</span>
+            <span className="tool-button__label">{environment.isEnvironmentEnabled ? 'Active' : 'Environment'}</span>
           </button>
           <button type="button" className="tool-button" onClick={() => addExtraLight('directional')}>
             <span className="tool-button__glyph">DIR</span>
@@ -370,38 +395,77 @@ function LightTabContent() {
             <span className="tool-button__label">Spot</span>
           </button>
         </div>
-        <p className="settings-note">{extraLights.length} extra lights active</p>
-        <label className="left-select">
-          <span>Preset</span>
-          <select value={lightPreset} onChange={(event) => setLightPreset(event.currentTarget.value as keyof typeof LIGHT_PRESETS)}>
-            <option value="studio">Studio</option>
-            <option value="product">Product</option>
-            <option value="sunset">Sunset</option>
-            <option value="night">Night</option>
-          </select>
-        </label>
-        <button
-          type="button"
-          className="tool-button"
-          onClick={() => setLights({ rig: { ...LIGHT_PRESETS[lightPreset] } })}
-        >
-          <span className="tool-button__glyph">LGT</span>
-          <span className="tool-button__label">Apply Preset</span>
-        </button>
-        {(['hemisphere', 'key', 'fill', 'rim'] as const).map((key) => (
-          <label key={key} className="left-slider">
-            <span>{key.toUpperCase()}</span>
-            <input
-              type="range"
-              min="0"
-              max="8"
-              step="0.01"
-              value={lights.rig[key]}
-              onInput={(event) => setLights({ rig: { [key]: Number(event.currentTarget.value) } })}
+        {isAmbientSelected ? (
+          <>
+            <p className="settings-note">Ambient Light</p>
+            <label className="left-toggle">
+              <input
+                type="checkbox"
+                checked={lights.ambient.visible}
+                onChange={(event) => setLights({ ambient: { visible: event.currentTarget.checked } })}
+              />
+              <span>Enabled</span>
+            </label>
+            <LightColorIntensityControl
+              label="Intensity"
+              color={lights.ambient.color}
+              intensity={lights.ambient.intensity}
+              max={5}
+              onColorChange={(value) => setLights({ ambient: { color: value } })}
+              onIntensityChange={(value) => setLights({ ambient: { intensity: value } })}
             />
-            <strong>{formatNumber(lights.rig[key])}</strong>
-          </label>
-        ))}
+          </>
+        ) : null}
+        {isEnvironmentSelected ? (
+          <>
+            <p className="settings-note">Environment (HDRI)</p>
+            <label className="left-toggle">
+              <input
+                type="checkbox"
+                checked={environment.isEnvironmentEnabled}
+                onChange={(event) => setEnvironment({ isEnvironmentEnabled: event.currentTarget.checked })}
+              />
+              <span>Enabled</span>
+            </label>
+            <label className="left-slider">
+              <span>Rotation</span>
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                step="1"
+                value={environment.rotation}
+                onInput={(event) => setEnvironment({ rotation: Number(event.currentTarget.value) })}
+                onPointerDown={() => setEnvironment({ previewReflections: true })}
+                onPointerUp={() => setEnvironment({ previewReflections: false })}
+                onPointerCancel={() => setEnvironment({ previewReflections: false })}
+                onBlur={() => setEnvironment({ previewReflections: false })}
+              />
+              <strong>{environment.rotation.toFixed(0)} deg</strong>
+            </label>
+            <label className="left-slider">
+              <span>Intensity</span>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                value={environment.intensity}
+                onInput={(event) => setEnvironment({ intensity: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(environment.intensity)}</strong>
+            </label>
+          </>
+        ) : null}
+        {selectedExtraLight ? (
+          <>
+            <p className="settings-note">{selectedExtraLight.label}</p>
+            <ExtraLightSettings
+              light={selectedExtraLight}
+              onPatch={(patch) => updateExtraLight(selectedExtraLight.id, patch)}
+            />
+          </>
+        ) : null}
       </div>
     </div>
   )
@@ -474,7 +538,6 @@ export function Sidebar() {
   const requestConfigImport = useEditorStore((state) => state.requestConfigImport)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
-  const setHud = useEditorStore((state) => state.setHud)
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
 
   const objectCount = useMemo(
@@ -573,9 +636,6 @@ export function Sidebar() {
           </div>
         </section>
       </div>
-      <button type="button" className="ghost small panel-visibility-toggle left-panel__collapse" onClick={() => setHud({ sidebarVisible: false })}>
-        Hide panel
-      </button>
     </aside>
   )
 }

@@ -7,6 +7,7 @@ export type AtlasFrameOrder = 'row' | 'column'
 export type AtlasUvChannel = 'auto' | 'normal' | 'baseColor' | 'emissive' | 'uv' | 'uv2'
 export type AtlasWrapMode = 'repeat' | 'clamp'
 export type TransformMode = 'translate' | 'rotate'
+export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
 
 export interface AtlasEffectState {
   enabled: boolean
@@ -211,7 +212,7 @@ export interface AssetRequest {
 }
 
 export interface EnvironmentRequest extends AssetRequest {
-  kind: 'hdri' | 'panorama' | 'image'
+  kind: 'hdri' | 'panorama' | 'image' | 'background'
 }
 
 export interface SceneConfig {
@@ -268,6 +269,14 @@ export interface SceneConfigRequest {
 interface EditorState {
   sceneGraph: Record<string, SceneGraphNode>
   rootNodeId: string | null
+  loadedFileName: string | null
+  isZenMode: boolean
+  defaultEnvUrl: string
+  backgroundEnabled: boolean
+  backgroundMode: BackgroundMode
+  backgroundColor: string
+  backgroundPanoramaUrl: string
+  backgroundRotation: number
   selectedObjectId: string | null
   selectedMaterialId: string | null
   objects: Record<string, ObjectTransformState>
@@ -304,6 +313,9 @@ interface EditorState {
   updateMaterialEffect: (materialId: string, patch: Partial<AtlasEffectState>) => void
   toggleObjectVisibility: (id: string) => void
   removeSceneNode: (id: string) => void
+  toggleVisibility: (id: string) => void
+  deleteObject: (id: string) => void
+  resetMaterialToDefault: (materialId: string) => void
   toggleMaterialSystemState: (id: string) => void
   resetMaterial: (id: string) => void
   setEnvironment: (patch: Partial<EnvironmentState>) => void
@@ -311,6 +323,13 @@ interface EditorState {
   setLights: (patch: Partial<{ ambient: Partial<AmbientLightState>; rig: Partial<LightRigState> }>) => void
   removeAmbientLight: () => void
   restoreAmbientLight: () => void
+  setZenMode: (value: boolean) => void
+  toggleZenMode: () => void
+  setBackgroundEnabled: (value: boolean) => void
+  setBackgroundMode: (value: BackgroundMode) => void
+  setBackgroundColor: (value: string) => void
+  setBackgroundPanoramaUrl: (value: string) => void
+  setBackgroundRotation: (value: number) => void
   setHud: (patch: Partial<ViewportHudState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
   setAssets: (patch: Partial<AssetSourceState>) => void
@@ -338,6 +357,26 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
     frameCount: Math.min(Math.max(1, effect.frameCount), maxFrames),
     currentFrame: Math.min(Math.max(0, effect.currentFrame), Math.min(Math.max(1, effect.frameCount), maxFrames) - 1),
   }
+}
+
+function disposeRuntimeMaterial(material: THREE.Material) {
+  const standardMaterial = material as THREE.MeshStandardMaterial
+  standardMaterial.map?.dispose()
+  standardMaterial.normalMap?.dispose()
+  standardMaterial.roughnessMap?.dispose()
+  standardMaterial.metalnessMap?.dispose()
+  standardMaterial.aoMap?.dispose()
+  standardMaterial.emissiveMap?.dispose()
+  material.dispose()
+}
+
+function disposeRuntimeObject(object: THREE.Object3D) {
+  if (!(object as THREE.Mesh).isMesh) {
+    return
+  }
+
+  const mesh = object as THREE.Mesh
+  mesh.geometry?.dispose()
 }
 
 function resolveSelectedMaterialId(
@@ -392,9 +431,261 @@ function resolveSelectedMaterialId(
   return null
 }
 
+function cloneSceneGraph(sceneGraph: Record<string, SceneGraphNode>) {
+  return Object.fromEntries(
+    Object.entries(sceneGraph).map(([id, node]) => [id, { ...node, children: [...node.children] }]),
+  )
+}
+
+function normalizeMaterialNodes(
+  sceneGraph: Record<string, SceneGraphNode>,
+  materials: Record<string, PbrMaterialState>,
+) {
+  Object.values(sceneGraph).forEach((node) => {
+    if (node.type !== 'material') {
+      node.children = node.children.filter((childId) => sceneGraph[childId]?.type !== 'material')
+    }
+  })
+
+  Object.values(materials).forEach((material) => {
+    const parentId = material.meshIds[0]
+    if (!parentId || !sceneGraph[parentId]) {
+      delete sceneGraph[material.id]
+      return
+    }
+
+    const existingNode = sceneGraph[material.id]
+    sceneGraph[material.id] = {
+      id: material.id,
+      parentId,
+      children: [],
+      type: 'material',
+      label: existingNode?.label || material.name || 'Unnamed Material',
+      materialUuid: existingNode?.materialUuid,
+      visible: true,
+    }
+
+    if (!sceneGraph[parentId].children.includes(material.id)) {
+      sceneGraph[parentId].children.push(material.id)
+    }
+  })
+}
+
+function buildVisibilityPatch(state: EditorState, id: string) {
+  const extraLight = state.extraLights.find((light) => light.id === id)
+  if (extraLight) {
+    const nextVisible = !extraLight.visible
+    const runtimeObject = state.runtime.objectById[id]
+    if (runtimeObject) {
+      runtimeObject.visible = nextVisible
+    }
+
+    return {
+      extraLights: state.extraLights.map((light) =>
+        light.id === id
+          ? {
+              ...light,
+              visible: nextVisible,
+            }
+          : light,
+      ),
+      objects: {
+        ...state.objects,
+        [id]: {
+          ...(state.objects[id] ?? {
+            position: extraLight.position,
+            rotation: [0, 0, 0] as [number, number, number],
+            scale: [1, 1, 1] as [number, number, number],
+          }),
+          visible: nextVisible,
+        },
+      },
+      sceneGraph: {
+        ...state.sceneGraph,
+        [id]: {
+          ...(state.sceneGraph[id] ?? {
+            id,
+            parentId: null,
+            children: [],
+            type: 'light' as SceneNodeType,
+            label: extraLight.label,
+            objectUuid: id,
+          }),
+          visible: nextVisible,
+        },
+      },
+    }
+  }
+
+  const materialState = state.materials[id]
+  if (materialState) {
+    const nextVisible = !materialState.meshIds.every((meshId) => state.objects[meshId]?.visible ?? true)
+    const objects = { ...state.objects }
+    const sceneGraph = cloneSceneGraph(state.sceneGraph)
+
+    materialState.meshIds.forEach((meshId) => {
+      const currentObject = state.objects[meshId]
+      const currentNode = sceneGraph[meshId]
+      if (!currentObject || !currentNode) {
+        return
+      }
+
+      const runtimeObject = state.runtime.objectById[meshId]
+      if (runtimeObject) {
+        runtimeObject.visible = nextVisible
+      }
+
+      objects[meshId] = {
+        ...currentObject,
+        visible: nextVisible,
+      }
+      sceneGraph[meshId] = {
+        ...currentNode,
+        visible: nextVisible,
+      }
+    })
+
+    return { objects, sceneGraph }
+  }
+
+  const currentObject = state.objects[id]
+  const currentNode = state.sceneGraph[id]
+  if (!currentObject || !currentNode) {
+    return state
+  }
+
+  const nextVisible = !currentObject.visible
+  const runtimeObject = state.runtime.objectById[id]
+  if (runtimeObject) {
+    runtimeObject.visible = nextVisible
+  }
+
+  return {
+    objects: {
+      ...state.objects,
+      [id]: {
+        ...currentObject,
+        visible: nextVisible,
+      },
+    },
+    sceneGraph: {
+      ...state.sceneGraph,
+      [id]: {
+        ...currentNode,
+        visible: nextVisible,
+      },
+    },
+  }
+}
+
+function buildDeletePatch(state: EditorState, id: string) {
+  const targetNode = state.sceneGraph[id]
+  if (!targetNode) {
+    return state
+  }
+
+  const collectDescendants = (nodeId: string): string[] => {
+    const node = state.sceneGraph[nodeId]
+    if (!node) {
+      return []
+    }
+
+    return [nodeId, ...node.children.flatMap(collectDescendants)]
+  }
+
+  const idsToRemove = new Set(collectDescendants(id))
+  const removedMeshIds = new Set(
+    Array.from(idsToRemove).filter((nodeId) => state.sceneGraph[nodeId]?.type === 'mesh'),
+  )
+  const sceneGraph = cloneSceneGraph(state.sceneGraph)
+  const objects = { ...state.objects }
+  const materials = { ...state.materials }
+  const runtimeObjectById = { ...state.runtime.objectById }
+  const runtimeMaterialById = { ...state.runtime.materialById }
+  const selectedObjectWasRemoved =
+    state.selectedObjectId === id || (state.selectedObjectId ? idsToRemove.has(state.selectedObjectId) : false)
+
+  const rootRuntimeObject = runtimeObjectById[id]
+  if (rootRuntimeObject?.parent) {
+    rootRuntimeObject.parent.remove(rootRuntimeObject)
+  }
+
+  if (targetNode.parentId && sceneGraph[targetNode.parentId]) {
+    sceneGraph[targetNode.parentId] = {
+      ...sceneGraph[targetNode.parentId],
+      children: sceneGraph[targetNode.parentId].children.filter((childId) => childId !== id),
+    }
+  }
+
+  idsToRemove.forEach((nodeId) => {
+    const node = sceneGraph[nodeId]
+    if (!node) {
+      return
+    }
+
+    if (node.type !== 'material') {
+      const runtimeObject = runtimeObjectById[nodeId]
+      if (runtimeObject) {
+        disposeRuntimeObject(runtimeObject)
+      }
+    }
+
+    delete sceneGraph[nodeId]
+    delete objects[nodeId]
+    delete runtimeObjectById[nodeId]
+  })
+
+  Object.values(materials).forEach((material) => {
+    const remainingMeshIds = material.meshIds.filter((meshId) => !removedMeshIds.has(meshId))
+    if (!remainingMeshIds.length) {
+      const runtimeMaterial = runtimeMaterialById[material.id]
+      if (runtimeMaterial) {
+        disposeRuntimeMaterial(runtimeMaterial)
+      }
+      delete materials[material.id]
+      delete runtimeMaterialById[material.id]
+      delete sceneGraph[material.id]
+      return
+    }
+
+    materials[material.id] = {
+      ...material,
+      meshIds: remainingMeshIds,
+    }
+  })
+
+  normalizeMaterialNodes(sceneGraph, materials)
+
+  const selectedMaterialWasRemoved =
+    state.selectedMaterialId != null && !materials[state.selectedMaterialId]
+
+  return {
+    sceneGraph,
+    objects,
+    materials,
+    runtime: {
+      objectById: runtimeObjectById,
+      materialById: runtimeMaterialById,
+    },
+    selectedObjectId: selectedObjectWasRemoved ? null : state.selectedObjectId,
+    selectedMaterialId:
+      selectedObjectWasRemoved || selectedMaterialWasRemoved
+        ? null
+        : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+  }
+}
+
 export const useEditorStore = create<EditorState>((set) => ({
   sceneGraph: {},
   rootNodeId: null,
+  loadedFileName: null,
+  isZenMode: false,
+  defaultEnvUrl: '/textures/studio.exr',
+  backgroundEnabled: false,
+  backgroundMode: 'none',
+  backgroundColor: '#808080',
+  backgroundPanoramaUrl: '',
+  backgroundRotation: 0,
   selectedObjectId: null,
   selectedMaterialId: null,
   objects: {},
@@ -586,106 +877,76 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
     }),
   toggleObjectVisibility: (id) =>
-    set((state) => {
-      const currentObject = state.objects[id]
-      const currentNode = state.sceneGraph[id]
-      if (!currentObject || !currentNode) {
-        return state
-      }
-
-      const nextVisible = !currentObject.visible
-      return {
-        objects: {
-          ...state.objects,
-          [id]: {
-            ...currentObject,
-            visible: nextVisible,
-          },
-        },
-        sceneGraph: {
-          ...state.sceneGraph,
-          [id]: {
-            ...currentNode,
-            visible: nextVisible,
-          },
-        },
-      }
-    }),
+    set((state) => buildVisibilityPatch(state, id)),
+  toggleVisibility: (id) =>
+    set((state) => buildVisibilityPatch(state, id)),
   removeSceneNode: (id) =>
+    set((state) => buildDeletePatch(state, id)),
+  deleteObject: (id) =>
     set((state) => {
-      const targetNode = state.sceneGraph[id]
-      if (!targetNode) {
+      const materialState = state.materials[id]
+      if (!materialState) {
+        return buildDeletePatch(state, id)
+      }
+
+      return materialState.meshIds.reduce<EditorState | Partial<EditorState>>((nextState, meshId) => {
+        const resolvedState = 'sceneGraph' in nextState ? (nextState as EditorState) : { ...state, ...nextState }
+        return buildDeletePatch(resolvedState as EditorState, meshId)
+      }, state)
+    }),
+  resetMaterialToDefault: (id) =>
+    set((state) => {
+      const material = state.materials[id]
+      const runtimeMaterial = state.runtime.materialById[id] as (THREE.MeshStandardMaterial & { clearcoat?: number }) | undefined
+      if (!material) {
         return state
       }
 
-      const collectDescendants = (nodeId: string): string[] => {
-        const node = state.sceneGraph[nodeId]
-        if (!node) {
-          return []
+      if (runtimeMaterial) {
+        runtimeMaterial.map = null
+        runtimeMaterial.normalMap = null
+        runtimeMaterial.roughnessMap = null
+        runtimeMaterial.metalnessMap = null
+        runtimeMaterial.aoMap = null
+        runtimeMaterial.emissiveMap = null
+        delete runtimeMaterial.userData.originalTextureSlots
+        runtimeMaterial.color.set('#ffffff')
+        runtimeMaterial.emissive.set('#000000')
+        runtimeMaterial.metalness = 0
+        runtimeMaterial.roughness = 1
+        runtimeMaterial.emissiveIntensity = 1
+        if ('envMapIntensity' in runtimeMaterial) {
+          runtimeMaterial.envMapIntensity = 1
         }
-
-        return [nodeId, ...node.children.flatMap(collectDescendants)]
+        if ('clearcoat' in runtimeMaterial) {
+          runtimeMaterial.clearcoat = 0
+        }
+        runtimeMaterial.needsUpdate = true
       }
-
-      const idsToRemove = new Set(collectDescendants(id))
-      const sceneGraph = { ...state.sceneGraph }
-      const objects = { ...state.objects }
-      const materials = { ...state.materials }
-      const runtimeObjectById = { ...state.runtime.objectById }
-      const runtimeMaterialById = { ...state.runtime.materialById }
-      const runtimeObject = runtimeObjectById[id]
-
-      if (runtimeObject?.parent) {
-        runtimeObject.parent.remove(runtimeObject)
-      }
-
-      if (targetNode.parentId && sceneGraph[targetNode.parentId]) {
-        sceneGraph[targetNode.parentId] = {
-          ...sceneGraph[targetNode.parentId],
-          children: sceneGraph[targetNode.parentId].children.filter((childId) => childId !== id),
-        }
-      }
-
-      idsToRemove.forEach((nodeId) => {
-        const node = sceneGraph[nodeId]
-        if (!node) {
-          return
-        }
-
-        delete sceneGraph[nodeId]
-        delete objects[nodeId]
-        delete runtimeObjectById[nodeId]
-
-        if (node.type === 'material') {
-          const materialState = materials[nodeId]
-          if (materialState && materialState.meshIds.length <= 1) {
-            delete materials[nodeId]
-            delete runtimeMaterialById[nodeId]
-          } else if (materialState) {
-            materials[nodeId] = {
-              ...materialState,
-              meshIds: materialState.meshIds.filter((meshId) => meshId !== id),
-            }
-          }
-        }
-      })
 
       return {
-        sceneGraph,
-        objects,
-        materials,
-        runtime: {
-          objectById: runtimeObjectById,
-          materialById: runtimeMaterialById,
+        materials: {
+          ...state.materials,
+          [id]: {
+            ...material,
+            useSystemMaterial: false,
+            color: '#ffffff',
+            emissive: '#000000',
+            metalness: 0,
+            roughness: 1,
+            envMapIntensity: 1,
+            emissiveIntensity: 1,
+            clearcoat: 0,
+            hasMaps: {
+              baseColor: false,
+              emissive: false,
+              normal: false,
+              ao: false,
+              roughness: false,
+              metalness: false,
+            },
+          },
         },
-        selectedObjectId:
-          state.selectedObjectId === id || (state.selectedObjectId && idsToRemove.has(state.selectedObjectId))
-            ? null
-            : state.selectedObjectId,
-        selectedMaterialId:
-          state.selectedObjectId === id || (state.selectedObjectId && idsToRemove.has(state.selectedObjectId))
-            ? null
-            : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
       }
     }),
   toggleMaterialSystemState: (id) =>
@@ -770,6 +1031,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   removeEnvironment: () =>
     set((state) => {
       state.runtimeTextures.environmentMap?.dispose()
+      if (
+        state.runtimeTextures.environmentBackground &&
+        state.runtimeTextures.environmentBackground !== state.runtimeTextures.environmentMap
+      ) {
+        state.runtimeTextures.environmentBackground.dispose()
+      }
 
       return {
         environment: {
@@ -778,7 +1045,12 @@ export const useEditorStore = create<EditorState>((set) => ({
           customHdriUrl: null,
           kind: 'default',
           isEnvironmentEnabled: false,
+          background: 'none',
+          backgroundVisible: false,
+          previewReflections: false,
         },
+        backgroundMode: 'none',
+        backgroundPanoramaUrl: '',
         assets: {
           ...state.assets,
           reflections: null,
@@ -786,7 +1058,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         runtimeTextures: {
           ...state.runtimeTextures,
           environmentMap: null,
+          environmentBackground: null,
         },
+        selectedObjectId: state.selectedObjectId === 'environment:system' ? null : state.selectedObjectId,
+        selectedMaterialId:
+          state.selectedObjectId === 'environment:system'
+            ? null
+            : resolveSelectedMaterialId(state.selectedObjectId, state.sceneGraph),
       }
     }),
   setLights: (patch) =>
@@ -832,6 +1110,30 @@ export const useEditorStore = create<EditorState>((set) => ({
       selectedObjectId: 'light:ambient:system',
       selectedMaterialId: null,
     })),
+  setZenMode: (value) => set({ isZenMode: value }),
+  toggleZenMode: () =>
+    set((state) => ({
+      isZenMode: !state.isZenMode,
+    })),
+  setBackgroundEnabled: (value) => set({ backgroundEnabled: value }),
+  setBackgroundMode: (value) => set({ backgroundMode: value }),
+  setBackgroundColor: (value) =>
+    set((state) => ({
+      backgroundColor: value,
+      environment: {
+        ...state.environment,
+        backgroundColor: value,
+      },
+    })),
+  setBackgroundPanoramaUrl: (value) => set({ backgroundPanoramaUrl: value }),
+  setBackgroundRotation: (value) =>
+    set((state) => ({
+      backgroundRotation: value,
+      environment: {
+        ...state.environment,
+        backgroundRotation: value,
+      },
+    })),
   setHud: (patch) =>
     set((state) => ({
       hud: {
@@ -852,6 +1154,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...state.assets,
         ...patch,
       },
+      loadedFileName: patch.model === undefined ? state.loadedFileName : patch.model,
     })),
   addExtraLight: (type = 'point') =>
     set((state) => {
@@ -1081,6 +1384,14 @@ export const useEditorStore = create<EditorState>((set) => ({
       return {
         sceneGraph: {},
         rootNodeId: null,
+        loadedFileName: null,
+        isZenMode: false,
+        defaultEnvUrl: state.defaultEnvUrl,
+        backgroundEnabled: false,
+        backgroundMode: 'none',
+        backgroundColor: '#808080',
+        backgroundPanoramaUrl: '',
+        backgroundRotation: 0,
         selectedObjectId: null,
         selectedMaterialId: null,
         objects: {},

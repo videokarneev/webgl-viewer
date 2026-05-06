@@ -652,31 +652,36 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
 
 function LightSection({ objectId }: { objectId: string }) {
   const store = useCreateStore()
-  const light = useEditorStore((state) => state.runtime.objectById[objectId] as THREE.Light | undefined)
+  const runtimeObject = useEditorStore((state) => state.runtime.objectById[objectId] as THREE.Object3D | undefined)
   const extraLight = useEditorStore((state) => state.extraLights.find((entry) => entry.id === objectId))
+  const setLights = useEditorStore((state) => state.setLights)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const light = runtimeObject && (runtimeObject as THREE.Light).isLight ? (runtimeObject as THREE.Light) : undefined
 
   const lightWithShadows = light as (THREE.Light & { castShadow?: boolean; shadow?: { bias: number } }) | undefined
   const pointLikeLight = light as (THREE.PointLight | THREE.SpotLight | undefined)
   const spotLight = light as (THREE.SpotLight | undefined)
+  const isAmbientSystemLight = objectId === 'light:ambient:system'
 
   useControls(
     () => ({
       color: {
-        value: light ? `#${light.color.getHexString()}` : '#ffffff',
+        value: extraLight?.color ?? (light ? `#${light.color.getHexString()}` : '#ffffff'),
         onChange: (value: string) => {
           if (light) light.color.set(value)
-          updateExtraLight(objectId, { color: value })
+          if (extraLight) updateExtraLight(objectId, { color: value })
+          if (isAmbientSystemLight) setLights({ ambient: { color: value } })
         },
       },
       intensity: {
-        value: light?.intensity ?? 1,
+        value: extraLight?.intensity ?? light?.intensity ?? 1,
         min: 0,
         max: 20,
         step: 0.01,
         onChange: (value: number) => {
           if (light) light.intensity = value
-          updateExtraLight(objectId, { intensity: value })
+          if (extraLight) updateExtraLight(objectId, { intensity: value })
+          if (isAmbientSystemLight) setLights({ ambient: { intensity: value } })
         },
       },
       distance: {
@@ -686,7 +691,7 @@ function LightSection({ objectId }: { objectId: string }) {
         step: 0.1,
         onChange: (value: number) => {
           if (pointLikeLight && 'distance' in pointLikeLight) pointLikeLight.distance = value
-          updateExtraLight(objectId, { distance: value })
+          if (extraLight) updateExtraLight(objectId, { distance: value })
         },
       },
       decay: {
@@ -696,49 +701,60 @@ function LightSection({ objectId }: { objectId: string }) {
         step: 0.01,
         onChange: (value: number) => {
           if (pointLikeLight && 'decay' in pointLikeLight) pointLikeLight.decay = value
-          updateExtraLight(objectId, { decay: value })
+          if (extraLight) updateExtraLight(objectId, { decay: value })
         },
       },
       angle: {
-        value: spotLight && 'angle' in spotLight ? THREE.MathUtils.radToDeg(spotLight.angle) : 30,
+        value: extraLight?.angle ?? (spotLight && 'angle' in spotLight ? THREE.MathUtils.radToDeg(spotLight.angle) : 30),
         min: 1,
         max: 90,
         step: 1,
         onChange: (value: number) => {
           if (spotLight && 'angle' in spotLight) spotLight.angle = THREE.MathUtils.degToRad(value)
-          updateExtraLight(objectId, { angle: value })
+          if (extraLight) updateExtraLight(objectId, { angle: value })
         },
       },
       penumbra: {
-        value: spotLight && 'penumbra' in spotLight ? spotLight.penumbra : 0,
+        value: extraLight?.penumbra ?? (spotLight && 'penumbra' in spotLight ? spotLight.penumbra : 0),
         min: 0,
         max: 1,
         step: 0.01,
         onChange: (value: number) => {
           if (spotLight && 'penumbra' in spotLight) spotLight.penumbra = value
-          updateExtraLight(objectId, { penumbra: value })
+          if (extraLight) updateExtraLight(objectId, { penumbra: value })
         },
       },
       castShadow: {
-        value: Boolean(lightWithShadows?.castShadow),
+        value: extraLight?.castShadow ?? Boolean(lightWithShadows?.castShadow),
         onChange: (value: boolean) => {
           if (lightWithShadows && 'castShadow' in lightWithShadows) lightWithShadows.castShadow = value
-          updateExtraLight(objectId, { castShadow: value })
+          if (extraLight) updateExtraLight(objectId, { castShadow: value })
         },
       },
       shadowBias: {
-        value: lightWithShadows?.shadow?.bias ?? 0,
+        value: extraLight?.shadowBias ?? lightWithShadows?.shadow?.bias ?? 0,
         min: -0.01,
         max: 0.01,
         step: 0.0001,
         onChange: (value: number) => {
           if (lightWithShadows?.shadow) lightWithShadows.shadow.bias = value
-          updateExtraLight(objectId, { shadowBias: value })
+          if (extraLight) updateExtraLight(objectId, { shadowBias: value })
         },
       },
     }),
     { store },
-    [extraLight, light, lightWithShadows?.castShadow, lightWithShadows?.shadow?.bias, objectId, pointLikeLight, spotLight, updateExtraLight],
+    [
+      extraLight,
+      isAmbientSystemLight,
+      light,
+      lightWithShadows?.castShadow,
+      lightWithShadows?.shadow?.bias,
+      objectId,
+      pointLikeLight,
+      setLights,
+      spotLight,
+      updateExtraLight,
+    ],
   )
 
   return (
@@ -819,7 +835,6 @@ export function InspectorContent() {
 }
 
 export function Inspector() {
-  const setHud = useEditorStore((state) => state.setHud)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const selectedNode = useEditorStore((state) =>
     state.selectedObjectId ? state.sceneGraph[state.selectedObjectId] ?? null : null,
@@ -846,9 +861,6 @@ export function Inspector() {
           <InspectorContent />
         )}
       </div>
-      <button type="button" className="ghost small panel-visibility-toggle inspector-dock__hide" onClick={() => setHud({ inspectorVisible: false })}>
-        Hide panel
-      </button>
     </aside>
   )
 }

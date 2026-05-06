@@ -292,8 +292,12 @@ export function AssetController() {
 
     void (async () => {
       try {
+        const shouldLoadAsHdri =
+          environmentRequest.kind === 'hdri' ||
+          (environmentRequest.kind === 'background' &&
+            /\.(hdr|exr)$/i.test(environmentRequest.label || environmentRequest.url))
         const texture =
-          environmentRequest.kind === 'hdri'
+          shouldLoadAsHdri
             ? await loadHdri(environmentRequest.url)
             : await loadTexture(environmentRequest.url)
         if (isCancelled) {
@@ -302,13 +306,13 @@ export function AssetController() {
         }
 
         texture.mapping = THREE.EquirectangularReflectionMapping
-        if (environmentRequest.kind !== 'hdri') {
+        if (!shouldLoadAsHdri) {
           texture.colorSpace = THREE.SRGBColorSpace
         }
 
         const runtimeTextures = useEditorStore.getState().runtimeTextures
 
-        if (environmentRequest.kind === 'panorama') {
+        if (environmentRequest.kind === 'panorama' || environmentRequest.kind === 'background') {
           if (
             runtimeTextures.environmentBackground &&
             runtimeTextures.environmentBackground !== runtimeTextures.environmentMap
@@ -317,12 +321,8 @@ export function AssetController() {
           }
 
           setEnvironmentTextures({ environmentBackground: texture })
-          setEnvironment({
-            source: environmentRequest.label,
-            kind: 'panorama',
-            background: 'environment',
-            backgroundVisible: true,
-          })
+          useEditorStore.getState().setBackgroundPanoramaUrl(environmentRequest.url)
+          useEditorStore.getState().setBackgroundMode('background')
           setAssets({ background: environmentRequest.label })
           setStatus(`Background loaded: ${environmentRequest.label}`)
           return

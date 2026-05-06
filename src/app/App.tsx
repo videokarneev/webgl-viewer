@@ -42,12 +42,8 @@ function routeDroppedFile(file: File) {
 
   if (file.name.match(/\.(png|jpg|jpeg)$/i)) {
     const objectUrl = URL.createObjectURL(file)
-    store.setEnvironment({
-      source: objectUrl,
-      kind: 'panorama',
-      background: 'environment',
-      backgroundVisible: true,
-    })
+    store.setBackgroundPanoramaUrl(objectUrl)
+    store.setBackgroundMode('background')
     store.requestEnvironmentLoad({
       url: objectUrl,
       label: file.name,
@@ -59,6 +55,7 @@ function routeDroppedFile(file: File) {
 }
 
 export function App() {
+  const isZenMode = useEditorStore((state) => state.isZenMode)
   const sidebarVisible = useEditorStore((state) => state.hud.sidebarVisible)
   const inspectorVisible = useEditorStore((state) => state.hud.inspectorVisible)
   const [dragDepth, setDragDepth] = useState(0)
@@ -72,7 +69,7 @@ export function App() {
 
   return (
     <main
-      className="app-shell"
+      className={isZenMode ? 'app-shell app-shell--zen' : 'app-shell'}
       onDragEnter={(event) => {
         event.preventDefault()
         setDragDepth((value) => value + 1)
@@ -94,9 +91,9 @@ export function App() {
       }}
     >
       <AssetController />
-      {sidebarVisible ? <Sidebar /> : null}
+      {!isZenMode && sidebarVisible ? <Sidebar /> : null}
       <Viewport />
-      {inspectorVisible ? <Inspector /> : null}
+      {!isZenMode && inspectorVisible ? <Inspector /> : null}
     </main>
   )
 }
