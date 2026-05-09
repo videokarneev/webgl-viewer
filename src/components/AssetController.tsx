@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { ensureAtlasTextureOptions } from '../features/atlas/atlasMaterialPatch'
 import { buildSceneGraph } from '../features/scene/buildSceneGraph'
-import { fitCameraToObject, loadGltf, loadHdri, loadTexture } from '../features/scene/runtime/shared'
+import { loadGltf, loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { useEditorStore } from '../store/editorStore'
 
 function revokeIfBlob(url: string | null | undefined) {
@@ -36,6 +36,15 @@ function disposeObjectTree(root: THREE.Object3D | null) {
       }
     })
   })
+}
+
+function clearRegisteredRuntimeRefs(
+  ids: { objectIds: string[]; materialIds: string[] },
+  registerObjectRef: (id: string, object: THREE.Object3D | null) => void,
+  registerMaterialRef: (id: string, material: THREE.Material | null) => void,
+) {
+  ids.objectIds.forEach((id) => registerObjectRef(id, null))
+  ids.materialIds.forEach((id) => registerMaterialRef(id, null))
 }
 
 function collectRuntimeRefs(root: THREE.Object3D) {
@@ -84,11 +93,12 @@ export function AssetController() {
   const modelRequest = useEditorStore((state) => state.modelRequest)
   const atlasRequest = useEditorStore((state) => state.atlasRequest)
   const environmentRequest = useEditorStore((state) => state.environmentRequest)
+  const rootNodeIds = useEditorStore((state) => state.rootNodeIds)
   const materials = useEditorStore((state) => state.materials)
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
   const registerObjectRef = useEditorStore((state) => state.registerObjectRef)
   const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
-  const setSceneGraph = useEditorStore((state) => state.setSceneGraph)
+  const addLoadedModel = useEditorStore((state) => state.addLoadedModel)
   const setAssets = useEditorStore((state) => state.setAssets)
   const setAtlasTexture = useEditorStore((state) => state.setAtlasTexture)
   const setAtlasFrameTexture = useEditorStore((state) => state.setAtlasFrameTexture)
@@ -97,12 +107,15 @@ export function AssetController() {
   const setStatus = useEditorStore((state) => state.setStatus)
   const setViewer = useEditorStore((state) => state.setViewer)
 
-  const cameraRef = useRef(new THREE.PerspectiveCamera(55, 16 / 9, 0.1, 2000))
-  const currentRootRef = useRef<THREE.Object3D | null>(null)
-  const registeredRefIdsRef = useRef<{ objectIds: string[]; materialIds: string[] }>({
-    objectIds: [],
-    materialIds: [],
-  })
+  const loadedRootsRef = useRef(
+    new Map<
+      string,
+      {
+        root: THREE.Object3D
+        registeredIds: { objectIds: string[]; materialIds: string[] }
+      }
+    >(),
+  )
   const handledModelNonceRef = useRef<number | null>(null)
   const handledAtlasNonceRef = useRef<number | null>(null)
   const handledEnvironmentNonceRef = useRef<number | null>(null)
@@ -115,7 +128,11 @@ export function AssetController() {
       revokeIfBlob(previousModelUrlRef.current)
       revokeIfBlob(previousAtlasUrlRef.current)
       revokeIfBlob(previousEnvironmentUrlRef.current)
-      disposeObjectTree(currentRootRef.current)
+      loadedRootsRef.current.forEach(({ root, registeredIds }) => {
+        clearRegisteredRuntimeRefs(registeredIds, registerObjectRef, registerMaterialRef)
+        disposeObjectTree(root)
+      })
+      loadedRootsRef.current.clear()
       const runtimeTextures = useEditorStore.getState().runtimeTextures
       runtimeTextures.atlasTexture?.dispose()
       runtimeTextures.atlasFrameTexture?.dispose()
@@ -128,6 +145,18 @@ export function AssetController() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    loadedRootsRef.current.forEach((entry, rootId) => {
+      if (rootNodeIds.includes(rootId)) {
+        return
+      }
+
+      clearRegisteredRuntimeRefs(entry.registeredIds, registerObjectRef, registerMaterialRef)
+      disposeObjectTree(entry.root)
+      loadedRootsRef.current.delete(rootId)
+    })
+  }, [rootNodeIds, registerMaterialRef, registerObjectRef])
 
   useEffect(() => {
     const runtimeTextures = useEditorStore.getState().runtimeTextures
@@ -153,20 +182,12 @@ export function AssetController() {
     previousModelUrlRef.current = modelRequest.url
     setStatus(`Loading model: ${modelRequest.label}`)
 
-    const previousRoot = currentRootRef.current
-    if (previousRoot) {
-      disposeObjectTree(previousRoot)
-      currentRootRef.current = null
-    }
-
-    registeredRefIdsRef.current.objectIds.forEach((id) => registerObjectRef(id, null))
-    registeredRefIdsRef.current.materialIds.forEach((id) => registerMaterialRef(id, null))
-    registeredRefIdsRef.current = { objectIds: [], materialIds: [] }
-
     void (async () => {
       try {
         const gltf = await loadGltf(modelRequest.url)
-        if (isCancelled) {
+        const latestModelNonce = useEditorStore.getState().modelRequest?.nonce ?? null
+        if (isCancelled || latestModelNonce !== modelRequest.nonce) {
+          disposeObjectTree(gltf.scene)
           return
         }
 
@@ -179,34 +200,29 @@ export function AssetController() {
           }
         })
 
-        currentRootRef.current = root
-
         const nextGraph = buildSceneGraph(root)
         const runtimeRefs = collectRuntimeRefs(root)
         runtimeRefs.objects.forEach(({ id, object }) => registerObjectRef(id, object))
         runtimeRefs.materials.forEach(({ id, material }) => registerMaterialRef(id, material))
-        registeredRefIdsRef.current = {
-          objectIds: runtimeRefs.objects.map((entry) => entry.id),
-          materialIds: runtimeRefs.materials.map((entry) => entry.id),
-        }
+        loadedRootsRef.current.set(nextGraph.rootNodeId, {
+          root,
+          registeredIds: {
+            objectIds: runtimeRefs.objects.map((entry) => entry.id),
+            materialIds: runtimeRefs.materials.map((entry) => entry.id),
+          },
+        })
 
-        setSceneGraph(
+        addLoadedModel(
           nextGraph.sceneGraph,
           nextGraph.objects,
           nextGraph.materials,
           nextGraph.rootNodeId,
-          nextGraph.firstMaterialId ?? nextGraph.rootNodeId,
+          modelRequest.label,
+          nextGraph.rootNodeId,
         )
         setAssets({ model: modelRequest.label, fileSize: modelRequest.fileSize })
-
-        const camera = cameraRef.current
-        const viewer = useEditorStore.getState().viewer
-        camera.position.set(...viewer.cameraPosition)
-        camera.setFocalLength(viewer.focalLength)
-        fitCameraToObject(camera, null, root)
-
+        setStatus(`Model ready: ${modelRequest.label}`)
         setViewer({ cameraMode: 'orbit' })
-        setStatus(`Model loaded: ${modelRequest.label}`)
       } catch (error) {
         console.error(error)
         setStatus(`Failed to load model: ${modelRequest.label}`)
@@ -225,7 +241,7 @@ export function AssetController() {
     registerMaterialRef,
     registerObjectRef,
     setAssets,
-    setSceneGraph,
+    addLoadedModel,
     setStatus,
     setViewer,
   ])

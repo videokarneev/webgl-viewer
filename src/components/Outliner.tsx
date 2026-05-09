@@ -1,11 +1,12 @@
 import { type ReactNode, useMemo, useState } from 'react'
 import { useEditorStore } from '../store/editorStore'
 
-type ViewMode = 'layers' | 'meshes' | 'materials' | 'lights'
+type ViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
 
 type OutlinerEntry =
   | {
       id: string
+      rootId: string
       label: string
       visible: boolean
       removable: boolean
@@ -16,6 +17,7 @@ type OutlinerEntry =
     }
   | {
       id: string
+      rootId: string
       label: string
       visible: boolean
       removable: boolean
@@ -34,6 +36,17 @@ type OutlinerEntry =
       depth: number
       selectionId: string
     }
+  | {
+      id: string
+      label: string
+      visible: boolean
+      removable: boolean
+      kind: 'effect'
+      depth: number
+      selectionId: string
+    }
+
+type RootViewMode = Extract<ViewMode, 'layers' | 'meshes' | 'materials'>
 
 function LayersIcon() {
   return (
@@ -68,6 +81,21 @@ function LightIcon() {
     <svg viewBox="0 0 16 16" className="outliner-filter__icon" aria-hidden="true">
       <path d="M8 2.5a4 4 0 0 0-2.4 7.2c.5.4.8 1 .9 1.6h3c.1-.6.4-1.2.9-1.6A4 4 0 0 0 8 2.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <path d="M6.6 12.2h2.8M6.9 13.8h2.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function FxIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="outliner-filter__icon" aria-hidden="true">
+      <path
+        d="M8 1.8 9.5 5l3.5.5-2.6 2.5.6 3.5L8 9.8l-3 1.7.6-3.5L3 5.5 6.5 5 8 1.8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+      <path d="M11.8 2.5v1.8M12.7 3.4h-1.8M2.5 10.6v1.8M3.4 11.5H1.6" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
     </svg>
   )
 }
@@ -133,6 +161,9 @@ function RowIcon({ kind }: { kind: OutlinerEntry['kind'] | 'root' }) {
   if (kind === 'material') {
     return <SphereIcon />
   }
+  if (kind === 'effect') {
+    return <FxIcon />
+  }
   if (kind === 'light' || kind === 'ambient') {
     return <LightIcon />
   }
@@ -147,11 +178,13 @@ export function Outliner() {
   const objects = useEditorStore((state) => state.objects)
   const materials = useEditorStore((state) => state.materials)
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
+  const loadedModels = useEditorStore((state) => state.loadedModels)
   const loadedFileName = useEditorStore((state) => state.loadedFileName)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const environment = useEditorStore((state) => state.environment)
   const lights = useEditorStore((state) => state.lights)
   const extraLights = useEditorStore((state) => state.extraLights)
+  const hud = useEditorStore((state) => state.hud)
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
@@ -161,19 +194,32 @@ export function Outliner() {
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
   const setLights = useEditorStore((state) => state.setLights)
+  const setHud = useEditorStore((state) => state.setHud)
   const removeAmbientLight = useEditorStore((state) => state.removeAmbientLight)
   const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
 
   const [search, setSearch] = useState('')
   const [viewMode, setViewMode] = useState<ViewMode>('layers')
+  const [collapsedRootsByMode, setCollapsedRootsByMode] = useState<Record<RootViewMode, Record<string, boolean>>>({
+    layers: {},
+    meshes: {},
+    materials: {},
+  })
 
-  const meshIds = useMemo(() => {
-    if (!rootNodeId) {
-      return []
-    }
+  const rootModels = useMemo(
+    () =>
+      loadedModels.filter((model) => sceneGraph[model.rootNodeId]).length
+        ? loadedModels.filter((model) => sceneGraph[model.rootNodeId])
+        : rootNodeId && loadedFileName && sceneGraph[rootNodeId]
+          ? [{ rootNodeId, label: loadedFileName }]
+          : [],
+    [loadedFileName, loadedModels, rootNodeId, sceneGraph],
+  )
 
-    const ids: string[] = []
-    const walk = (nodeId: string) => {
+  const meshIdsByRoot = useMemo(() => {
+    const result: Record<string, string[]> = {}
+
+    const collectMeshIds = (nodeId: string, ids: string[]) => {
       const node = sceneGraph[nodeId]
       if (!node || node.type === 'material' || node.type === 'camera' || node.type === 'light') {
         return
@@ -185,120 +231,19 @@ export function Outliner() {
 
       node.children.forEach((childId) => {
         if (sceneGraph[childId]?.type !== 'material') {
-          walk(childId)
+          collectMeshIds(childId, ids)
         }
       })
     }
 
-    walk(rootNodeId)
-    return ids
-  }, [rootNodeId, sceneGraph])
-
-  const orderedMaterialEntries = useMemo(() => {
-    const seen = new Set<string>()
-    const entries: Extract<OutlinerEntry, { kind: 'material' }>[] = []
-
-    meshIds.forEach((meshId) => {
-      const node = sceneGraph[meshId]
-      if (!node) {
-        return
-      }
-
-      node.children.forEach((childId) => {
-        const material = materials[childId]
-        if (!material || seen.has(childId)) {
-          return
-        }
-
-        seen.add(childId)
-        entries.push({
-          id: childId,
-          label: material.name || 'Unnamed Material',
-          visible: true,
-          removable: false,
-          kind: 'material',
-          depth: 1,
-          selectionId: material.meshIds[0] ?? childId,
-          materialId: childId,
-          parentMeshId: material.meshIds[0] ?? null,
-        })
-      })
+    rootModels.forEach((model) => {
+      const ids: string[] = []
+      collectMeshIds(model.rootNodeId, ids)
+      result[model.rootNodeId] = ids
     })
 
-    Object.values(materials).forEach((material) => {
-      if (seen.has(material.id)) {
-        return
-      }
-
-      seen.add(material.id)
-      entries.push({
-        id: material.id,
-        label: material.name || 'Unnamed Material',
-        visible: true,
-        removable: false,
-        kind: 'material',
-        depth: 1,
-        selectionId: material.meshIds[0] ?? material.id,
-        materialId: material.id,
-        parentMeshId: material.meshIds[0] ?? null,
-      })
-    })
-
-    return entries
-  }, [materials, meshIds, sceneGraph])
-
-  const meshEntries = useMemo<OutlinerEntry[]>(() => {
-    const entries: OutlinerEntry[] = []
-
-    meshIds.forEach((meshId) => {
-      const node = sceneGraph[meshId]
-      if (!node) {
-        return
-      }
-
-      const materialIds = node.children.filter((childId) => sceneGraph[childId]?.type === 'material')
-      entries.push({
-        id: node.id,
-        label: node.label || 'Unnamed Mesh',
-        visible: objects[node.id]?.visible ?? node.visible ?? true,
-        removable: true,
-        kind: 'mesh',
-        depth: 1,
-        selectionId: node.id,
-        materialIds,
-      })
-
-      const shouldShowMaterials =
-        viewMode === 'layers' || (viewMode === 'meshes' && selectedObjectId === node.id)
-
-      if (!shouldShowMaterials) {
-        return
-      }
-
-      materialIds.forEach((materialId) => {
-        const material = materials[materialId]
-        if (!material) {
-          return
-        }
-
-        entries.push({
-          id: `${node.id}:${materialId}`,
-          label: material.name || 'Unnamed Material',
-          visible: true,
-          removable: false,
-          kind: 'material',
-          depth: 2,
-          selectionId: node.id,
-          materialId,
-          parentMeshId: node.id,
-        })
-      })
-    })
-
-    return entries
-  }, [materials, meshIds, objects, sceneGraph, selectedObjectId, viewMode])
-
-  const materialEntries = useMemo<OutlinerEntry[]>(() => orderedMaterialEntries, [orderedMaterialEntries])
+    return result
+  }, [rootModels, sceneGraph])
 
   const lightEntries = useMemo<OutlinerEntry[]>(() => {
     const entries: OutlinerEntry[] = []
@@ -350,22 +295,167 @@ export function Outliner() {
     lights.ambient.visible,
   ])
 
+  const effectEntries = useMemo<OutlinerEntry[]>(
+    () => {
+      if (!hud.postEffectsEnabled) {
+        return []
+      }
+
+      return [
+        {
+          id: 'effect:bloom',
+          label: 'Bloom',
+          visible: hud.postEffectsVisible,
+          removable: true,
+          kind: 'effect',
+          depth: 0,
+          selectionId: 'effect:bloom',
+        },
+      ]
+    },
+    [hud.postEffectsEnabled, hud.postEffectsVisible],
+  )
+
+  const rootSections = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (viewMode === 'lights' || viewMode === 'effects') {
+      return []
+    }
+
+    return rootModels
+      .map((model) => {
+        const rootId = model.rootNodeId
+        const meshIds = meshIdsByRoot[rootId] ?? []
+        const entries: OutlinerEntry[] = []
+
+        if (viewMode === 'layers' || viewMode === 'meshes') {
+          meshIds.forEach((meshId) => {
+            const node = sceneGraph[meshId]
+            if (!node) {
+              return
+            }
+
+            const materialIds = node.children.filter((childId) => sceneGraph[childId]?.type === 'material')
+            entries.push({
+              id: node.id,
+              rootId,
+              label: node.label || 'Unnamed Mesh',
+              visible: objects[node.id]?.visible ?? node.visible ?? true,
+              removable: true,
+              kind: 'mesh',
+              depth: 1,
+              selectionId: node.id,
+              materialIds,
+            })
+
+            const shouldShowMaterials = viewMode === 'layers' || (viewMode === 'meshes' && selectedObjectId === node.id)
+            if (!shouldShowMaterials) {
+              return
+            }
+
+            materialIds.forEach((materialId) => {
+              const material = materials[materialId]
+              if (!material) {
+                return
+              }
+
+              entries.push({
+                id: `${node.id}:${materialId}`,
+                rootId,
+                label: material.name || 'Unnamed Material',
+                visible: true,
+                removable: false,
+                kind: 'material',
+                depth: 2,
+                selectionId: node.id,
+                materialId,
+                parentMeshId: node.id,
+              })
+            })
+          })
+        } else if (viewMode === 'materials') {
+          const seen = new Set<string>()
+          meshIds.forEach((meshId) => {
+            const node = sceneGraph[meshId]
+            if (!node) {
+              return
+            }
+
+            node.children.forEach((childId) => {
+              const material = materials[childId]
+              if (!material || seen.has(childId)) {
+                return
+              }
+
+              seen.add(childId)
+              entries.push({
+                id: childId,
+                rootId,
+                label: material.name || 'Unnamed Material',
+                visible: true,
+                removable: false,
+                kind: 'material',
+                depth: 1,
+                selectionId: material.meshIds[0] ?? childId,
+                materialId: childId,
+                parentMeshId: material.meshIds[0] ?? null,
+              })
+            })
+          })
+        }
+
+        const rootMatches = model.label.toLowerCase().includes(query)
+        const filteredEntries = query
+          ? entries.filter((entry) => entry.label.toLowerCase().includes(query))
+          : entries
+        const shouldRender = !query || rootMatches || filteredEntries.length > 0
+
+        if (!shouldRender) {
+          return null
+        }
+
+        return {
+          model,
+          rootId,
+          rootVisible: objects[rootId]?.visible ?? sceneGraph[rootId]?.visible ?? true,
+          isRootSelected: selectedObjectId === rootId,
+          entries,
+          filteredEntries,
+        }
+      })
+      .filter((section): section is NonNullable<typeof section> => Boolean(section))
+  }, [materials, meshIdsByRoot, objects, rootModels, sceneGraph, search, selectedObjectId, viewMode])
+
   const visibleEntries = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const source =
-      viewMode === 'materials' ? materialEntries : viewMode === 'lights' ? lightEntries : meshEntries
+    const source = viewMode === 'lights' ? lightEntries : viewMode === 'effects' ? effectEntries : []
 
     if (!query) {
       return source
     }
 
     return source.filter((entry) => entry.label.toLowerCase().includes(query))
-  }, [lightEntries, materialEntries, meshEntries, search, viewMode])
+  }, [effectEntries, lightEntries, search, viewMode])
 
-  const fileRootLabel = loadedFileName ?? 'Scene'
-  const showFileRoot = viewMode !== 'lights' && (Boolean(rootNodeId) || Boolean(loadedFileName))
+  const handleToggleRootCollapsed = (rootId: string) => {
+    if (viewMode !== 'layers' && viewMode !== 'meshes' && viewMode !== 'materials') {
+      return
+    }
+
+    setCollapsedRootsByMode((current) => ({
+      ...current,
+      [viewMode]: {
+        ...current[viewMode],
+        [rootId]: !current[viewMode][rootId],
+      },
+    }))
+  }
 
   const handleToggleVisibility = (entry: OutlinerEntry) => {
+    if (entry.kind === 'effect') {
+      setHud({ postEffectsVisible: !hud.postEffectsVisible })
+      return
+    }
     if (entry.kind === 'environment') {
       setEnvironment({ isEnvironmentEnabled: !environment.isEnvironmentEnabled })
       return
@@ -389,6 +479,13 @@ export function Outliner() {
     if (!entry.removable) {
       return
     }
+    if (entry.kind === 'effect') {
+      if (selectedObjectId === entry.selectionId) {
+        setSelectedObjectId(null)
+      }
+      setHud({ postEffectsEnabled: false, postEffectsVisible: false })
+      return
+    }
     if (entry.kind === 'environment') {
       removeEnvironment()
       return
@@ -406,6 +503,14 @@ export function Outliner() {
       return
     }
     deleteObject(entry.selectionId)
+  }
+
+  const handleDeleteRoot = (targetRootId: string) => {
+    if (!targetRootId) {
+      return
+    }
+
+    deleteObject(targetRootId)
   }
 
   return (
@@ -442,29 +547,174 @@ export function Outliner() {
             <ModeButton active={viewMode === 'lights'} title="Lights" onClick={() => setViewMode('lights')}>
               <LightIcon />
             </ModeButton>
+            <ModeButton active={viewMode === 'effects'} title="Effects" onClick={() => setViewMode('effects')}>
+              <FxIcon />
+            </ModeButton>
           </div>
         </div>
       </div>
       <div className="tree-view outliner-list">
-        {showFileRoot ? (
-          <div className="tree-node tree-node--root" style={{ paddingLeft: '10px' }}>
-            <span className="tree-node__icon is-root">
-              <RowIcon kind="root" />
-            </span>
-            <span className="tree-node__label">{fileRootLabel}</span>
-          </div>
-        ) : null}
-        {visibleEntries.map((entry) => {
+        {(viewMode === 'layers' || viewMode === 'meshes' || viewMode === 'materials')
+          ? rootSections.map((section) => {
+              const isCollapsed = !search.trim() && collapsedRootsByMode[viewMode][section.rootId]
+              const entriesToRender = search.trim() ? section.filteredEntries : section.entries
+              const hasChildren = section.entries.length > 0
+
+              return (
+                <div key={section.rootId}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`tree-node tree-node--root${section.isRootSelected ? ' is-selected' : ''}${!section.rootVisible ? ' is-dimmed' : ''}`}
+                    style={{ paddingLeft: '10px' }}
+                    onClick={() => {
+                      setSelectedObjectId(section.rootId)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') {
+                        return
+                      }
+                      event.preventDefault()
+                      setSelectedObjectId(section.rootId)
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className={`tree-node__chevron${!isCollapsed ? ' is-expanded' : ''}${!hasChildren ? ' tree-node__chevron--placeholder' : ''}`}
+                      aria-label={isCollapsed ? 'Expand model contents' : 'Collapse model contents'}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (hasChildren) {
+                          handleToggleRootCollapsed(section.rootId)
+                        }
+                      }}
+                      onPointerDown={(event) => event.stopPropagation()}
+                    >
+                      <span>{'>'}</span>
+                    </button>
+                    <span className="tree-node__icon is-root">
+                      <RowIcon kind="root" />
+                    </span>
+                    <span className="tree-node__label">{section.model.label}</span>
+                    <span className="tree-node__actions">
+                      <button
+                        type="button"
+                        className={`tree-action${!section.rootVisible ? ' is-active' : ''}`}
+                        aria-label={!section.rootVisible ? 'Show model' : 'Hide model'}
+                        title={!section.rootVisible ? 'Show model' : 'Hide model'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleVisibility(section.rootId)
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <EyeIcon hidden={!section.rootVisible} />
+                      </button>
+                      <button
+                        type="button"
+                        className="tree-action"
+                        aria-label="Delete entire model"
+                        title="Delete entire model"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleDeleteRoot(section.rootId)
+                        }}
+                        onPointerDown={(event) => event.stopPropagation()}
+                      >
+                        <DeleteIcon />
+                      </button>
+                    </span>
+                  </div>
+                  {!isCollapsed
+                    ? entriesToRender.map((entry) => {
+                        const materialVisible =
+                          entry.kind === 'material'
+                            ? (materials[entry.materialId]?.meshIds ?? []).every((meshId) => objects[meshId]?.visible ?? true)
+                            : true
+                        const isSelected =
+                          entry.kind === 'material'
+                            ? selectedMaterialId === entry.materialId || selectedObjectId === entry.parentMeshId
+                            : selectedObjectId === entry.selectionId
+                        const isVisibilityHidden = entry.kind === 'material' ? !materialVisible : !entry.visible
+
+                        return (
+                          <div
+                            key={entry.id}
+                            role="button"
+                            tabIndex={0}
+                            className={`tree-node${isSelected ? ' is-selected' : ''}${isVisibilityHidden ? ' is-dimmed' : ''}`}
+                            onClick={() => {
+                              if (entry.kind === 'material') {
+                                setSelectedMaterialId(entry.materialId)
+                                return
+                              }
+                              setSelectedObjectId(entry.selectionId)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key !== 'Enter' && event.key !== ' ') {
+                                return
+                              }
+                              event.preventDefault()
+                              if (entry.kind === 'material') {
+                                setSelectedMaterialId(entry.materialId)
+                                return
+                              }
+                              setSelectedObjectId(entry.selectionId)
+                            }}
+                            style={{ paddingLeft: `${10 + entry.depth * 16}px` }}
+                          >
+                            <span className={`tree-node__icon is-${entry.kind === 'environment' ? 'material' : entry.kind}`}>
+                              <RowIcon kind={entry.kind} />
+                            </span>
+                            <span className="tree-node__label">{entry.label}</span>
+                            <span className="tree-node__actions">
+                              <button
+                                type="button"
+                                className={`tree-action${isVisibilityHidden ? ' is-active' : ''}`}
+                                aria-label={isVisibilityHidden ? 'Show item' : 'Hide item'}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleToggleVisibility(entry)
+                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                              >
+                                <EyeIcon hidden={isVisibilityHidden} />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!entry.removable && entry.kind !== 'material'}
+                                className="tree-action"
+                                aria-label="Delete item"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleDeleteObject(entry)
+                                }}
+                                onPointerDown={(event) => event.stopPropagation()}
+                              >
+                                <DeleteIcon />
+                              </button>
+                            </span>
+                          </div>
+                        )
+                      })
+                    : null}
+                </div>
+              )
+            })
+          : visibleEntries.map((entry) => {
           const materialVisible =
             entry.kind === 'material'
               ? (materials[entry.materialId]?.meshIds ?? []).every((meshId) => objects[meshId]?.visible ?? true)
               : true
           const isSelected =
-            entry.kind === 'material'
+            entry.kind === 'effect'
+              ? false
+              : entry.kind === 'material'
               ? selectedMaterialId === entry.materialId || selectedObjectId === entry.parentMeshId
               : selectedObjectId === entry.selectionId
 
-          const isVisibilityHidden = entry.kind === 'material' ? !materialVisible : !entry.visible
+          const isVisibilityHidden =
+            entry.kind === 'material' ? !materialVisible : entry.kind === 'effect' ? !hud.postEffectsVisible : !entry.visible
 
           return (
             <div
@@ -473,6 +723,11 @@ export function Outliner() {
               tabIndex={0}
               className={`tree-node${isSelected ? ' is-selected' : ''}${isVisibilityHidden ? ' is-dimmed' : ''}`}
               onClick={() => {
+                if (entry.kind === 'effect') {
+                  setSelectedObjectId(entry.selectionId)
+                  setSelectedMaterialId(null)
+                  return
+                }
                 if (entry.kind === 'material') {
                   setSelectedMaterialId(entry.materialId)
                   return
@@ -484,6 +739,11 @@ export function Outliner() {
                   return
                 }
                 event.preventDefault()
+                if (entry.kind === 'effect') {
+                  setSelectedObjectId(entry.selectionId)
+                  setSelectedMaterialId(null)
+                  return
+                }
                 if (entry.kind === 'material') {
                   setSelectedMaterialId(entry.materialId)
                   return
@@ -526,7 +786,13 @@ export function Outliner() {
             </div>
           )
         })}
-        {!visibleEntries.length ? <p className="panel-empty">No objects match the current mode.</p> : null}
+        {(viewMode === 'layers' || viewMode === 'meshes' || viewMode === 'materials')
+          ? !rootSections.length
+            ? <p className="panel-empty">No objects match the current mode.</p>
+            : null
+          : !visibleEntries.length
+            ? <p className="panel-empty">No objects match the current mode.</p>
+            : null}
       </div>
     </section>
   )

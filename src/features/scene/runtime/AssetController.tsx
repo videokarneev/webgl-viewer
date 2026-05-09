@@ -1,20 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
-import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { useEditorStore } from '../../../store/editorStore'
 import { ensureAtlasTextureOptions } from '../../atlas/atlasMaterialPatch'
 import { buildSceneGraph } from '../buildSceneGraph'
-import { frameObject, loadGltf, loadHdri, loadTexture } from './shared'
+import { loadGltf, loadHdri, loadTexture } from './shared'
 
 export function AssetController({
-  controlsRef,
   onRootLoaded,
 }: {
-  controlsRef: React.RefObject<OrbitControlsImpl | null>
   onRootLoaded: (root: THREE.Object3D | null) => void
 }) {
-  const { gl, camera } = useThree()
+  const { gl } = useThree()
   const pmremRef = useRef<THREE.PMREMGenerator | null>(null)
   const modelRequest = useEditorStore((state) => state.modelRequest)
   const atlasRequest = useEditorStore((state) => state.atlasRequest)
@@ -68,7 +65,6 @@ export function AssetController({
         setStatus(`Model loaded: ${modelRequest.label}`)
         onRootLoaded(root)
         setViewer({ cameraMode: 'orbit' })
-        frameObject(root, camera as THREE.PerspectiveCamera, controlsRef.current)
       })
       .catch((error) => {
         console.error(error)
@@ -83,7 +79,7 @@ export function AssetController({
     return () => {
       isCancelled = true
     }
-  }, [camera, controlsRef, modelRequest, onRootLoaded, setAssets, setSceneGraph, setStatus, setViewer])
+  }, [modelRequest, onRootLoaded, setAssets, setSceneGraph, setStatus, setViewer])
 
   useEffect(() => {
     if (!atlasRequest) {

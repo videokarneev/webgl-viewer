@@ -6,8 +6,14 @@ export type AtlasTargetSlot = 'emissive' | 'baseColor'
 export type AtlasFrameOrder = 'row' | 'column'
 export type AtlasUvChannel = 'auto' | 'normal' | 'baseColor' | 'emissive' | 'uv' | 'uv2'
 export type AtlasWrapMode = 'repeat' | 'clamp'
-export type TransformMode = 'translate' | 'rotate'
+export type TransformMode = 'translate' | 'rotate' | 'none'
+export type MeasurementUnit = 'cm' | 'm'
 export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
+
+export const DEFAULT_VIEWER_FOCAL_LENGTH = 20
+export const DEFAULT_VIEWER_CAMERA_FOV = 63.5
+export const DEFAULT_VIEWER_CAMERA_POSITION: [number, number, number] = [4, 3, 5]
+export const DEFAULT_VIEWER_ORBIT_TARGET: [number, number, number] = [0, 0, 0]
 
 export interface AtlasEffectState {
   enabled: boolean
@@ -66,6 +72,11 @@ export interface SceneGraphNode {
   visible?: boolean
 }
 
+export interface LoadedModelState {
+  rootNodeId: string
+  label: string
+}
+
 export interface ObjectTransformState {
   position: [number, number, number]
   rotation: [number, number, number]
@@ -119,9 +130,19 @@ export interface ViewportHudState {
   gridVisible: boolean
   axesVisible: boolean
   postEffectsEnabled: boolean
+  postEffectsVisible: boolean
+  anchorModeEnabled: boolean
   sidebarVisible: boolean
   inspectorVisible: boolean
   transformMode: TransformMode
+}
+
+export interface TransformSettingsState {
+  measurementUnit: MeasurementUnit
+  translationStep: number
+  isGridSnapping: boolean
+  rotationStep: number
+  gridSize: number
 }
 
 export interface ViewerState {
@@ -136,6 +157,8 @@ export interface ViewerState {
   toneMappingAdaptation: number
   cameraPosition: [number, number, number]
   orbitTarget: [number, number, number]
+  resetCameraPosition: [number, number, number]
+  resetOrbitTarget: [number, number, number]
   dofEnabled: boolean
   dofVisualizerEnabled: boolean
   dofFocusDistance: number
@@ -269,6 +292,8 @@ export interface SceneConfigRequest {
 interface EditorState {
   sceneGraph: Record<string, SceneGraphNode>
   rootNodeId: string | null
+  rootNodeIds: string[]
+  loadedModels: LoadedModelState[]
   loadedFileName: string | null
   isZenMode: boolean
   defaultEnvUrl: string
@@ -279,6 +304,7 @@ interface EditorState {
   backgroundRotation: number
   selectedObjectId: string | null
   selectedMaterialId: string | null
+  selectedAnchorIndex: number | null
   objects: Record<string, ObjectTransformState>
   materials: Record<string, PbrMaterialState>
   environment: EnvironmentState
@@ -287,6 +313,7 @@ interface EditorState {
     rig: LightRigState
   }
   hud: ViewportHudState
+  transformSettings: TransformSettingsState
   viewer: ViewerState
   assets: AssetSourceState
   extraLights: ExtraLightState[]
@@ -301,11 +328,21 @@ interface EditorState {
   sceneResetNonce: number
   setSelectedObjectId: (id: string | null) => void
   setSelectedMaterialId: (id: string | null) => void
+  setSelectedAnchorIndex: (index: number | null) => void
   setSceneGraph: (
     sceneGraph: Record<string, SceneGraphNode>,
     objects: Record<string, ObjectTransformState>,
     materials: Record<string, PbrMaterialState>,
     rootNodeId: string | null,
+    selectedObjectId?: string | null,
+    loadedModelLabel?: string | null,
+  ) => void
+  addLoadedModel: (
+    sceneGraph: Record<string, SceneGraphNode>,
+    objects: Record<string, ObjectTransformState>,
+    materials: Record<string, PbrMaterialState>,
+    rootNodeId: string,
+    loadedModelLabel: string,
     selectedObjectId?: string | null,
   ) => void
   updateObjectTransform: (id: string, patch: Partial<ObjectTransformState>) => void
@@ -331,6 +368,7 @@ interface EditorState {
   setBackgroundPanoramaUrl: (value: string) => void
   setBackgroundRotation: (value: number) => void
   setHud: (patch: Partial<ViewportHudState>) => void
+  setTransformSettings: (patch: Partial<TransformSettingsState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
   setAssets: (patch: Partial<AssetSourceState>) => void
   addExtraLight: (type?: ExtraLightType) => void
@@ -602,6 +640,8 @@ function buildDeletePatch(state: EditorState, id: string) {
   const materials = { ...state.materials }
   const runtimeObjectById = { ...state.runtime.objectById }
   const runtimeMaterialById = { ...state.runtime.materialById }
+  const isDeletingModelRoot = state.rootNodeIds.includes(id)
+  const isDeletingPrimaryRoot = state.rootNodeId === id
   const selectedObjectWasRemoved =
     state.selectedObjectId === id || (state.selectedObjectId ? idsToRemove.has(state.selectedObjectId) : false)
 
@@ -659,15 +699,34 @@ function buildDeletePatch(state: EditorState, id: string) {
   const selectedMaterialWasRemoved =
     state.selectedMaterialId != null && !materials[state.selectedMaterialId]
 
+  const nextRootNodeIds = isDeletingModelRoot ? state.rootNodeIds.filter((rootId) => rootId !== id) : state.rootNodeIds
+  const nextLoadedModels = isDeletingModelRoot
+    ? state.loadedModels.filter((model) => model.rootNodeId !== id)
+    : state.loadedModels
+  const nextPrimaryRootId = isDeletingPrimaryRoot ? nextRootNodeIds[nextRootNodeIds.length - 1] ?? null : state.rootNodeId
+  const nextLoadedFileName = isDeletingPrimaryRoot ? nextLoadedModels[nextLoadedModels.length - 1]?.label ?? null : state.loadedFileName
+
   return {
     sceneGraph,
     objects,
     materials,
+    rootNodeId: nextPrimaryRootId,
+    rootNodeIds: nextRootNodeIds,
+    loadedModels: nextLoadedModels,
+    loadedFileName: nextLoadedFileName,
+    assets: isDeletingPrimaryRoot
+      ? {
+          ...state.assets,
+          model: nextLoadedFileName,
+          fileSize: null,
+        }
+      : state.assets,
     runtime: {
       objectById: runtimeObjectById,
       materialById: runtimeMaterialById,
     },
     selectedObjectId: selectedObjectWasRemoved ? null : state.selectedObjectId,
+    selectedAnchorIndex: selectedObjectWasRemoved ? null : state.selectedAnchorIndex,
     selectedMaterialId:
       selectedObjectWasRemoved || selectedMaterialWasRemoved
         ? null
@@ -678,6 +737,8 @@ function buildDeletePatch(state: EditorState, id: string) {
 export const useEditorStore = create<EditorState>((set) => ({
   sceneGraph: {},
   rootNodeId: null,
+  rootNodeIds: [],
+  loadedModels: [],
   loadedFileName: null,
   isZenMode: false,
   defaultEnvUrl: '/textures/studio.exr',
@@ -688,6 +749,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   backgroundRotation: 0,
   selectedObjectId: null,
   selectedMaterialId: null,
+  selectedAnchorIndex: null,
   objects: {},
   materials: {},
   environment: {
@@ -724,23 +786,34 @@ export const useEditorStore = create<EditorState>((set) => ({
     fpsEnabled: false,
     gridVisible: true,
     axesVisible: false,
-    postEffectsEnabled: true,
+    postEffectsEnabled: false,
+    postEffectsVisible: false,
+    anchorModeEnabled: false,
     sidebarVisible: true,
     inspectorVisible: true,
-    transformMode: 'translate',
+    transformMode: 'none',
+  },
+  transformSettings: {
+    measurementUnit: 'cm',
+    translationStep: 0,
+    isGridSnapping: false,
+    rotationStep: 0,
+    gridSize: 1,
   },
   viewer: {
     cameraMode: 'orbit',
     flightSpeed: 5,
-    focalLength: 12,
+    focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
     exposure: 1,
     bloomIntensity: 0.95,
     bloomRadius: 0.32,
     bloomThreshold: 0.18,
     toneMappingWhitePoint: 4,
     toneMappingAdaptation: 1,
-    cameraPosition: [4, 3, 5],
-    orbitTarget: [0, 0, 0],
+    cameraPosition: DEFAULT_VIEWER_CAMERA_POSITION,
+    orbitTarget: DEFAULT_VIEWER_ORBIT_TARGET,
+    resetCameraPosition: DEFAULT_VIEWER_CAMERA_POSITION,
+    resetOrbitTarget: DEFAULT_VIEWER_ORBIT_TARGET,
     dofEnabled: false,
     dofVisualizerEnabled: false,
     dofFocusDistance: 5,
@@ -781,12 +854,14 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) => ({
       selectedObjectId: id,
       selectedMaterialId: resolveSelectedMaterialId(id, state.sceneGraph),
+      selectedAnchorIndex: null,
     })),
   setSelectedMaterialId: (id) =>
     set((state) => {
       if (!id) {
         return {
           selectedMaterialId: null,
+          selectedAnchorIndex: null,
         }
       }
 
@@ -798,9 +873,11 @@ export const useEditorStore = create<EditorState>((set) => ({
       return {
         selectedMaterialId: id,
         selectedObjectId: material.meshIds[0] ?? state.selectedObjectId,
+        selectedAnchorIndex: null,
       }
     }),
-  setSceneGraph: (sceneGraph, objects, materials, rootNodeId, selectedObjectId) =>
+  setSelectedAnchorIndex: (index) => set({ selectedAnchorIndex: index }),
+  setSceneGraph: (sceneGraph, objects, materials, rootNodeId, selectedObjectId, loadedModelLabel) =>
     set((state) => {
       const nextSceneGraph = { ...sceneGraph }
       const nextObjects = { ...objects }
@@ -830,7 +907,43 @@ export const useEditorStore = create<EditorState>((set) => ({
         objects: nextObjects,
         materials,
         rootNodeId,
+        rootNodeIds: rootNodeId ? [rootNodeId] : [],
+        loadedModels: rootNodeId && loadedModelLabel ? [{ rootNodeId, label: loadedModelLabel }] : [],
+        loadedFileName: loadedModelLabel ?? null,
         selectedObjectId: nextSelectedObjectId,
+        selectedAnchorIndex: null,
+        selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
+      }
+    }),
+  addLoadedModel: (sceneGraph, objects, materials, rootNodeId, loadedModelLabel, selectedObjectId) =>
+    set((state) => {
+      const nextSceneGraph = {
+        ...state.sceneGraph,
+        ...sceneGraph,
+      }
+      const nextObjects = {
+        ...state.objects,
+        ...objects,
+      }
+      const nextMaterials = {
+        ...state.materials,
+        ...materials,
+      }
+      const nextSelectedObjectId = selectedObjectId === undefined ? rootNodeId : selectedObjectId
+
+      return {
+        sceneGraph: nextSceneGraph,
+        objects: nextObjects,
+        materials: nextMaterials,
+        rootNodeId,
+        rootNodeIds: [...state.rootNodeIds.filter((id) => id !== rootNodeId), rootNodeId],
+        loadedModels: [
+          ...state.loadedModels.filter((model) => model.rootNodeId !== rootNodeId),
+          { rootNodeId, label: loadedModelLabel },
+        ],
+        loadedFileName: loadedModelLabel,
+        selectedObjectId: nextSelectedObjectId,
+        selectedAnchorIndex: null,
         selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
       }
     }),
@@ -1061,6 +1174,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           environmentBackground: null,
         },
         selectedObjectId: state.selectedObjectId === 'environment:system' ? null : state.selectedObjectId,
+        selectedAnchorIndex: state.selectedObjectId === 'environment:system' ? null : state.selectedAnchorIndex,
         selectedMaterialId:
           state.selectedObjectId === 'environment:system'
             ? null
@@ -1091,6 +1205,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         rig: state.lights.rig,
       },
       selectedObjectId: state.selectedObjectId === 'light:ambient:system' ? null : state.selectedObjectId,
+      selectedAnchorIndex: state.selectedObjectId === 'light:ambient:system' ? null : state.selectedAnchorIndex,
       selectedMaterialId:
         state.selectedObjectId === 'light:ambient:system'
           ? null
@@ -1108,6 +1223,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         rig: state.lights.rig,
       },
       selectedObjectId: 'light:ambient:system',
+      selectedAnchorIndex: null,
       selectedMaterialId: null,
     })),
   setZenMode: (value) => set({ isZenMode: value }),
@@ -1138,6 +1254,13 @@ export const useEditorStore = create<EditorState>((set) => ({
     set((state) => ({
       hud: {
         ...state.hud,
+        ...patch,
+      },
+    })),
+  setTransformSettings: (patch) =>
+    set((state) => ({
+      transformSettings: {
+        ...state.transformSettings,
         ...patch,
       },
     })),
@@ -1217,6 +1340,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           },
         },
         selectedObjectId: id,
+        selectedAnchorIndex: null,
         selectedMaterialId: null,
       }
     }),
@@ -1243,6 +1367,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           objectById: runtimeObjectById,
         },
         selectedObjectId: state.selectedObjectId === targetId ? null : state.selectedObjectId,
+        selectedAnchorIndex: state.selectedObjectId === targetId ? null : state.selectedAnchorIndex,
         selectedMaterialId:
           state.selectedObjectId === targetId
             ? null
@@ -1384,6 +1509,8 @@ export const useEditorStore = create<EditorState>((set) => ({
       return {
         sceneGraph: {},
         rootNodeId: null,
+        rootNodeIds: [],
+        loadedModels: [],
         loadedFileName: null,
         isZenMode: false,
         defaultEnvUrl: state.defaultEnvUrl,
@@ -1394,6 +1521,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundRotation: 0,
         selectedObjectId: null,
         selectedMaterialId: null,
+        selectedAnchorIndex: null,
         objects: {},
         materials: {},
         environment: {
@@ -1428,15 +1556,17 @@ export const useEditorStore = create<EditorState>((set) => ({
         viewer: {
           cameraMode: 'orbit',
           flightSpeed: 5,
-          focalLength: 12,
+          focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
           exposure: 1,
           bloomIntensity: 0.95,
           bloomRadius: 0.32,
           bloomThreshold: 0.18,
           toneMappingWhitePoint: 4,
           toneMappingAdaptation: 1,
-          cameraPosition: [4, 3, 5],
-          orbitTarget: [0, 0, 0],
+          cameraPosition: DEFAULT_VIEWER_CAMERA_POSITION,
+          orbitTarget: DEFAULT_VIEWER_ORBIT_TARGET,
+          resetCameraPosition: DEFAULT_VIEWER_CAMERA_POSITION,
+          resetOrbitTarget: DEFAULT_VIEWER_ORBIT_TARGET,
           dofEnabled: false,
           dofVisualizerEnabled: false,
           dofFocusDistance: 5,
@@ -1448,10 +1578,19 @@ export const useEditorStore = create<EditorState>((set) => ({
           fpsEnabled: false,
           gridVisible: true,
           axesVisible: false,
-          postEffectsEnabled: true,
+          postEffectsEnabled: false,
+          postEffectsVisible: false,
+          anchorModeEnabled: false,
           sidebarVisible: true,
           inspectorVisible: true,
-          transformMode: 'translate',
+          transformMode: 'none',
+        },
+        transformSettings: {
+          measurementUnit: 'cm',
+          translationStep: 0,
+          isGridSnapping: false,
+          rotationStep: 0,
+          gridSize: 1,
         },
         assets: {
           model: null,

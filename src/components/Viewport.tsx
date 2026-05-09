@@ -1,15 +1,21 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Grid, OrbitControls } from '@react-three/drei'
+import { Grid, OrbitControls, TransformControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
-import { fitCameraToObject } from '../features/scene/runtime/shared'
+import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
-import { useEditorStore } from '../store/editorStore'
+import {
+  DEFAULT_VIEWER_CAMERA_FOV,
+  DEFAULT_VIEWER_FOCAL_LENGTH,
+  useEditorStore,
+} from '../store/editorStore'
 import { MaterialEffectController } from './MaterialEffectController'
+import { TransformToolbar } from './TransformToolbar'
 import { ViewportHud } from './ViewportHud'
 import { FlightController } from './viewport/FlightController'
+import { syncRuntimeObjectTransform } from './viewport/transformShared'
 import {
   consumeFlightUnlockForEscape,
   consumeFlightUnlockFullscreenRestore,
@@ -24,11 +30,6 @@ const EnvironmentManager = lazy(() =>
 const LightRig = lazy(() =>
   import('./viewport/LightRig').then((module) => ({
     default: module.LightRig,
-  })),
-)
-const ViewportContactShadows = lazy(() =>
-  import('./viewport/ViewportContactShadows').then((module) => ({
-    default: module.ViewportContactShadows,
   })),
 )
 const PostEffects = lazy(() =>
@@ -46,6 +47,29 @@ const LIGHT_METRIC_TEXT = {
 const DARK_METRIC_TEXT = {
   primary: 'rgba(26, 26, 26, 0.94)',
   muted: 'rgba(26, 26, 26, 0.82)',
+}
+const ANCHOR_HANDLE_COLOR = '#cfe6f7'
+const ANCHOR_HANDLE_HOVER_COLOR = '#eef9ff'
+const ANCHOR_HANDLE_ACTIVE_COLOR = '#ffffff'
+const ANCHOR_HANDLE_ACTIVE_GLOW_COLOR = '#7fd0ff'
+
+function writeBoundingBoxCorners(box: THREE.Box3, corners: THREE.Vector3[]) {
+  const min = box.min
+  const max = box.max
+  const values: [number, number, number][] = [
+    [min.x, min.y, min.z],
+    [min.x, min.y, max.z],
+    [min.x, max.y, min.z],
+    [min.x, max.y, max.z],
+    [max.x, min.y, min.z],
+    [max.x, min.y, max.z],
+    [max.x, max.y, min.z],
+    [max.x, max.y, max.z],
+  ]
+
+  values.forEach(([x, y, z], index) => {
+    corners[index].set(x, y, z)
+  })
 }
 
 function getLuminanceFromRgb(red: number, green: number, blue: number) {
@@ -385,25 +409,27 @@ function collectSceneGpuStats(state: ReturnType<typeof useEditorStore.getState>)
   addTexture(state.runtimeTextures.environmentMap)
   addTexture(state.runtimeTextures.environmentBackground)
 
-  const root = state.rootNodeId ? state.runtime.objectById[state.rootNodeId] ?? null : null
-  root?.traverse((object) => {
-    if (!(object as THREE.Mesh).isMesh) {
-      return
-    }
+  state.rootNodeIds.forEach((rootNodeId) => {
+    const root = state.runtime.objectById[rootNodeId] ?? null
+    root?.traverse((object) => {
+      if (!(object as THREE.Mesh).isMesh) {
+        return
+      }
 
-    const geometry = (object as THREE.Mesh).geometry
-    if (!geometry || geometries.has(geometry.uuid)) {
-      return
-    }
+      const geometry = (object as THREE.Mesh).geometry
+      if (!geometry || geometries.has(geometry.uuid)) {
+        return
+      }
 
-    geometries.add(geometry.uuid)
-    geometryBytes += getGeometryMemoryBytes(geometry)
+      geometries.add(geometry.uuid)
+      geometryBytes += getGeometryMemoryBytes(geometry)
+    })
   })
 
   const textureBytes = Array.from(textures.values()).reduce((sum, texture) => sum + texture.bytes, 0)
   const width = typeof window === 'undefined' ? 0 : window.innerWidth * window.devicePixelRatio
   const height = typeof window === 'undefined' ? 0 : window.innerHeight * window.devicePixelRatio
-  const postProcessingBytes = state.hud.postEffectsEnabled ? width * height * 4 * 3 : 0
+  const postProcessingBytes = state.hud.postEffectsEnabled && state.hud.postEffectsVisible ? width * height * 4 * 3 : 0
   const bytes = textureBytes + geometryBytes + postProcessingBytes
 
   return {
@@ -460,8 +486,7 @@ function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitContr
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
     perspectiveCamera.position.set(...viewer.cameraPosition)
-    perspectiveCamera.setFocalLength(viewer.focalLength)
-    perspectiveCamera.updateProjectionMatrix()
+    applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
   }, [camera, viewer.cameraPosition, viewer.focalLength])
 
   return <ViewerSync controlsRef={controlsRef} />
@@ -481,16 +506,30 @@ function RendererBridge() {
 }
 
 function SceneBridge() {
-  const rootNodeId = useEditorStore((state) => state.rootNodeId)
-  const root = useEditorStore((state) =>
-    state.rootNodeId ? state.runtime.objectById[state.rootNodeId] ?? null : null,
+  const loadedModels = useEditorStore((state) => state.loadedModels)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const roots = useMemo(
+    () =>
+      loadedModels
+        .map((model) => ({
+          rootNodeId: model.rootNodeId,
+          root: runtimeObjectById[model.rootNodeId] ?? null,
+        }))
+        .filter((entry): entry is { rootNodeId: string; root: THREE.Object3D } => Boolean(entry.root)),
+    [loadedModels, runtimeObjectById],
   )
 
-  if (!rootNodeId || !root) {
+  if (!loadedModels.length || !roots.length) {
     return null
   }
 
-  return <LoadedSceneRoot root={root} />
+  return (
+    <>
+      {roots.map((entry) =>
+        entry.root ? <LoadedSceneRoot key={entry.rootNodeId} root={entry.root} /> : null,
+      )}
+    </>
+  )
 }
 
 function SelectionHighlight() {
@@ -529,14 +568,401 @@ function SelectionHighlight() {
   return null
 }
 
+function AnchorHandles() {
+  const { camera, size } = useThree()
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedNode = useEditorStore((state) =>
+    state.selectedObjectId ? state.sceneGraph[state.selectedObjectId] ?? null : null,
+  )
+  const object = useEditorStore((state) =>
+    state.selectedObjectId ? state.runtime.objectById[state.selectedObjectId] ?? null : null,
+  )
+  const anchorModeEnabled = useEditorStore((state) => state.hud.anchorModeEnabled)
+  const selectedAnchorIndex = useEditorStore((state) => state.selectedAnchorIndex)
+  const setSelectedAnchorIndex = useEditorStore((state) => state.setSelectedAnchorIndex)
+  const tempBox = useMemo(() => new THREE.Box3(), [])
+  const tempSphere = useMemo(() => new THREE.Sphere(), [])
+  const corners = useMemo(() => Array.from({ length: 8 }, () => new THREE.Vector3()), [])
+  const handleRefs = useRef<Array<THREE.Group | null>>([])
+  const [hoveredAnchorIndex, setHoveredAnchorIndex] = useState<number | null>(null)
+  const perspectiveCamera = camera as THREE.PerspectiveCamera
+
+  useFrame(() => {
+    if (!anchorModeEnabled || !selectedObjectId || !selectedNode || selectedNode.type === 'material' || !object) {
+      return
+    }
+
+    object.updateWorldMatrix(true, true)
+    tempBox.setFromObject(object)
+    if (tempBox.isEmpty()) {
+      return
+    }
+
+    writeBoundingBoxCorners(tempBox, corners)
+    tempBox.getBoundingSphere(tempSphere)
+
+    const verticalFovRadians = THREE.MathUtils.degToRad(
+      perspectiveCamera.isPerspectiveCamera ? perspectiveCamera.fov : DEFAULT_VIEWER_CAMERA_FOV,
+    )
+    const viewportHeight = Math.max(size.height, 1)
+    const minHandleRadius = Math.max(tempSphere.radius * 0.015, 0.006)
+    const maxHandleRadius = Math.max(tempSphere.radius * 0.06, minHandleRadius)
+
+    corners.forEach((corner, index) => {
+      const handle = handleRefs.current[index]
+      if (!handle) {
+        return
+      }
+
+      handle.position.copy(corner)
+      const distanceToCamera = corner.distanceTo(camera.position)
+      const worldUnitsPerPixel = (2 * Math.tan(verticalFovRadians / 2) * distanceToCamera) / viewportHeight
+      const desiredRadius = worldUnitsPerPixel * 7
+      const clampedRadius = THREE.MathUtils.clamp(desiredRadius, minHandleRadius, maxHandleRadius)
+      const isActive = selectedAnchorIndex === index
+      const isHovered = hoveredAnchorIndex === index
+      const visualScale = isActive ? 1.38 : isHovered ? 1.18 : 1
+      handle.scale.setScalar(clampedRadius)
+      handle.scale.multiplyScalar(visualScale)
+    })
+  }, -1)
+
+  if (!anchorModeEnabled || !selectedObjectId || !selectedNode || selectedNode.type === 'material' || !object) {
+    return null
+  }
+
+  object.updateWorldMatrix(true, true)
+  tempBox.setFromObject(object)
+  if (tempBox.isEmpty()) {
+    return null
+  }
+
+  writeBoundingBoxCorners(tempBox, corners)
+
+  return (
+    <group>
+      {corners.map((corner, index) => {
+        const isActive = selectedAnchorIndex === index
+        const isHovered = hoveredAnchorIndex === index
+        const baseColor = isActive ? ANCHOR_HANDLE_ACTIVE_COLOR : isHovered ? ANCHOR_HANDLE_HOVER_COLOR : ANCHOR_HANDLE_COLOR
+
+        return (
+          <group
+            key={`anchor-${index}`}
+            ref={(node) => {
+              handleRefs.current[index] = node
+            }}
+            position={corner}
+            onPointerOver={(event) => {
+              event.stopPropagation()
+              setHoveredAnchorIndex(index)
+            }}
+            onPointerOut={(event) => {
+              event.stopPropagation()
+              setHoveredAnchorIndex((current) => (current === index ? null : current))
+            }}
+            onPointerDown={(event) => {
+              event.stopPropagation()
+              setSelectedAnchorIndex(index)
+            }}
+          >
+            {isActive || isHovered ? (
+              <mesh>
+                <sphereGeometry args={[1.55, 18, 18]} />
+                <meshBasicMaterial
+                  color={isActive ? ANCHOR_HANDLE_ACTIVE_GLOW_COLOR : ANCHOR_HANDLE_HOVER_COLOR}
+                  transparent
+                  opacity={isActive ? 0.34 : 0.2}
+                  depthTest={false}
+                  toneMapped={false}
+                />
+              </mesh>
+            ) : null}
+            <mesh>
+              <sphereGeometry args={[1, 18, 18]} />
+              <meshBasicMaterial
+                color={baseColor}
+                transparent
+                opacity={isActive ? 1 : isHovered ? 0.94 : 0.78}
+                depthTest={false}
+                toneMapped={false}
+              />
+            </mesh>
+          </group>
+        )
+      })}
+    </group>
+  )
+}
+
+function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolean) => void }) {
+  const scene = useThree((state) => state.scene)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedNode = useEditorStore((state) =>
+    state.selectedObjectId ? state.sceneGraph[state.selectedObjectId] ?? null : null,
+  )
+  const rootNodeIds = useEditorStore((state) => state.rootNodeIds)
+  const object = useEditorStore((state) =>
+    state.selectedObjectId ? state.runtime.objectById[state.selectedObjectId] ?? null : null,
+  )
+  const transformMode = useEditorStore((state) => state.hud.transformMode)
+  const anchorModeEnabled = useEditorStore((state) => state.hud.anchorModeEnabled)
+  const selectedAnchorIndex = useEditorStore((state) => state.selectedAnchorIndex)
+  const transformSettings = useEditorStore((state) => state.transformSettings)
+  const cameraMode = useEditorStore((state) => state.viewer.cameraMode)
+  const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
+  const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const canRotate = selectedNode?.type !== 'light'
+  const pivotObject = useMemo(() => new THREE.Object3D(), [])
+  const previousPivotStateRef = useRef<{
+    position: THREE.Vector3
+    quaternion: THREE.Quaternion
+  } | null>(null)
+  const isDraggingRef = useRef(false)
+  const tempBox = useMemo(() => new THREE.Box3(), [])
+  const tempCenter = useMemo(() => new THREE.Vector3(), [])
+  const tempObjectWorldPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempObjectWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempParentWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempParentWorldScale = useMemo(() => new THREE.Vector3(), [])
+  const tempNextWorldPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempPositionOffset = useMemo(() => new THREE.Vector3(), [])
+  const tempDeltaQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempInversePreviousQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempParentInverseQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempParentWorldPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempLocalPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempWorldScale = useMemo(() => new THREE.Vector3(), [])
+  const anchorCorners = useMemo(() => Array.from({ length: 8 }, () => new THREE.Vector3()), [])
+  const isRootSelection = Boolean(selectedObjectId && rootNodeIds.includes(selectedObjectId))
+  const hasSelectedAnchor = anchorModeEnabled && selectedAnchorIndex !== null && selectedAnchorIndex >= 0 && selectedAnchorIndex < 8
+  const usesRootPivot = isRootSelection && transformMode === 'rotate'
+  const usesAnchorPivot = hasSelectedAnchor
+  const usesCustomPivot = usesRootPivot || usesAnchorPivot
+
+  useEffect(() => {
+    pivotObject.visible = false
+    scene.add(pivotObject)
+
+    return () => {
+      scene.remove(pivotObject)
+    }
+  }, [pivotObject, scene])
+  const translationSnapValue =
+    transformSettings.isGridSnapping
+      ? transformSettings.gridSize > 0
+        ? transformSettings.gridSize
+        : transformSettings.translationStep > 0
+          ? transformSettings.translationStep
+          : undefined
+      : undefined
+  const canRender =
+    transformMode !== 'none' &&
+    Boolean(selectedObjectId && selectedNode && selectedNode.type !== 'material' && object) &&
+    cameraMode === 'orbit' &&
+    !(transformMode === 'rotate' && !canRotate)
+
+  const syncTransform = () => {
+    if (!selectedObjectId || !selectedNode || !object) {
+      return
+    }
+
+    syncRuntimeObjectTransform({
+      selectedObjectId,
+      selectedNode,
+      runtimeObject: object,
+      updateObjectTransform,
+      updateExtraLight,
+    })
+
+    const lightWithTarget = object as THREE.Object3D & { target?: { updateMatrixWorld: () => void } }
+    lightWithTarget.target?.updateMatrixWorld()
+  }
+
+  useEffect(() => {
+    if (!canRender || !usesCustomPivot || isDraggingRef.current || !object) {
+      return
+    }
+
+    object.updateWorldMatrix(true, true)
+    if (usesAnchorPivot) {
+      tempBox.setFromObject(object)
+      if (tempBox.isEmpty()) {
+        object.getWorldPosition(tempCenter)
+      } else {
+        writeBoundingBoxCorners(tempBox, anchorCorners)
+        tempCenter.copy(anchorCorners[selectedAnchorIndex ?? 0])
+      }
+    } else {
+      tempBox.setFromObject(object)
+      if (tempBox.isEmpty()) {
+        object.getWorldPosition(tempCenter)
+      } else {
+        tempBox.getCenter(tempCenter)
+      }
+    }
+
+    object.getWorldQuaternion(tempObjectWorldQuaternion)
+    pivotObject.position.copy(tempCenter)
+    pivotObject.quaternion.copy(tempObjectWorldQuaternion)
+    pivotObject.scale.set(1, 1, 1)
+    pivotObject.updateMatrixWorld(true)
+    previousPivotStateRef.current = {
+      position: pivotObject.position.clone(),
+      quaternion: pivotObject.quaternion.clone(),
+    }
+  }, [
+    anchorCorners,
+    usesRootPivot,
+    usesAnchorPivot,
+    usesCustomPivot,
+    object,
+    pivotObject,
+    rootNodeIds,
+    selectedObjectId,
+    selectedAnchorIndex,
+    tempBox,
+    tempCenter,
+    tempObjectWorldQuaternion,
+    canRender,
+  ])
+
+  const applyPivotDelta = () => {
+    if (!object) {
+      return
+    }
+
+    const previous = previousPivotStateRef.current
+    if (!previous) {
+      previousPivotStateRef.current = {
+        position: pivotObject.position.clone(),
+        quaternion: pivotObject.quaternion.clone(),
+      }
+      return
+    }
+
+    object.updateWorldMatrix(true, true)
+    object.getWorldPosition(tempObjectWorldPosition)
+    object.getWorldQuaternion(tempObjectWorldQuaternion)
+    object.getWorldScale(tempWorldScale)
+
+    if (transformMode === 'translate') {
+      tempPositionOffset.copy(pivotObject.position).sub(previous.position)
+      tempNextWorldPosition.copy(tempObjectWorldPosition).add(tempPositionOffset)
+
+      const parent = object.parent
+      if (parent) {
+        parent.updateWorldMatrix(true, true)
+        parent.getWorldQuaternion(tempParentWorldQuaternion)
+        parent.getWorldPosition(tempParentWorldPosition)
+        parent.getWorldScale(tempParentWorldScale)
+        tempParentInverseQuaternion.copy(tempParentWorldQuaternion).invert()
+        tempLocalPosition.copy(tempNextWorldPosition).sub(tempParentWorldPosition)
+        tempLocalPosition.applyQuaternion(tempParentInverseQuaternion)
+        tempLocalPosition.divide(tempParentWorldScale)
+        object.position.copy(tempLocalPosition)
+      } else {
+        object.position.copy(tempNextWorldPosition)
+      }
+
+      object.updateMatrixWorld(true)
+      previousPivotStateRef.current = {
+        position: pivotObject.position.clone(),
+        quaternion: pivotObject.quaternion.clone(),
+      }
+      return
+    }
+
+    tempInversePreviousQuaternion.copy(previous.quaternion).invert()
+    tempDeltaQuaternion.copy(pivotObject.quaternion).multiply(tempInversePreviousQuaternion)
+    tempPositionOffset.copy(tempObjectWorldPosition).sub(previous.position).applyQuaternion(tempDeltaQuaternion)
+    tempNextWorldPosition.copy(pivotObject.position).add(tempPositionOffset)
+
+    const parent = object.parent
+    if (parent) {
+      parent.updateWorldMatrix(true, true)
+      parent.getWorldQuaternion(tempParentWorldQuaternion)
+      parent.getWorldPosition(tempParentWorldPosition)
+      parent.getWorldScale(tempParentWorldScale)
+      tempParentInverseQuaternion.copy(tempParentWorldQuaternion).invert()
+      tempLocalPosition.copy(tempNextWorldPosition).sub(tempParentWorldPosition)
+      tempLocalPosition.applyQuaternion(tempParentInverseQuaternion)
+      tempLocalPosition.divide(tempParentWorldScale)
+      object.position.copy(tempLocalPosition)
+      object.quaternion.copy(tempParentInverseQuaternion.multiply(tempDeltaQuaternion).multiply(tempObjectWorldQuaternion))
+    } else {
+      object.position.copy(tempNextWorldPosition)
+      object.quaternion.copy(tempDeltaQuaternion.multiply(tempObjectWorldQuaternion))
+    }
+
+    object.updateMatrixWorld(true)
+    previousPivotStateRef.current = {
+      position: pivotObject.position.clone(),
+      quaternion: pivotObject.quaternion.clone(),
+    }
+  }
+
+  if (!canRender || !object) {
+    return null
+  }
+
+  const gizmoObject = usesCustomPivot ? pivotObject : object
+
+  return (
+    <TransformControls
+      object={gizmoObject}
+      mode={transformMode}
+      translationSnap={translationSnapValue}
+      rotationSnap={
+        transformSettings.rotationStep > 0 ? THREE.MathUtils.degToRad(transformSettings.rotationStep) : undefined
+      }
+      onObjectChange={() => {
+        if (usesCustomPivot) {
+          applyPivotDelta()
+        }
+        syncTransform()
+      }}
+      onMouseDown={() => {
+        isDraggingRef.current = true
+        if (usesCustomPivot) {
+          previousPivotStateRef.current = {
+            position: pivotObject.position.clone(),
+            quaternion: pivotObject.quaternion.clone(),
+          }
+        }
+        onDraggingChange(true)
+      }}
+      onMouseUp={() => {
+        if (usesCustomPivot) {
+          applyPivotDelta()
+        }
+        syncTransform()
+        isDraggingRef.current = false
+        if (usesCustomPivot) {
+          previousPivotStateRef.current = {
+            position: pivotObject.position.clone(),
+            quaternion: pivotObject.quaternion.clone(),
+          }
+        }
+        onDraggingChange(false)
+      }}
+    />
+  )
+}
+
 function PerformanceProbe({
   onSample,
 }: {
   onSample: (sample: PerformanceSnapshot) => void
 }) {
-  const rootNodeId = useEditorStore((state) => state.rootNodeId)
-  const root = useEditorStore((state) =>
-    state.rootNodeId ? state.runtime.objectById[state.rootNodeId] ?? null : null,
+  const rootNodeIds = useEditorStore((state) => state.rootNodeIds)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const roots = useMemo(
+    () =>
+      rootNodeIds
+        .map((rootNodeId) => runtimeObjectById[rootNodeId] ?? null)
+        .filter((root): root is THREE.Object3D => Boolean(root)),
+    [rootNodeIds, runtimeObjectById],
   )
   const fpsWindowRef = useRef({ lastTime: 0, frames: 0, fps: 0 })
   const lastSampleRef = useRef(0)
@@ -556,7 +982,17 @@ function PerformanceProbe({
     }
 
     lastSampleRef.current = state.clock.elapsedTime
-    const totalStats = rootNodeId && root ? getGeometryStats(root) : { vertices: 0, triangles: 0, drawCalls: 0 }
+    const totalStats = roots.reduce(
+      (accumulator, root) => {
+        const nextStats = getGeometryStats(root)
+        return {
+          vertices: accumulator.vertices + nextStats.vertices,
+          triangles: accumulator.triangles + nextStats.triangles,
+          drawCalls: accumulator.drawCalls + nextStats.drawCalls,
+        }
+      },
+      { vertices: 0, triangles: 0, drawCalls: 0 },
+    )
     onSample({
       fps: Math.round(fpsWindowRef.current.fps),
       triangles: totalStats.triangles,
@@ -571,17 +1007,24 @@ function PerformanceProbe({
 function ViewportScene({
   onStats,
   registerResetCamera,
+  onTransformDraggingChange,
+  transformDragging,
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
+  onTransformDraggingChange: (value: boolean) => void
+  transformDragging: boolean
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
   const hud = useEditorStore((state) => state.hud)
+  const rootNodeId = useEditorStore((state) => state.rootNodeId)
+  const gridSize = useEditorStore((state) => state.transformSettings.gridSize)
   const root = useEditorStore((state) =>
     state.rootNodeId ? state.runtime.objectById[state.rootNodeId] ?? null : null,
   )
+  const autoFramedRootIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (viewer.cameraMode !== 'firstPerson') {
@@ -595,12 +1038,48 @@ function ViewportScene({
   }, [camera, viewer.cameraMode])
 
   useEffect(() => {
-    registerResetCamera(() => {
-      if (!root) {
-        return
-      }
+    if (!rootNodeId || !root || autoFramedRootIdRef.current === rootNodeId) {
+      return
+    }
 
-      fitCameraToObject(camera as THREE.PerspectiveCamera, controlsRef.current, root)
+    const frameId = window.requestAnimationFrame(() => {
+      const perspectiveCamera = camera as THREE.PerspectiveCamera
+      perspectiveCamera.aspect = size.width / Math.max(size.height, 1)
+      applyViewerCameraOptics(perspectiveCamera, DEFAULT_VIEWER_FOCAL_LENGTH)
+      const framed = fitCameraToObject(perspectiveCamera, controlsRef.current, root)
+
+      autoFramedRootIdRef.current = rootNodeId
+      useEditorStore.getState().setHud({ orbitEnabled: true })
+      useEditorStore.getState().setViewer(
+        framed
+          ? {
+              cameraMode: 'orbit',
+              focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
+              resetCameraPosition: [framed.position.x, framed.position.y, framed.position.z],
+              resetOrbitTarget: [framed.target.x, framed.target.y, framed.target.z],
+            }
+          : {
+              cameraMode: 'orbit',
+              focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
+            },
+      )
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [camera, root, rootNodeId, size.height, size.width])
+
+  useEffect(() => {
+    registerResetCamera(() => {
+      const perspectiveCamera = camera as THREE.PerspectiveCamera
+      applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
+      applyCameraFrame(perspectiveCamera, controlsRef.current, {
+        position: new THREE.Vector3(...viewer.resetCameraPosition),
+        target: new THREE.Vector3(...viewer.resetOrbitTarget),
+        distance: new THREE.Vector3(...viewer.resetCameraPosition).distanceTo(new THREE.Vector3(...viewer.resetOrbitTarget)),
+        radius: 0,
+      })
       useEditorStore.getState().setHud({ orbitEnabled: true })
       useEditorStore.getState().setViewer({ cameraMode: 'orbit' })
     })
@@ -608,7 +1087,7 @@ function ViewportScene({
     return () => {
       registerResetCamera(() => {})
     }
-  }, [camera, registerResetCamera, root])
+  }, [camera, registerResetCamera, viewer.focalLength, viewer.resetCameraPosition, viewer.resetOrbitTarget])
 
   return (
     <>
@@ -618,11 +1097,12 @@ function ViewportScene({
       <Suspense fallback={null}>
         <EnvironmentManager />
         <LightRig />
-        <ViewportContactShadows />
         <SceneBridge />
         <SelectionHighlight />
+        <AnchorHandles />
+        <TransformGizmo onDraggingChange={onTransformDraggingChange} />
         <MaterialEffectController />
-        {hud.postEffectsEnabled ? <PostEffects /> : null}
+        {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (
         <Grid
@@ -632,14 +1112,14 @@ function ViewportScene({
           sectionColor={VIEWPORT_GRID_SECTION_COLOR}
           fadeDistance={22}
           fadeStrength={1.3}
-          cellSize={1}
-          sectionSize={5}
+          cellSize={Math.max(gridSize, 0.0001)}
+          sectionSize={Math.max(gridSize * 5, 0.0005)}
           infiniteGrid={false}
         />
       ) : null}
       {hud.axesVisible ? <axesHelper args={[2]} /> : null}
       {viewer.cameraMode === 'orbit' ? (
-        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled} makeDefault />
+        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled && !transformDragging} makeDefault />
       ) : null}
       <FlightController />
     </>
@@ -706,7 +1186,6 @@ function PerformanceStats() {
 }
 
 export function Viewport() {
-  const status = useEditorStore((state) => state.status)
   const hud = useEditorStore((state) => state.hud)
   const isZenMode = useEditorStore((state) => state.isZenMode)
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
@@ -717,9 +1196,11 @@ export function Viewport() {
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setZenMode = useEditorStore((state) => state.setZenMode)
   const setViewportMetrics = useEditorStore((state) => state.setViewportMetrics)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const viewer = useEditorStore((state) => state.viewer)
   const resetCameraRef = useRef<() => void>(() => {})
   const [metricTextPalette, setMetricTextPalette] = useState(LIGHT_METRIC_TEXT)
+  const [isTransformDragging, setIsTransformDragging] = useState(false)
 
   const viewportStyle = useMemo(
     () =>
@@ -731,6 +1212,10 @@ export function Viewport() {
       }) as CSSProperties & Record<string, string>,
     [metricTextPalette],
   )
+
+  useEffect(() => {
+    setIsTransformDragging(false)
+  }, [selectedObjectId, viewer.cameraMode])
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -770,9 +1255,15 @@ export function Viewport() {
         return
       }
 
-      if (state.viewer.cameraMode === 'orbit' && document.fullscreenElement) {
-        setZenMode(false)
-        void document.exitFullscreen()
+      if (state.viewer.cameraMode === 'orbit') {
+        if (document.fullscreenElement) {
+          setZenMode(false)
+          void document.exitFullscreen()
+          return
+        }
+
+        state.setSelectedObjectId(null)
+        state.setHud({ transformMode: 'none' })
       }
     }
 
@@ -844,23 +1335,29 @@ export function Viewport() {
         className="viewport-canvas"
         dpr={[1, 2]}
         gl={{ alpha: true, antialias: true }}
-        camera={{ position: viewer.cameraPosition, fov: 55, near: 0.1, far: 2000 }}
+        camera={{
+          position: viewer.cameraPosition,
+          fov: DEFAULT_VIEWER_CAMERA_FOV,
+          near: 0.1,
+          far: 2000,
+        }}
         onPointerMissed={() => {
           setSelectedObjectId(null)
+          setHud({ transformMode: 'none' })
         }}
       >
         <ViewportScene
           onStats={setViewportMetrics}
+          onTransformDraggingChange={setIsTransformDragging}
+          transformDragging={isTransformDragging}
           registerResetCamera={(handler) => {
             resetCameraRef.current = handler
           }}
         />
       </Canvas>
+      <TransformToolbar />
       <PerformanceStats />
       <ViewportHud onResetCamera={() => resetCameraRef.current()} />
-      <div className="hud">
-        <span id="statusLabel">{status}</span>
-      </div>
       {!isZenMode ? (
         <div className="viewport-toggle-bar">
           {!hud.sidebarVisible ? (

@@ -1,12 +1,12 @@
 # Codex Handoff
 
-Last updated: 2026-05-01
+Last updated: 2026-05-09
 
 ## Project
 
-React + TypeScript + Vite rewrite of the old WebGL scene editor.
+React + TypeScript + Vite WebGL/GLB viewer/editor.
 
-Current stack:
+Core stack:
 
 - React
 - Zustand
@@ -15,485 +15,325 @@ Current stack:
 - `@react-three/drei`
 - `@react-three/postprocessing`
 
-Entry point:
+Main entrypoints:
 
-- [`src/main.tsx`](/d:/Work/Projects/WebGL/src/main.tsx:1)
+- `src/main.tsx`
+- `src/app/App.tsx`
 
-Important:
+Primary source of truth:
 
-- legacy `src/main.js` is gone
-- the editor now boots entirely through React
-- the store in [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1) is the source of truth
+- `src/store/editorStore.ts`
 
 ## Validation
 
-Passing now:
+Passing as of this handoff:
 
 - `npx tsc --noEmit`
 - `npx vite build`
 
 Known non-blocker:
 
-- Vite still warns about a large `drei` chunk
+- Vite still warns about large chunks, especially `drei`.
 
-## Current Layout
+## Active App Shell
 
-Main shell:
-
-- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
-
-Current structure:
+Current shell order:
 
 1. `<AssetController />`
 2. optional `<Sidebar />`
 3. `<Viewport />`
 4. optional `<Inspector />`
 
-There is no standalone top bar anymore.
+Files:
 
-The app is now a 3-column shell:
+- `src/app/App.tsx`
+- `src/components/AssetController.tsx`
+- `src/components/Viewport.tsx`
 
-- left sidebar
-- center viewport
-- right inspector
+The old `SceneCanvas` / legacy runtime files still exist in the repo, but the active app path is the component set above.
 
-Relevant layout styles:
+## Camera / Auto-Fit
 
-- [`src/styles.css`](/d:/Work/Projects/WebGL/src/styles.css:1)
+Main files:
 
-Important:
+- `src/components/Viewport.tsx`
+- `src/features/scene/runtime/shared.ts`
+- `src/store/editorStore.ts`
 
-- `App.tsx` still owns drag-and-drop routing
-- `Viewport` starts from the top edge of the app
-- stats are now rendered inside the viewport, not in a global header
+Current behavior:
 
-## Drag And Drop
+- Default focal length is `20mm`.
+- Viewer state defaults to `DEFAULT_VIEWER_FOCAL_LENGTH = 20`.
+- Auto-fit now happens on the real viewport camera and real `OrbitControls`, not in a loader-side fake camera.
+- `fitCameraToObject()` uses filtered useful geometry, not blind whole-root bounds.
+- Utility / outlier geometry is filtered out when framing, especially giant flat helper-like meshes.
+- `RESET CAMERA` returns to the latest computed framed position/target.
 
-Main file:
+Important nuance:
 
-- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
+- Auto-frame still targets the current primary root (`rootNodeId`), which is the most recently loaded model.
+- In a multi-GLB scene this means the newest model becomes the active frame/reset target by default.
 
-Current routing:
+## Multi-GLB Scene Support
 
-- `.glb/.gltf` -> `requestModelLoad`
-- `.hdr/.exr` -> `requestEnvironmentLoad`
-- `.png/.jpg/.jpeg` dropped into app -> `requestEnvironmentLoad` as panorama
-- `.json` -> `requestConfigImport`
+Main files:
 
-Blob URLs are created in `App.tsx` and consumed by the asset pipeline through store requests.
+- `src/store/editorStore.ts`
+- `src/components/AssetController.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/Outliner.tsx`
 
-Global visual state:
+Current behavior:
 
-- `body.is-dragging`
+- Multiple GLBs can coexist in one scene.
+- Loading a new GLB no longer replaces the previous one automatically.
+- Store now tracks:
+  - `rootNodeId`
+  - `rootNodeIds`
+  - `loadedModels`
+- `loadedModels` is the grouped source for the outliner and multi-root viewport rendering.
+- `SceneBridge` renders every loaded root.
+- GPU/performance stats aggregate across all loaded roots.
 
-## Key Files
+Deletion / cleanup:
 
-- [`src/app/App.tsx`](/d:/Work/Projects/WebGL/src/app/App.tsx:1)
-- [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
-- [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
-- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
-- [`src/components/ViewportHud.tsx`](/d:/Work/Projects/WebGL/src/components/ViewportHud.tsx:1)
-- [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
-- [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
-- [`src/components/MaterialEffectController.tsx`](/d:/Work/Projects/WebGL/src/components/MaterialEffectController.tsx:1)
-- [`src/components/viewport/PostEffects.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/PostEffects.tsx:1)
-- [`src/components/viewport/EnvironmentManager.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/EnvironmentManager.tsx:1)
-- [`src/components/viewport/LightRig.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/LightRig.tsx:1)
-- [`src/components/viewport/ViewportContactShadows.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/ViewportContactShadows.tsx:1)
-- [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
-- [`src/features/scene/runtime/shared.ts`](/d:/Work/Projects/WebGL/src/features/scene/runtime/shared.ts:1)
-- [`src/features/atlas/atlasMaterialPatch.ts`](/d:/Work/Projects/WebGL/src/features/atlas/atlasMaterialPatch.ts:1)
-- [`src/features/atlas/useAtlasAnimator.ts`](/d:/Work/Projects/WebGL/src/features/atlas/useAtlasAnimator.ts:1)
-- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
-- [`src/styles.css`](/d:/Work/Projects/WebGL/src/styles.css:1)
-- [`vite.config.ts`](/d:/Work/Projects/WebGL/vite.config.ts:1)
+- Deleting a root GLB now removes it from the store, outliner, runtime refs, and scene.
+- Root deletion also disposes nested geometries/materials through the runtime cleanup path in `AssetController`.
 
-## Sidebar
+Current limitation:
 
-Main file:
-
-- [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
-
-Current responsibilities:
-
-- left header with `GLB VIEWER`
-- dynamic object/material counts
-- 4-button toolbar:
-  - `GLB`
-  - `LOAD`
-  - `SAVE`
-  - `RST`
-- tabbed settings panel:
-  - `SCN`
-  - `CAM`
-  - `LGT`
-  - `FX`
-
-Important:
-
-- the toolbar is part of the sidebar now
-- no horizontal `TopBar` should be reintroduced
-- scene/camera/light/fx settings are all store-driven
-
-Current sidebar actions:
-
-- model file load
-- config import
-- config export
-- scene reset
-- scene environment controls
-- camera/navigation toggles
-- light preset application and extra light creation
-- post-processing controls
+- This is reliable for sequential loading.
+- File dialog load is still single-file.
+- Drag-and-drop loops over all dropped files in `App.tsx`, but `modelRequest` is still singular in store, so a single multi-file drop is not yet a true queue-based batch import system.
+- If proper multi-select / batch import is needed, `modelRequest` should become a queue.
 
 ## Outliner
 
 Main file:
 
-- [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
-
-This is now a dedicated component used by `Sidebar`.
-
-Current modes:
-
-- `layers`
-- `meshes`
-- `materials`
-- `lights`
-
-Mode behavior:
-
-- `layers`:
-  - mesh/group/scene hierarchy
-  - mesh rows can show nested material rows
-- `meshes`:
-  - only geometry tree
-  - no material expansion
-- `materials`:
-  - only scene materials
-  - clicking a material selects that exact material in store
-- `lights`:
-  - always shows `Environment` and `Ambient Light`
-  - also shows all user-added extra lights
-
-Important current details:
-
-- filter icons are inline SVG, not text letters anymore
-- active icon uses `.is-active`
-- default mode is `layers`
-- search is local to the outliner
-- row actions still support visibility and remove flows
-
-Store integration:
-
-- object selection: `setSelectedObjectId`
-- exact material selection: `setSelectedMaterialId`
-- visibility: `toggleObjectVisibility`
-- scene node removal: `removeSceneNode`
-- ambient/environment/extra light remove or toggle paths stay store-driven
-
-## Selection Flow
-
-Main files:
-
-- [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
-- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
-- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
+- `src/components/Outliner.tsx`
 
 Current behavior:
 
-- clicking on model content in viewport selects the nearest registered scene object
-- `e.stopPropagation()` is used to avoid click-through selection
-- clicking empty space clears selection
-- selected object automatically resolves `selectedMaterialId`
-- selected object gets a helper highlight in viewport
+- Each loaded GLB appears as its own root row.
+- In `layers`, `meshes`, and `materials` modes, each root can be collapsed/expanded independently.
+- Collapse state is tracked per mode through `collapsedRootsByMode`.
+- Root GLB rows have:
+  - selection
+  - visibility eye
+  - delete trash
+- Child rows stay grouped under their parent GLB.
 
-Important store behavior:
+FX / Lights:
 
-- `setSelectedObjectId(id)` updates `selectedObjectId` and auto-resolves the first material in branch
-- `setSelectedMaterialId(id)` now exists and selects an exact material while preserving mesh context for inspector use
+- `lights` and `effects` modes are still flat lists, not grouped by model.
 
-## Viewport
+Important recent fix:
 
-Main file:
+- Root delete no longer shows the old confirm popup.
+- The model should now disappear from both outliner and viewport immediately after delete.
 
-- [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
+## FX Workflow
 
-Viewport is fully declarative R3F.
+Main files:
 
-Current scene structure:
+- `src/components/Outliner.tsx`
+- `src/components/Sidebar.tsx`
+- `src/components/Viewport.tsx`
+- `src/store/editorStore.ts`
 
-- `<Canvas />`
-- renderer bridge
-- camera bridge
-- performance probe
-- lazy environment manager
-- lazy light rig
-- lazy contact shadows
-- scene root / scene bridge
-- material effect controller
-- optional lazy post effects
-- helpers and controls
+Current behavior:
 
-Current overlay behavior:
+- Bloom is no longer enabled by default.
+- Store defaults:
+  - `postEffectsEnabled: false`
+  - `postEffectsVisible: false`
+- FX tab now shows `Add Effect` above the effect buttons.
+- Only `Bloom` exists right now.
+- Clicking `Bloom` creates/selects the effect.
+- Bloom settings appear only when:
+  - Bloom exists, and
+  - Bloom is selected.
 
-- performance stats live inside viewport
-- stats block is absolutely positioned
-- no background or frame
-- `pointer-events: none`
+Outliner FX mode:
 
-Stats source:
+- Shows Bloom only if the effect exists in the scene.
+- `eye` toggles visible/hidden.
+- `trash` removes the effect entirely.
 
-- `viewportMetrics` in store
+Viewport behavior:
 
-Currently tracked:
+- Post effects render only when both:
+  - `hud.postEffectsEnabled`
+  - `hud.postEffectsVisible`
 
-- FPS
-- Vertices
-- Triangles
-- Draw Calls
-- VRAM Textures
-- Disk
+## Transform / Snapping / Anchor
+
+Main files:
+
+- `src/components/TransformToolbar.tsx`
+- `src/components/viewport/TransformTable.tsx`
+- `src/components/viewport/transformShared.ts`
+- `src/components/Viewport.tsx`
+- `src/store/editorStore.ts`
+
+Current toolbar order:
+
+- `MAG`
+- `MOVE`
+- `ROTATE`
+- coordinate table
+- `UNITS`
+- `ANCHOR`
+
+Important behavior:
+
+- `transformMode` is still `'none' | 'translate' | 'rotate'`.
+- `MAG` is a dedicated button left of `MOVE`.
+- The `MAG` slot is reserved so the row does not shift when translation mode changes.
+- Magnet artwork now comes from `src/assets/icons/magnet.svg`.
+- Right click on `MOVE` or `ROTATE` opens the step popup.
+- `UNITS` is disabled during rotate mode.
+
+Snapping:
+
+- `MAG` only controls viewport drag snapping.
+- Numeric transform fields still use step values independently.
+- Grid size and translation step stay synchronized when snapping is active.
+
+Anchor mode:
+
+- `ANCHOR` button sits to the right of `UNITS`.
+- When enabled, 8 bounding-box corner handles appear for the selected mesh or whole GLB root.
+- Clicking a handle sets `selectedAnchorIndex`.
+- `MOVE` translates from the selected corner anchor.
+- `ROTATE` rotates around the selected corner anchor.
+- Handles scale in screen-space, so they stay usable across small and large models.
+- Handles now update live while the object moves.
+- Hover and active states are visually distinct.
+
+Important transform nuance:
+
+- Whole-root GLB selection is supported.
+- For root selection:
+  - `MOVE` translates the real root directly.
+  - `ROTATE` can still use a custom pivot.
+- This split is intentional; using the same pivot math for move caused models to jump/disappear earlier.
+
+## Viewport HUD / Flight / Fullscreen
+
+Main files:
+
+- `src/components/ViewportHud.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/viewport/FlightController.tsx`
+- `src/components/viewport/flightLockBridge.ts`
+
+Current top HUD:
+
+- `GRID`
+- `ORBIT`
+- `FLIGHT`
+- `RESET CAMERA`
+
+Current behavior:
+
+- `GRID` right click opens the grid-size popup.
+- Flight speed row sits below the main HUD row.
+- `Esc` behavior around flight/fullscreen/orbit is still delicate and should not be simplified casually.
+
+## Runtime Stability Note
+
+Very important recent fix:
+
+- The scene was crashing immediately after the multi-GLB work because `Viewport.tsx` had `zustand` selectors that created new arrays on every render.
+- This was fixed by memoizing derived root arrays in:
+  - `SceneBridge`
+  - `PerformanceProbe`
+
+Rule to keep:
+
+- Do not put `map()`, `filter()`, or new object/array construction directly inside hot `useEditorStore(...)` selectors unless you are intentionally using a stable equality strategy.
 
 ## Asset Loading
 
 Main file:
 
-- [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
-
-This is still the active asset ingestion layer.
-
-It reacts to:
-
-- `modelRequest`
-- `atlasRequest`
-- `environmentRequest`
-- `configRequest`
+- `src/components/AssetController.tsx`
 
 Current behavior:
 
-- GLTF loading
-- atlas texture loading
-- HDRI and panorama loading
-- scene graph rebuild
-- runtime object/material registration
-- camera framing
-- cleanup of previous assets and blob URLs
+- Runtime roots are tracked in `loadedRootsRef`.
+- Each loaded root registers its runtime object/material refs.
+- Removing a root clears refs and disposes the object tree.
+- Async model loads still use request `nonce` handling to ignore stale results.
 
 Important nuance:
 
-- there are multiple similarly named runtime-era files in the repo
-- the active app shell entrypoint is:
-  - [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
+- `LoadedSceneRoot.tsx` still registers refs on mount too, so runtime registration exists in more than one place.
+- Be careful changing registration ownership without checking both `AssetController` and `LoadedSceneRoot`.
 
-Environment loader support:
+## Legacy / Secondary Files
 
-- HDR
-- EXR
-- panorama images
+Still present but not the main active path:
 
-EXR support was added in:
+- `src/components/SceneCanvas.tsx`
+- `src/features/scene/runtime/AssetController.tsx`
+- `src/features/scene/runtime/ConfigController.tsx`
+- `src/features/scene/runtime/SceneBindings.tsx`
+- `src/features/scene/runtime/TransformGizmo.tsx`
 
-- [`src/features/scene/runtime/shared.ts`](/d:/Work/Projects/WebGL/src/features/scene/runtime/shared.ts:1)
+If something seems duplicated, first verify whether you are in the active React app path or in an older runtime path.
 
-## Inspector
+## Known Watchouts
 
-Main file:
+Sensitive zones right now:
 
-- [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
+1. `src/components/Viewport.tsx`
+   - transform gizmo math
+   - anchor math
+   - multi-root rendering
+   - selector stability
+2. `src/components/AssetController.tsx`
+   - async request cleanup
+   - disposal
+   - multi-root lifecycle
+3. `src/store/editorStore.ts`
+   - `buildDeletePatch`
+   - `rootNodeIds`
+   - `loadedModels`
+   - selection/anchor cleanup on delete/reset
+4. `src/components/Outliner.tsx`
+   - grouped root sections
+   - per-mode collapse state
+5. `src/features/scene/runtime/shared.ts`
+   - framing heuristics
+   - filtering oversized helper geometry
 
-Current behavior:
+## Dirty Workspace Notes
 
-- object selection shows name/type summary
-- material-driven sections open automatically through `selectedMaterialId`
-- light selections show light controls
+Workspace is dirty. Notable touched files in the current state include:
 
-Current material controls already restored:
+- `CODEX_HANDOFF.md`
+- `src/components/AssetController.tsx`
+- `src/components/Outliner.tsx`
+- `src/components/SceneCanvas.tsx`
+- `src/components/Sidebar.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/ViewportHud.tsx`
+- `src/components/TransformToolbar.tsx`
+- `src/components/viewport/TransformTable.tsx`
+- `src/components/viewport/transformShared.ts`
+- `src/features/scene/runtime/AssetController.tsx`
+- `src/features/scene/runtime/SceneBindings.tsx`
+- `src/features/scene/runtime/TransformGizmo.tsx`
+- `src/features/scene/runtime/shared.ts`
+- `src/store/editorStore.ts`
+- `src/styles.css`
+- `src/assets/icons/magnet.svg`
 
-- color
-- emissive
-- metalness
-- roughness
-- envMapIntensity
-- emissiveIntensity
-- clearcoat
+Also note:
 
-Atlas section:
+- `src/components/viewport/ViewportContactShadows.tsx` is deleted in the current worktree.
 
-- emissive atlas controls are active again
-- preview canvas exists
-- atlas settings are store-driven
-
-## Post-processing
-
-Main file:
-
-- [`src/components/viewport/PostEffects.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/PostEffects.tsx:1)
-
-Current stack:
-
-- `EffectComposer`
-- `Bloom`
-- `ToneMapping`
-- `Selection` wrapper for debug-oriented selective workflows
-
-Driven by:
-
-- `hud.postEffectsEnabled`
-- `viewer.bloomIntensity`
-- `viewer.bloomRadius`
-- `viewer.bloomThreshold`
-- `viewer.exposure`
-- `viewer.toneMappingWhitePoint`
-- `viewer.toneMappingAdaptation`
-
-Loaded lazily:
-
-- yes
-
-## Environment And Lights
-
-Main files:
-
-- [`src/components/viewport/EnvironmentManager.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/EnvironmentManager.tsx:1)
-- [`src/components/viewport/LightRig.tsx`](/d:/Work/Projects/WebGL/src/components/viewport/LightRig.tsx:1)
-
-Current behavior:
-
-- environment/background are store-driven
-- fallback city preset is used only when no custom environment texture is active
-- ambient light is modeled in store as a system light
-- extra lights are stored in `extraLights`
-- sidebar can create:
-  - ambient
-  - directional
-  - point
-  - spot
-
-Light preset flow:
-
-- presets are applied from `Sidebar`
-- presets update `lights.rig`
-
-## Store Notes
-
-Main file:
-
-- [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
-
-Important current fields:
-
-- `sceneGraph`
-- `rootNodeId`
-- `selectedObjectId`
-- `selectedMaterialId`
-- `objects`
-- `materials`
-- `environment`
-- `lights`
-- `extraLights`
-- `hud`
-- `viewer`
-- `assets`
-- `runtimeTextures`
-- `runtime`
-- `viewportMetrics`
-
-Important current actions:
-
-- `setSelectedObjectId`
-- `setSelectedMaterialId`
-- `updateObjectTransform`
-- `updateMaterial`
-- `updateMaterialEffect`
-- `setEnvironment`
-- `setLights`
-- `setViewer`
-- `setHud`
-- `setViewportMetrics`
-- `requestModelLoad`
-- `requestAtlasLoad`
-- `requestEnvironmentLoad`
-- `requestConfigImport`
-- `requestSceneReset`
-
-Important HUD fields:
-
-- `orbitEnabled`
-- `fpsEnabled`
-- `gridVisible`
-- `axesVisible`
-- `postEffectsEnabled`
-- `sidebarVisible`
-- `inspectorVisible`
-- `transformMode`
-
-Important viewer fields:
-
-- `cameraMode`
-- `flightSpeed`
-- `focalLength`
-- `exposure`
-- `bloomIntensity`
-- `bloomRadius`
-- `bloomThreshold`
-- `toneMappingWhitePoint`
-- `toneMappingAdaptation`
-- `cameraPosition`
-- `orbitTarget`
-- `dofEnabled`
-
-## Build Splitting
-
-Main file:
-
-- [`vite.config.ts`](/d:/Work/Projects/WebGL/vite.config.ts:1)
-
-Current manual chunks still include:
-
-- `three`
-- `postfx`
-- `vendor`
-
-Observed lazy chunks include:
-
-- `EnvironmentManager-*`
-- `LightRig-*`
-- `ViewportContactShadows-*`
-- `PostEffects-*`
-
-Known issue:
-
-- `drei` is still the largest chunk and triggers the Vite warning
-
-## Known Risks / Watchouts
-
-1. There are still duplicate-era files in the repo; verify imports before editing similarly named runtime files.
-2. The active asset loader is [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1), not the older runtime variant.
-3. `selectedMaterialId` now has two entry paths:
-   - auto-resolution from object selection
-   - explicit `setSelectedMaterialId`
-   Re-test inspector and atlas overlay flow if selection logic changes.
-4. `MaterialEffectController` still patches only the selected material. Multi-material atlas playback is not implemented.
-5. `Outliner.tsx` now owns view-mode logic. Do not move filtering state back into `Sidebar.tsx`.
-6. The old `TopBar.tsx` may still exist in the repo but is not part of the active layout.
-7. `main.js` is gone. Do not reintroduce imperative legacy UI wiring.
-
-## Good First Checks If Something Breaks
-
-1. [`src/store/editorStore.ts`](/d:/Work/Projects/WebGL/src/store/editorStore.ts:1)
-2. [`src/components/Outliner.tsx`](/d:/Work/Projects/WebGL/src/components/Outliner.tsx:1)
-3. [`src/components/Sidebar.tsx`](/d:/Work/Projects/WebGL/src/components/Sidebar.tsx:1)
-4. [`src/components/Viewport.tsx`](/d:/Work/Projects/WebGL/src/components/Viewport.tsx:1)
-5. [`src/components/AssetController.tsx`](/d:/Work/Projects/WebGL/src/components/AssetController.tsx:1)
-6. [`src/components/MaterialEffectController.tsx`](/d:/Work/Projects/WebGL/src/components/MaterialEffectController.tsx:1)
-7. [`src/features/scene/runtime/LoadedSceneRoot.tsx`](/d:/Work/Projects/WebGL/src/features/scene/runtime/LoadedSceneRoot.tsx:1)
-8. [`src/components/Inspector.tsx`](/d:/Work/Projects/WebGL/src/components/Inspector.tsx:1)
-
-## Recommended Next Steps
-
-1. If startup size matters, keep reducing `drei` surface area or split more imports dynamically.
-2. Decide whether `TopBar.tsx` should be deleted outright to reduce confusion.
-3. Consider consolidating duplicate runtime-era files to reduce import ambiguity.
-4. Re-test first-person controls, reset camera, and selection highlight after any viewport helper changes.
-5. If outliner UX expands, keep the mode logic inside `Outliner.tsx` and keep selection store-driven.
+Do not blindly revert unrelated user changes.

@@ -11,7 +11,7 @@ export function TransformGizmo() {
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
 
-  if (!object || !selectedNode || selectedNode.type === 'material') {
+  if (!object || !selectedNode || selectedNode.type === 'material' || hud.transformMode === 'none') {
     return null
   }
 

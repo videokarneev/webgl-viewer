@@ -41,59 +41,158 @@ export function sanitizeNumber(value: unknown, fallback: number, min?: number) {
   return min != null ? Math.max(min, next) : next
 }
 
-export function frameObject(
+type CameraFrame = {
+  position: THREE.Vector3
+  target: THREE.Vector3
+  distance: number
+  radius: number
+}
+
+type FrameBoxCandidate = {
+  box: THREE.Box3
+  maxDim: number
+  minDim: number
+  label: string
+}
+
+const FRAME_OBJECT_MARGIN = 1.25
+const UTILITY_FRAME_NAME_PATTERN = /\b(grid|helper|gizmo|shadow|collision|collider|bounds|bounding|proxy)\b/i
+
+export function applyViewerCameraOptics(camera: THREE.PerspectiveCamera, focalLength: number) {
+  camera.setFocalLength(focalLength)
+  camera.updateProjectionMatrix()
+}
+
+function calculateObjectFrame(
+  camera: THREE.PerspectiveCamera,
   object: THREE.Object3D,
+  margin?: number,
+): CameraFrame | null {
+  object.updateWorldMatrix(true, true)
+
+  const box = getFrameBox(object)
+  if (box.isEmpty()) {
+    return null
+  }
+
+  const sphere = box.getBoundingSphere(new THREE.Sphere())
+  const center = box.getCenter(new THREE.Vector3())
+  const radius = Math.max(sphere.radius, 0.01)
+  const verticalFov = THREE.MathUtils.degToRad(camera.fov)
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(camera.aspect, 0.0001))
+  const limitingFov = Math.max(Math.min(verticalFov, horizontalFov), 0.001)
+  const framingMargin = margin ?? FRAME_OBJECT_MARGIN
+  const distance = (radius / Math.sin(limitingFov / 2)) * framingMargin
+  const viewDirection = new THREE.Vector3(1, 0.75, 1).normalize()
+
+  return {
+    position: center.clone().addScaledVector(viewDirection, distance),
+    target: center,
+    distance,
+    radius,
+  }
+}
+
+function isVisibleInHierarchy(object: THREE.Object3D) {
+  let current: THREE.Object3D | null = object
+  while (current) {
+    if (!current.visible) {
+      return false
+    }
+    current = current.parent
+  }
+
+  return true
+}
+
+function getMaterialLabels(material: THREE.Material | THREE.Material[]) {
+  const materials = Array.isArray(material) ? material : [material]
+  return materials.map((entry) => entry?.name ?? '').join(' ')
+}
+
+function getFrameBox(object: THREE.Object3D) {
+  const candidates: FrameBoxCandidate[] = []
+
+  object.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh || !isVisibleInHierarchy(child)) {
+      return
+    }
+
+    const mesh = child as THREE.Mesh
+    const geometry = mesh.geometry
+    if (!geometry?.getAttribute('position')) {
+      return
+    }
+
+    const box = new THREE.Box3().setFromObject(mesh)
+    if (box.isEmpty()) {
+      return
+    }
+
+    const size = box.getSize(new THREE.Vector3())
+    candidates.push({
+      box,
+      maxDim: Math.max(size.x, size.y, size.z),
+      minDim: Math.min(size.x, size.y, size.z),
+      label: `${mesh.name} ${getMaterialLabels(mesh.material)}`,
+    })
+  })
+
+  const sourceCandidates = candidates.length ? candidates : [{ box: new THREE.Box3().setFromObject(object), maxDim: 0, minDim: 0, label: '' }]
+  const sortedMaxDims = sourceCandidates.map((candidate) => candidate.maxDim).filter((value) => value > 0).sort((a, b) => a - b)
+  const medianMaxDim = sortedMaxDims[Math.floor(sortedMaxDims.length / 2)] ?? 0
+  const usefulCandidates = sourceCandidates.filter((candidate) => {
+    if (UTILITY_FRAME_NAME_PATTERN.test(candidate.label)) {
+      return false
+    }
+
+    const isVeryFlat = candidate.minDim > 0 && candidate.maxDim / candidate.minDim > 120
+    const isHugeOutlier = medianMaxDim > 0 && candidate.maxDim > medianMaxDim * 8
+    return !(isVeryFlat && isHugeOutlier)
+  })
+  const resolvedCandidates = usefulCandidates.length ? usefulCandidates : sourceCandidates
+
+  return resolvedCandidates.reduce((frameBox, candidate) => frameBox.union(candidate.box), new THREE.Box3())
+}
+
+export function applyCameraFrame(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControlsImpl | null,
+  frame: CameraFrame,
 ) {
-  fitCameraToObject(camera, controls, object)
+  camera.position.copy(frame.position)
+  camera.lookAt(frame.target)
+  camera.near = Math.max(frame.distance / 100, 0.1)
+  camera.far = Math.max(frame.distance * 100, frame.distance + frame.radius * 2, 2000)
+  camera.updateProjectionMatrix()
+
+  if (controls) {
+    controls.target.copy(frame.target)
+    controls.update()
+  }
+
+  useEditorStore.getState().setViewer({
+    cameraPosition: [camera.position.x, camera.position.y, camera.position.z],
+    orbitTarget: [frame.target.x, frame.target.y, frame.target.z],
+  })
 }
 
 export function fitCameraToObject(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControlsImpl | null,
   object: THREE.Object3D,
-  margin = 1.95,
+  margin?: number,
 ) {
-  const box = new THREE.Box3().setFromObject(object)
-  if (box.isEmpty()) {
+  const frame = calculateObjectFrame(camera, object, margin)
+  if (!frame) {
     return null
   }
 
-  const size = box.getSize(new THREE.Vector3())
-  const center = box.getCenter(new THREE.Vector3())
-  const maxDim = Math.max(size.x, size.y, size.z)
-  const fov = camera.fov * (Math.PI / 180)
-  let cameraDistance = Math.abs(maxDim / 2 / Math.tan(fov / 2))
-  cameraDistance *= margin
-
-  const viewDirection = camera.position.clone().sub(center)
-  if (viewDirection.lengthSq() < 0.0001) {
-    viewDirection.set(4, 3, 5)
-  }
-  viewDirection.normalize()
-
-  const nextPosition = center.clone().add(viewDirection.multiplyScalar(cameraDistance))
-
-  camera.position.copy(nextPosition)
-  camera.lookAt(center)
-  camera.near = Math.max(cameraDistance / 100, 0.1)
-  camera.far = Math.max(cameraDistance * 100, 2000)
-  camera.updateProjectionMatrix()
-
-  if (controls) {
-    controls.target.copy(center)
-    controls.update()
-  }
-
-  useEditorStore.getState().setViewer({
-    cameraPosition: [camera.position.x, camera.position.y, camera.position.z],
-    orbitTarget: [center.x, center.y, center.z],
-  })
+  applyCameraFrame(camera, controls, frame)
 
   return {
     position: camera.position.clone(),
-    target: center,
-    distance: cameraDistance,
+    target: frame.target.clone(),
+    distance: frame.distance,
   }
 }

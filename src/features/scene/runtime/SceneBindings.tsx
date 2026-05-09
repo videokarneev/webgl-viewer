@@ -3,6 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { Environment } from '@react-three/drei'
 import * as THREE from 'three'
 import { useEditorStore } from '../../../store/editorStore'
+import { applyViewerCameraOptics } from './shared'
 
 export function SceneBindings() {
   const { scene, camera } = useThree()
@@ -59,8 +60,7 @@ export function SceneBindings() {
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
     perspectiveCamera.position.set(...viewer.cameraPosition)
-    perspectiveCamera.setFocalLength(viewer.focalLength)
-    perspectiveCamera.updateProjectionMatrix()
+    applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
   }, [camera, viewer.cameraPosition, viewer.focalLength])
 
   useEffect(() => {

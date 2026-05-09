@@ -474,58 +474,76 @@ function LightTabContent() {
 function FxTabContent() {
   const hud = useEditorStore((state) => state.hud)
   const viewer = useEditorStore((state) => state.viewer)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const isBloomSelected = selectedObjectId === 'effect:bloom'
 
   return (
     <div className="settings-tab">
       <div className="left-controls__group">
+        <span className="left-controls__label">Add Effect</span>
         <div className="fx-buttons-row">
           <button
             type="button"
             className={`tool-button${hud.postEffectsEnabled ? ' is-active' : ''}`}
-            onClick={() => setHud({ postEffectsEnabled: !hud.postEffectsEnabled })}
+            onClick={() => {
+              if (!hud.postEffectsEnabled) {
+                setHud({ postEffectsEnabled: true, postEffectsVisible: true })
+              }
+              setSelectedObjectId('effect:bloom')
+              setSelectedMaterialId(null)
+            }}
           >
             <span className="tool-button__glyph">Bloom</span>
-            <span className="tool-button__label">{hud.postEffectsEnabled ? 'Enabled' : 'Create'}</span>
+            <span className="tool-button__label">{!hud.postEffectsEnabled ? 'Create' : 'Select'}</span>
           </button>
         </div>
-        <label className="left-slider">
-          <span>Intensity</span>
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="0.01"
-            value={viewer.bloomIntensity}
-            onInput={(event) => setViewer({ bloomIntensity: Number(event.currentTarget.value) })}
-          />
-          <strong>{formatNumber(viewer.bloomIntensity)}</strong>
-        </label>
-        <label className="left-slider">
-          <span>Radius</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={viewer.bloomRadius}
-            onInput={(event) => setViewer({ bloomRadius: Number(event.currentTarget.value) })}
-          />
-          <strong>{formatNumber(viewer.bloomRadius)}</strong>
-        </label>
-        <label className="left-slider">
-          <span>Threshold</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={viewer.bloomThreshold}
-            onInput={(event) => setViewer({ bloomThreshold: Number(event.currentTarget.value) })}
-          />
-          <strong>{formatNumber(viewer.bloomThreshold)}</strong>
-        </label>
+        {hud.postEffectsEnabled && isBloomSelected ? (
+          <>
+            <p className="settings-note">
+              Bloom {hud.postEffectsVisible ? 'enabled' : 'hidden'}
+            </p>
+            <label className="left-slider">
+              <span>Intensity</span>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                step="0.01"
+                value={viewer.bloomIntensity}
+                onInput={(event) => setViewer({ bloomIntensity: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(viewer.bloomIntensity)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Radius</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={viewer.bloomRadius}
+                onInput={(event) => setViewer({ bloomRadius: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(viewer.bloomRadius)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Threshold</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={viewer.bloomThreshold}
+                onInput={(event) => setViewer({ bloomThreshold: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(viewer.bloomThreshold)}</strong>
+            </label>
+          </>
+        ) : null}
       </div>
     </div>
   )

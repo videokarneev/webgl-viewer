@@ -12,9 +12,14 @@ import { ConfigController } from '../features/scene/runtime/ConfigController'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
 import { SceneBindings } from '../features/scene/runtime/SceneBindings'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
-import { fitCameraToObject } from '../features/scene/runtime/shared'
+import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
 import { useViewportPresentation } from '../features/viewport/ViewportPresentationContext'
-import type { ExtraLightState } from '../store/editorStore'
+import {
+  DEFAULT_VIEWER_CAMERA_FOV,
+  DEFAULT_VIEWER_CAMERA_POSITION,
+  DEFAULT_VIEWER_ORBIT_TARGET,
+  type ExtraLightState,
+} from '../store/editorStore'
 
 type RenderStats = {
   calls: number
@@ -856,38 +861,58 @@ function SceneRuntime({
   const environment = useEditorStore((state) => state.environment)
   const sceneResetNonce = useEditorStore((state) => state.sceneResetNonce)
   const [root, setRoot] = useState<THREE.Object3D | null>(null)
+  const autoFramedRootRef = useRef<THREE.Object3D | null>(null)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
   const gridPalette = getAdaptiveGridPalette(environment.background, environment.backgroundColor)
 
   useEffect(() => {
     setRoot(null)
+    autoFramedRootRef.current = null
   }, [sceneResetNonce])
+
+  useEffect(() => {
+    if (!root || autoFramedRootRef.current === root) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const perspectiveCamera = camera as THREE.PerspectiveCamera
+      applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
+      const framed = fitCameraToObject(perspectiveCamera, controlsRef.current, root)
+
+      autoFramedRootRef.current = root
+      setHud({ orbitEnabled: true })
+      setViewer(
+        framed
+          ? {
+              cameraMode: 'orbit',
+              resetCameraPosition: [framed.position.x, framed.position.y, framed.position.z],
+              resetOrbitTarget: [framed.target.x, framed.target.y, framed.target.z],
+            }
+          : {
+              cameraMode: 'orbit',
+            },
+      )
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [camera, controlsRef, root, setHud, setViewer, viewer.focalLength])
 
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
 
     const resetCamera = () => {
-      const fallbackPosition: [number, number, number] = [4, 3, 5]
-      const fallbackTarget: [number, number, number] = [0, 0, 0]
-      const framed = root ? fitCameraToObject(perspectiveCamera, controlsRef.current, root) : null
-      const nextPosition: [number, number, number] = framed
-        ? [framed.position.x, framed.position.y, framed.position.z]
-        : fallbackPosition
-      const nextTarget: [number, number, number] = framed
-        ? [framed.target.x, framed.target.y, framed.target.z]
-        : fallbackTarget
-
-      if (!framed) {
-        perspectiveCamera.position.set(...nextPosition)
-        perspectiveCamera.lookAt(...nextTarget)
-        perspectiveCamera.updateProjectionMatrix()
-
-        if (controlsRef.current) {
-          controlsRef.current.target.set(...nextTarget)
-          controlsRef.current.update()
-        }
-      }
+      const nextPosition = viewer.resetCameraPosition ?? DEFAULT_VIEWER_CAMERA_POSITION
+      const nextTarget = viewer.resetOrbitTarget ?? DEFAULT_VIEWER_ORBIT_TARGET
+      applyCameraFrame(perspectiveCamera, controlsRef.current, {
+        position: new THREE.Vector3(...nextPosition),
+        target: new THREE.Vector3(...nextTarget),
+        distance: new THREE.Vector3(...nextPosition).distanceTo(new THREE.Vector3(...nextTarget)),
+        radius: 0,
+      })
 
       setHud({ orbitEnabled: true })
       setViewer({
@@ -901,7 +926,7 @@ function SceneRuntime({
     return () => {
       registerResetCamera(() => {})
     }
-  }, [camera, controlsRef, registerResetCamera, root, setHud, setViewer])
+  }, [camera, controlsRef, registerResetCamera, setHud, setViewer, viewer.resetCameraPosition, viewer.resetOrbitTarget])
 
   useEffect(() => {
     if (viewer.cameraMode !== 'firstPerson') {
@@ -914,7 +939,7 @@ function SceneRuntime({
 
   return (
     <>
-      <AssetController controlsRef={controlsRef} onRootLoaded={setRoot} />
+      <AssetController onRootLoaded={setRoot} />
       <ConfigController root={root} controlsRef={controlsRef} />
       <SceneBindings />
       <RendererSettings />
@@ -1046,7 +1071,7 @@ export function SceneCanvas() {
       </div>
       <ViewportHud onResetCamera={() => resetCameraRef.current()} />
       <Canvas
-        camera={{ position: [4, 3, 5], fov: 55 }}
+        camera={{ position: [4, 3, 5], fov: DEFAULT_VIEWER_CAMERA_FOV }}
         gl={{ antialias: true }}
         dpr={[1, 2]}
         onPointerMissed={(event) => {
