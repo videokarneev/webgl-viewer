@@ -1,5 +1,12 @@
 import * as THREE from 'three'
-import { DEFAULT_ATLAS_EFFECT, type ObjectTransformState, type PbrMaterialState, type SceneGraphNode } from '../../store/editorStore'
+import {
+  DEFAULT_ATLAS_EFFECT,
+  MATERIAL_TEXTURE_SLOTS,
+  type MaterialTextureSlot,
+  type ObjectTransformState,
+  type PbrMaterialState,
+  type SceneGraphNode,
+} from '../../store/editorStore'
 
 function getNodeType(object: THREE.Object3D): SceneGraphNode['type'] {
   if ((object as THREE.Mesh).isMesh) return 'mesh'
@@ -23,6 +30,45 @@ function getObjectLabel(object: THREE.Object3D) {
 
 function materialNodeId(material: THREE.Material) {
   return `material:${material.uuid}`
+}
+
+function getTextureDisplayName(texture: THREE.Texture, fallback: string) {
+  const explicitName = texture.name?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
+  const imageSource = texture.source?.data as { currentSrc?: string; src?: string } | undefined
+  const sourceUrl = imageSource?.currentSrc || imageSource?.src
+  if (typeof sourceUrl === 'string' && sourceUrl) {
+    const sanitized = sourceUrl.split('#')[0]?.split('?')[0] ?? sourceUrl
+    const pieces = sanitized.split(/[\\/]/)
+    const fileName = pieces[pieces.length - 1]
+    if (fileName) {
+      return decodeURIComponent(fileName)
+    }
+  }
+
+  return fallback
+}
+
+function buildMaterialTextureSlots(material: THREE.Material) {
+  const runtimeLike = material as THREE.Material & Partial<Record<MaterialTextureSlot, THREE.Texture | null>>
+
+  return Object.fromEntries(
+    MATERIAL_TEXTURE_SLOTS.map((slot) => {
+      const texture = runtimeLike[slot]
+      const hasOriginalTexture = texture instanceof THREE.Texture
+      return [
+        slot,
+        {
+          originalLabel: hasOriginalTexture ? getTextureDisplayName(texture, `${slot} Texture`) : null,
+          customLabel: null,
+          selectedSource: hasOriginalTexture ? 'original' : null,
+        },
+      ]
+    }),
+  ) as PbrMaterialState['textureSlots']
 }
 
 export function buildSceneGraph(root: THREE.Object3D) {
@@ -74,6 +120,8 @@ export function buildSceneGraph(root: THREE.Object3D) {
           name: material.name || 'Unnamed material',
           type: material.type,
           meshIds: [mesh.uuid],
+          environmentOverrideId: null,
+          environmentRotation: 0,
           useSystemMaterial: false,
           color: 'color' in standardMaterial ? `#${standardMaterial.color.getHexString()}` : undefined,
           emissive: 'emissive' in standardMaterial ? `#${standardMaterial.emissive.getHexString()}` : undefined,
@@ -90,6 +138,7 @@ export function buildSceneGraph(root: THREE.Object3D) {
             roughness: Boolean(standardMaterial.roughnessMap),
             metalness: Boolean(standardMaterial.metalnessMap),
           },
+          textureSlots: buildMaterialTextureSlots(material),
           effect: { ...DEFAULT_ATLAS_EFFECT },
         }
       } else if (!materials[nodeId].meshIds.includes(mesh.uuid)) {

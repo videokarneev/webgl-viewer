@@ -143,6 +143,7 @@ export function AssetController() {
       ) {
         runtimeTextures.environmentBackground.dispose()
       }
+      Object.values(runtimeTextures.materialEnvironmentMaps).forEach((texture) => texture.dispose())
     }
   }, [])
 

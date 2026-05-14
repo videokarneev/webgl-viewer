@@ -725,7 +725,6 @@ export function Outliner() {
               onClick={() => {
                 if (entry.kind === 'effect') {
                   setSelectedObjectId(entry.selectionId)
-                  setSelectedMaterialId(null)
                   return
                 }
                 if (entry.kind === 'material') {
@@ -741,7 +740,6 @@ export function Outliner() {
                 event.preventDefault()
                 if (entry.kind === 'effect') {
                   setSelectedObjectId(entry.selectionId)
-                  setSelectedMaterialId(null)
                   return
                 }
                 if (entry.kind === 'material') {

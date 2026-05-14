@@ -58,6 +58,13 @@ export function App() {
   const isZenMode = useEditorStore((state) => state.isZenMode)
   const sidebarVisible = useEditorStore((state) => state.hud.sidebarVisible)
   const inspectorVisible = useEditorStore((state) => state.hud.inspectorVisible)
+  const sceneResetNonce = useEditorStore((state) => state.sceneResetNonce)
+  const canUndo = useEditorStore((state) => state.history.past.length > 0)
+  const canRedo = useEditorStore((state) => state.history.future.length > 0)
+  const undoHistory = useEditorStore((state) => state.undoHistory)
+  const redoHistory = useEditorStore((state) => state.redoHistory)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
   const [dragDepth, setDragDepth] = useState(0)
 
   useEffect(() => {
@@ -66,6 +73,41 @@ export function App() {
       document.body.classList.remove('is-dragging')
     }
   }, [dragDepth])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return
+      }
+
+      if (!event.ctrlKey && !event.metaKey) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undoHistory()
+        return
+      }
+
+      if (key === 'y' || (key === 'z' && event.shiftKey)) {
+        event.preventDefault()
+        redoHistory()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [redoHistory, undoHistory])
 
   return (
     <main
@@ -89,11 +131,71 @@ export function App() {
         setDragDepth(0)
         Array.from(event.dataTransfer.files ?? []).forEach(routeDroppedFile)
       }}
+      onPointerDownCapture={(event) => {
+        const target = event.target
+        if (target instanceof HTMLInputElement && target.type === 'range') {
+          beginHistoryGesture()
+        }
+      }}
+      onFocusCapture={(event) => {
+        const target = event.target
+        if (
+          target instanceof HTMLInputElement &&
+          (target.type === 'number' || target.inputMode === 'decimal')
+        ) {
+          beginHistoryGesture()
+        }
+      }}
+      onPointerUpCapture={(event) => {
+        const target = event.target
+        if (target instanceof HTMLInputElement && target.type === 'range') {
+          endHistoryGesture()
+        }
+      }}
+      onPointerCancelCapture={(event) => {
+        const target = event.target
+        if (target instanceof HTMLInputElement && target.type === 'range') {
+          endHistoryGesture()
+        }
+      }}
+      onBlurCapture={(event) => {
+        const target = event.target
+        if (
+          target instanceof HTMLInputElement &&
+          (target.type === 'range' || target.type === 'number' || target.inputMode === 'decimal')
+        ) {
+          endHistoryGesture()
+        }
+      }}
     >
-      <AssetController />
-      {!isZenMode && sidebarVisible ? <Sidebar /> : null}
-      <Viewport />
-      {!isZenMode && inspectorVisible ? <Inspector /> : null}
+      <AssetController key={`assets:${sceneResetNonce}`} />
+      {!isZenMode && sidebarVisible ? <Sidebar key={`sidebar:${sceneResetNonce}`} /> : null}
+      <Viewport key={`viewport:${sceneResetNonce}`} />
+      {!isZenMode && inspectorVisible ? (
+        <div key={`history:${sceneResetNonce}`} className="app-shell__history-floating" aria-label="History controls">
+          <button
+            type="button"
+            className="app-shell__history-button"
+            onClick={undoHistory}
+            disabled={!canUndo}
+            aria-label="Undo"
+            title="Undo"
+          >
+            ↶
+          </button>
+          <button
+            type="button"
+            className="app-shell__history-button"
+            onClick={redoHistory}
+            disabled={!canRedo}
+            aria-label="Redo"
+            title="Redo"
+          >
+            ↷
+          </button>
+        </div>
+      ) : null}
+      {!isZenMode && inspectorVisible ? <Inspector key={`inspector:${sceneResetNonce}`} /> : null}
     </main>
   )
 }

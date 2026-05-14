@@ -18,10 +18,14 @@ export function SceneBindings() {
   useFrame(() => {
     const fallbackEnvironment = environment.isEnvironmentEnabled ? (scene.environment as THREE.Texture | null) : null
     const reflectionsTexture = runtimeTextures.environmentMap ?? fallbackEnvironment
+    const previewMaterialTexture = environment.previewMaterialEnvironmentId
+      ? runtimeTextures.materialEnvironmentMaps[environment.previewMaterialEnvironmentId] ?? null
+      : null
     const shouldShowReflectionPreview =
       environment.previewReflections &&
       Boolean(environment.customHdriUrl) &&
       Boolean(reflectionsTexture)
+    const shouldShowMaterialEnvironmentPreview = Boolean(previewMaterialTexture)
 
     scene.environment = runtimeTextures.environmentMap ?? (environment.isEnvironmentEnabled ? fallbackEnvironment : null)
     scene.environmentIntensity = environment.intensity
@@ -30,9 +34,20 @@ export function SceneBindings() {
     scene.backgroundBlurriness = environment.backgroundBlur
     scene.backgroundRotation.set(
       0,
-      THREE.MathUtils.degToRad(environment.previewReflections ? environment.rotation : environment.backgroundRotation),
+      THREE.MathUtils.degToRad(
+        shouldShowMaterialEnvironmentPreview
+          ? environment.previewMaterialEnvironmentRotation
+          : environment.previewReflections
+            ? environment.rotation
+            : environment.backgroundRotation,
+      ),
       0,
     )
+
+    if (shouldShowMaterialEnvironmentPreview && previewMaterialTexture) {
+      scene.background = previewMaterialTexture
+      return
+    }
 
     if (shouldShowReflectionPreview && reflectionsTexture) {
       scene.background = reflectionsTexture

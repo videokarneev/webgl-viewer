@@ -1,101 +1,1753 @@
-import { LevaPanel, useControls, useCreateStore } from 'leva'
-import { useEffect, useMemo, useRef } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { useEditorStore } from '../store/editorStore'
+import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
+import { type MaterialTextureSlotState, useEditorStore } from '../store/editorStore'
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
 }
 
-function createInspectorTheme() {
-  return {
-    colors: {
-      elevation1: '#090c10',
-      elevation2: '#0e1216',
-      elevation3: '#151b21',
-      accent1: '#4f88a9',
-      accent2: '#65a2c6',
-      accent3: '#8fc0dc',
-      highlight1: '#1f2931',
-      highlight2: '#7d97a7',
-      highlight3: '#eef4f7',
-      vivid1: '#9fcce3',
-    },
-    space: {
-      sm: '5px',
-      md: '8px',
-      rowGap: '6px',
-      colGap: '6px',
-    },
-    fontSizes: {
-      root: '10px',
-    },
-    sizes: {
-      rootWidth: '100%',
-      controlWidth: '132px',
-      rowHeight: '23px',
-      folderTitleHeight: '18px',
-      titleBarHeight: '28px',
-    },
-    borderWidths: {
-      root: '0px',
-      input: '1px',
-      focus: '1px',
-      hover: '1px',
-      active: '1px',
-      folder: '1px',
-    },
-    radii: {
-      xs: '0px',
-      sm: '0px',
-      lg: '0px',
-    },
-    shadows: {
-      level1: 'none',
-      level2: 'none',
-    },
-    fontWeights: {
-      label: 'normal',
-      folder: 'normal',
-      button: 'normal',
-    },
+function formatNumber(value: number, digits = 2) {
+  return value.toFixed(digits)
+}
+
+function formatDegrees(value: number) {
+  return `${value.toFixed(0)}°`
+}
+
+function getAssetName(value: string | null | undefined, fallback: string) {
+  if (!value) {
+    return fallback
   }
+
+  const sanitized = value.split('#')[0]?.split('?')[0] ?? value
+  const pieces = sanitized.split(/[\\/]/)
+  const fileName = pieces[pieces.length - 1]
+  return fileName ? decodeURIComponent(fileName) : fallback
+}
+
+function isHdriAsset(label: string) {
+  return /\.(hdr|exr)$/i.test(label)
+}
+
+async function loadEnvironmentTexture(url: string, label: string) {
+  const texture = isHdriAsset(label) ? await loadHdri(url) : await loadTexture(url)
+  texture.mapping = THREE.EquirectangularReflectionMapping
+
+  if (!isHdriAsset(label)) {
+    texture.colorSpace = THREE.SRGBColorSpace
+  }
+
+  texture.needsUpdate = true
+  return texture
+}
+
+function createMaterialEnvironmentId(label: string) {
+  const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return `material-environment:${safeLabel || 'hdri'}:${Date.now()}`
+}
+
+function resolveInspectorMaterialId({
+  selectedObjectId,
+  selectedObjectType,
+  selectedObjectIsMaterial,
+  selectedMaterialId,
+  hasSelectedMaterial,
+}: {
+  selectedObjectId: string | null
+  selectedObjectType: string | null
+  selectedObjectIsMaterial: boolean
+  selectedMaterialId: string | null
+  hasSelectedMaterial: boolean
+}) {
+  if (selectedMaterialId && hasSelectedMaterial) {
+    if (!selectedObjectType || (selectedObjectType !== 'material' && selectedObjectType !== 'mesh')) {
+      return selectedMaterialId
+    }
+  }
+
+  if (!selectedObjectId) {
+    return selectedMaterialId && hasSelectedMaterial ? selectedMaterialId : null
+  }
+
+  if (selectedObjectType === 'material') {
+    return selectedObjectIsMaterial ? selectedObjectId : null
+  }
+
+  if (selectedObjectType === 'mesh') {
+    return selectedMaterialId && hasSelectedMaterial ? selectedMaterialId : null
+  }
+
+  return selectedMaterialId && hasSelectedMaterial ? selectedMaterialId : null
+}
+
+function getSceneEnvironmentOptionLabel(sourceLabel: string | null | undefined, fallbackUrl: string) {
+  const label = getAssetName(sourceLabel, getAssetName(fallbackUrl, 'Scene HDRI'))
+  return `Scene HDRI (${label})`
+}
+
+type MaterialInspectorSectionKey = 'summary' | 'baseMaterial' | 'emission' | 'effects'
+
+function SectionChevron({ isCollapsed }: { isCollapsed: boolean }) {
+  return (
+    <svg viewBox="0 0 12 12" className={`inspector-section__chevron${isCollapsed ? ' is-collapsed' : ''}`} aria-hidden="true">
+      <path d="M2.5 4.25 6 7.75l3.5-3.5" />
+    </svg>
+  )
 }
 
 function SectionPanel({
   title,
   children,
+  isCollapsed = false,
+  onToggle,
 }: {
   title: string
-  children: React.ReactNode
+  children: ReactNode
+  isCollapsed?: boolean
+  onToggle?: (() => void) | undefined
 }) {
   return (
     <section className="inspector-section">
-      <div className="inspector-section__header">{title}</div>
-      <div className="inspector-section__body">{children}</div>
+      <div className="inspector-section__header">
+        <span>{title}</span>
+        {onToggle ? (
+          <button type="button" className="inspector-section__toggle" onClick={onToggle} aria-label={isCollapsed ? `Expand ${title}` : `Collapse ${title}`}>
+            <SectionChevron isCollapsed={isCollapsed} />
+          </button>
+        ) : null}
+      </div>
+      {!isCollapsed ? <div className="inspector-section__body">{children}</div> : null}
     </section>
   )
 }
 
-function LevaSection({ store }: { store: ReturnType<typeof useCreateStore> }) {
-  const theme = useMemo(createInspectorTheme, [])
+function buildFallbackPreviewMaterial(material?: {
+  color?: string
+  emissive?: string
+  metalness?: number
+  roughness?: number
+  envMapIntensity?: number
+  emissiveIntensity?: number
+}) {
+  const fallback = material ?? {}
 
-  return (
-    <LevaPanel
-      store={store}
-      theme={theme}
-      titleBar={false}
-      hideCopyButton
-      fill
-      flat
-      collapsed={false}
-      oneLineLabels
-    />
+  return new THREE.MeshStandardMaterial({
+    color: fallback.color ?? '#ffffff',
+    emissive: fallback.emissive ?? '#000000',
+    metalness: fallback.metalness ?? 0,
+    roughness: fallback.roughness ?? 1,
+    envMapIntensity: fallback.envMapIntensity ?? 1,
+    emissiveIntensity: fallback.emissiveIntensity ?? 1,
+  })
+}
+
+const PREVIEW_TEXTURE_SLOTS = [
+  'map',
+  'normalMap',
+  'roughnessMap',
+  'metalnessMap',
+  'aoMap',
+  'emissiveMap',
+  'alphaMap',
+  'bumpMap',
+  'displacementMap',
+  'specularMap',
+  'envMap',
+] as const
+
+const EDITABLE_TEXTURE_SLOTS = [
+  { slot: 'map', label: 'Base Color' },
+  { slot: 'normalMap', label: 'Normal' },
+  { slot: 'roughnessMap', label: 'Roughness' },
+  { slot: 'metalnessMap', label: 'Metalness' },
+  { slot: 'aoMap', label: 'AO' },
+  { slot: 'emissiveMap', label: 'Emissive' },
+  { slot: 'alphaMap', label: 'Alpha' },
+  { slot: 'bumpMap', label: 'Bump' },
+  { slot: 'displacementMap', label: 'Displacement' },
+  { slot: 'specularMap', label: 'Specular' },
+] as const
+
+type EditableTextureSlot = (typeof EDITABLE_TEXTURE_SLOTS)[number]['slot']
+
+type PreviewCapableMaterial = THREE.Material & {
+  uuid: string
+  name?: string
+  vertexColors?: boolean
+  color?: THREE.Color
+  emissive?: THREE.Color
+  metalness?: number
+  roughness?: number
+  envMapIntensity?: number
+  emissiveIntensity?: number
+  envMapRotation?: THREE.Euler
+  needsUpdate: boolean
+  map?: THREE.Texture | null
+  normalMap?: THREE.Texture | null
+  roughnessMap?: THREE.Texture | null
+  metalnessMap?: THREE.Texture | null
+  aoMap?: THREE.Texture | null
+  emissiveMap?: THREE.Texture | null
+  alphaMap?: THREE.Texture | null
+  bumpMap?: THREE.Texture | null
+  displacementMap?: THREE.Texture | null
+  specularMap?: THREE.Texture | null
+  envMap?: THREE.Texture | null
+  userData: THREE.Material['userData'] & {
+    originalTextureSlots?: Partial<Record<EditableTextureSlot, THREE.Texture | null>>
+    customTextureSlots?: Partial<Record<EditableTextureSlot, THREE.Texture | null>>
+  }
+}
+
+type TextureRowEntry = {
+  slot: EditableTextureSlot
+  label: string
+  selectedSource: 'original' | 'custom' | null
+  originalLabel: string | null
+  customLabel: string | null
+  isTextureAvailable: boolean
+}
+
+function getResolvedTextureForSlot(
+  material: PreviewCapableMaterial,
+  slot: EditableTextureSlot,
+) {
+  const currentTexture = material[slot]
+  if (currentTexture instanceof THREE.Texture) {
+    return currentTexture
+  }
+
+  const backupTexture = material.userData.originalTextureSlots?.[slot]
+  if (backupTexture instanceof THREE.Texture) {
+    return backupTexture
+  }
+
+  return null
+}
+
+function getOriginalTextureForSlot(
+  material: PreviewCapableMaterial,
+  slot: EditableTextureSlot,
+) {
+  const texture = material.userData.originalTextureSlots?.[slot]
+  if (texture instanceof THREE.Texture) {
+    return texture
+  }
+
+  const hasCustomTexture = material.userData.customTextureSlots?.[slot] instanceof THREE.Texture
+  if (!hasCustomTexture) {
+    const currentTexture = material[slot]
+    if (currentTexture instanceof THREE.Texture) {
+      return currentTexture
+    }
+  }
+
+  return null
+}
+
+function getCustomTextureForSlot(
+  material: PreviewCapableMaterial,
+  slot: EditableTextureSlot,
+) {
+  const texture = material.userData.customTextureSlots?.[slot]
+  return texture instanceof THREE.Texture ? texture : null
+}
+
+function getSelectedTextureSource(textureState: MaterialTextureSlotState | undefined) {
+  if (textureState?.selectedSource === 'custom' && textureState.customLabel) {
+    return 'custom'
+  }
+  if (textureState?.selectedSource === 'original' && textureState.originalLabel) {
+    return 'original'
+  }
+  if (textureState?.customLabel) {
+    return 'custom'
+  }
+  if (textureState?.originalLabel) {
+    return 'original'
+  }
+  return null
+}
+
+function hasPreviewTexture(material: PreviewCapableMaterial | null | undefined) {
+  if (!material) {
+    return false
+  }
+
+  return Boolean(
+    material.map ||
+      material.emissiveMap ||
+      material.normalMap ||
+      material.roughnessMap ||
+      material.metalnessMap ||
+      material.aoMap,
   )
 }
 
-function formatNumber(value: number, digits = 2) {
-  return value.toFixed(digits)
+function pickMeshMaterialCandidate(
+  materials: PreviewCapableMaterial[],
+  targetMaterialUuid: string,
+  targetMaterialName: string | undefined,
+) {
+  return (
+    materials.find((material) => material.uuid === targetMaterialUuid && hasPreviewTexture(material)) ??
+    materials.find((material) => material.uuid === targetMaterialUuid) ??
+    materials.find((material) => material.name === targetMaterialName && hasPreviewTexture(material)) ??
+    materials.find((material) => material.name === targetMaterialName) ??
+    materials.find((material) => hasPreviewTexture(material)) ??
+    materials[0] ??
+    null
+  )
+}
+
+function resolvePreviewRuntimeMaterial(
+  materialId: string,
+  materialState: {
+    name: string
+    meshIds: string[]
+  },
+  runtimeMaterialById: Record<string, THREE.Material>,
+  runtimeObjectById: Record<string, THREE.Object3D>,
+) {
+  const targetMaterialUuid = materialId.replace(/^material:/, '')
+  const directMaterial = (runtimeMaterialById[materialId] as PreviewCapableMaterial | undefined) ?? null
+  if (hasPreviewTexture(directMaterial)) {
+    return {
+      material: directMaterial,
+      source: 'runtime.materialById',
+    }
+  }
+
+  for (const meshId of materialState.meshIds) {
+    const runtimeObject = runtimeObjectById[meshId]
+    if (!runtimeObject || !(runtimeObject as THREE.Mesh).isMesh) {
+      continue
+    }
+
+    const mesh = runtimeObject as THREE.Mesh
+    const meshMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+    const typedMaterials = meshMaterials.filter(Boolean) as PreviewCapableMaterial[]
+    const candidate = pickMeshMaterialCandidate(typedMaterials, targetMaterialUuid, materialState.name)
+    if (candidate && hasPreviewTexture(candidate)) {
+      return {
+        material: candidate,
+        source: 'fallback from mesh.material',
+      }
+    }
+
+    if (!directMaterial && candidate) {
+      return {
+        material: candidate,
+        source: 'fallback from mesh.material',
+      }
+    }
+  }
+
+  return {
+    material: directMaterial,
+    source: 'runtime.materialById',
+  }
+}
+
+function getTextureDisplayName(texture: THREE.Texture, label: string) {
+  const explicitName = texture.name?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
+  const imageSource = texture.source?.data as { currentSrc?: string; src?: string } | undefined
+  const sourceUrl = imageSource?.currentSrc || imageSource?.src
+  if (typeof sourceUrl === 'string' && sourceUrl) {
+    const sanitized = sourceUrl.split('#')[0]?.split('?')[0] ?? sourceUrl
+    const pieces = sanitized.split(/[\\/]/)
+    const fileName = pieces[pieces.length - 1]
+    if (fileName) {
+      return decodeURIComponent(fileName)
+    }
+  }
+
+  return `${label} Texture`
+}
+
+function copyTextureSettings(
+  texture: THREE.Texture,
+  previousTexture: THREE.Texture | null,
+  slot: EditableTextureSlot,
+) {
+  if (previousTexture) {
+    texture.colorSpace = previousTexture.colorSpace
+    texture.flipY = previousTexture.flipY
+    texture.wrapS = previousTexture.wrapS
+    texture.wrapT = previousTexture.wrapT
+    texture.minFilter = previousTexture.minFilter
+    texture.magFilter = previousTexture.magFilter
+    texture.generateMipmaps = previousTexture.generateMipmaps
+    texture.anisotropy = previousTexture.anisotropy
+    texture.rotation = previousTexture.rotation
+    texture.channel = previousTexture.channel
+    texture.offset.copy(previousTexture.offset)
+    texture.repeat.copy(previousTexture.repeat)
+    texture.center.copy(previousTexture.center)
+    return
+  }
+
+  texture.flipY = false
+  if (slot === 'map' || slot === 'emissiveMap' || slot === 'specularMap') {
+    texture.colorSpace = THREE.SRGBColorSpace
+  } else {
+    texture.colorSpace = THREE.NoColorSpace
+  }
+}
+
+function cloneMaterialForPreview(source: THREE.Material) {
+  const previewMaterial = source.clone() as PreviewCapableMaterial
+  const runtimeLike = source as typeof previewMaterial
+
+  PREVIEW_TEXTURE_SLOTS.forEach((slot) => {
+    if (slot in runtimeLike) {
+      previewMaterial[slot] = runtimeLike[slot] ?? null
+    }
+  })
+
+  previewMaterial.userData = {
+    ...previewMaterial.userData,
+    originalTextureSlots: { ...(runtimeLike.userData.originalTextureSlots ?? {}) },
+    customTextureSlots: { ...(runtimeLike.userData.customTextureSlots ?? {}) },
+  }
+
+  if (previewMaterial.map) {
+    previewMaterial.needsUpdate = true
+  }
+  previewMaterial.needsUpdate = true
+
+  return previewMaterial
+}
+
+function buildPreviewSphereGeometry(material: PreviewCapableMaterial) {
+  const geometry = new THREE.SphereGeometry(0.94, 96, 96)
+  const uv = geometry.getAttribute('uv')
+
+  if (uv) {
+    geometry.setAttribute('uv1', uv.clone())
+    geometry.setAttribute('uv2', uv.clone())
+    geometry.setAttribute('uv3', uv.clone())
+  }
+
+  if (material.vertexColors) {
+    const position = geometry.getAttribute('position')
+    const colors = new Float32Array(position.count * 3)
+    colors.fill(1)
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  }
+
+  return geometry
+}
+
+function markPreviewTexturesForUpdate(material: PreviewCapableMaterial | THREE.Material) {
+  const previewMaterial = material as PreviewCapableMaterial
+
+  if (previewMaterial.map) {
+    previewMaterial.map.needsUpdate = true
+  }
+  if (previewMaterial.emissiveMap) {
+    previewMaterial.emissiveMap.needsUpdate = true
+  }
+  if (previewMaterial.normalMap) {
+    previewMaterial.normalMap.needsUpdate = true
+  }
+  if (previewMaterial.roughnessMap) {
+    previewMaterial.roughnessMap.needsUpdate = true
+  }
+  if (previewMaterial.metalnessMap) {
+    previewMaterial.metalnessMap.needsUpdate = true
+  }
+  if (previewMaterial.aoMap) {
+    previewMaterial.aoMap.needsUpdate = true
+  }
+  if (previewMaterial.envMap) {
+    previewMaterial.envMap.needsUpdate = true
+  }
+
+  previewMaterial.needsUpdate = true
+}
+
+function applyPreviewEnvironment(
+  material: PreviewCapableMaterial,
+  materialState: {
+    environmentOverrideId?: string | null
+    environmentRotation?: number
+    envMapIntensity?: number
+  },
+  environment: {
+    isEnvironmentEnabled: boolean
+    intensity: number
+    rotation: number
+  },
+  sceneEnvironmentMap: THREE.Texture | null,
+  materialEnvironmentMaps: Record<string, THREE.Texture>,
+) {
+  const localIntensity = materialState.envMapIntensity ?? 1
+  const overrideTexture = materialState.environmentOverrideId
+    ? materialEnvironmentMaps[materialState.environmentOverrideId] ?? null
+    : null
+
+  if (overrideTexture) {
+    material.envMap = overrideTexture
+    material.envMapIntensity = localIntensity
+    material.envMapRotation?.set(0, THREE.MathUtils.degToRad(materialState.environmentRotation ?? 0), 0)
+    return
+  }
+
+  if (environment.isEnvironmentEnabled && sceneEnvironmentMap) {
+    material.envMap = sceneEnvironmentMap
+    material.envMapIntensity = environment.intensity * localIntensity
+    material.envMapRotation?.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
+    return
+  }
+
+  material.envMap = null
+  material.envMapIntensity = localIntensity
+}
+
+function applyPreviewMaterialState(
+  material: PreviewCapableMaterial,
+  materialState: {
+    color?: string
+    emissive?: string
+    metalness?: number
+    roughness?: number
+    emissiveIntensity?: number
+  },
+) {
+  if (materialState.color && material.color) {
+    material.color.set(materialState.color)
+  }
+  if (materialState.emissive && material.emissive) {
+    material.emissive.set(materialState.emissive)
+  }
+  if (materialState.metalness != null && 'metalness' in material) {
+    material.metalness = materialState.metalness
+  }
+  if (materialState.roughness != null && 'roughness' in material) {
+    material.roughness = materialState.roughness
+  }
+  if (materialState.emissiveIntensity != null && 'emissiveIntensity' in material) {
+    material.emissiveIntensity = materialState.emissiveIntensity
+  }
+}
+
+function applyPreviewTextureSelections(
+  material: PreviewCapableMaterial,
+  materialState: {
+    textureSlots: Record<
+      EditableTextureSlot,
+      {
+        selectedSource: 'original' | 'custom' | null
+      }
+    >
+  },
+  sourceMaterial?: PreviewCapableMaterial | null,
+) {
+  EDITABLE_TEXTURE_SLOTS.forEach(({ slot }) => {
+    const selectedSource = materialState.textureSlots[slot]?.selectedSource ?? null
+    const textureSource = sourceMaterial ?? material
+    const originalTexture = getOriginalTextureForSlot(textureSource, slot)
+    const customTexture = getCustomTextureForSlot(textureSource, slot)
+
+    if (selectedSource === 'custom' && customTexture) {
+      material[slot] = customTexture
+      return
+    }
+
+    if (selectedSource === 'original' && originalTexture) {
+      material[slot] = originalTexture
+      return
+    }
+
+    material[slot] = customTexture ?? originalTexture ?? null
+  })
+}
+
+function MaterialTextureList({ materialId }: { materialId: string }) {
+  const materialState = useEditorStore((state) => state.materials[materialId] ?? null)
+  const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
+  const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const setStatus = useEditorStore((state) => state.setStatus)
+  const [loadingSlots, setLoadingSlots] = useState<Partial<Record<EditableTextureSlot, boolean>>>({})
+  const inputRefs = useRef<Partial<Record<EditableTextureSlot, HTMLInputElement | null>>>({})
+
+  const resolvedMaterial = useMemo(() => {
+    if (!materialState) {
+      return null
+    }
+    return resolvePreviewRuntimeMaterial(materialId, materialState, runtimeMaterialById, runtimeObjectById)
+      .material as PreviewCapableMaterial | null
+  }, [materialId, materialState, runtimeMaterialById, runtimeObjectById])
+  const resolvedSwatchColor = useMemo(() => {
+    const runtimeColor = resolvedMaterial?.color
+    if (runtimeColor instanceof THREE.Color) {
+      return `#${runtimeColor.getHexString()}`
+    }
+
+    return materialState?.color ?? '#ffffff'
+  }, [materialState?.color, resolvedMaterial])
+
+  const textureRows = useMemo<TextureRowEntry[]>(() => {
+    if (!materialState) {
+      return []
+    }
+
+    return EDITABLE_TEXTURE_SLOTS.flatMap((entry) => {
+      if (entry.slot === 'emissiveMap' || entry.slot === 'map') {
+        return []
+      }
+
+      const textureState = materialState.textureSlots[entry.slot]
+      const selectedSource = getSelectedTextureSource(textureState)
+      const isTextureAvailable = Boolean(textureState.originalLabel || textureState.customLabel)
+
+      if (!selectedSource) {
+        return []
+      }
+
+      return [
+        {
+          slot: entry.slot,
+          label: entry.label,
+          selectedSource,
+          originalLabel: textureState.originalLabel,
+          customLabel: textureState.customLabel,
+          isTextureAvailable,
+        },
+      ]
+    })
+  }, [materialState])
+
+  if (!materialState || !textureRows.length) {
+    return null
+  }
+
+  return (
+    <div className="material-texture-list">
+      {textureRows.map((entry) => (
+        <div key={entry.slot} className="material-texture-row">
+          <p className="material-texture-row__slot">{entry.label}</p>
+          <div
+            className={`material-asset-control${entry.slot === 'map' ? ' material-asset-control--with-swatch' : ''}`}
+          >
+            {entry.slot === 'map' ? (
+              <label className="material-color-swatch" title={`Base Color: ${resolvedSwatchColor}`}>
+                <input
+                  type="color"
+                  value={resolvedSwatchColor}
+                  onChange={(event) => updateMaterial(materialId, { color: event.currentTarget.value })}
+                />
+                <span
+                  className="material-color-swatch__chip"
+                  style={{ backgroundColor: resolvedSwatchColor }}
+                />
+              </label>
+            ) : null}
+            <select
+              className="material-asset-control__select material-texture-row__select"
+              value={entry.selectedSource ?? ''}
+              disabled={!entry.isTextureAvailable}
+              onChange={(event) => {
+                const nextSource = event.currentTarget.value as 'original' | 'custom'
+                updateMaterial(materialId, {
+                  textureSlots: {
+                    ...materialState.textureSlots,
+                    [entry.slot]: {
+                      ...materialState.textureSlots[entry.slot],
+                      selectedSource: nextSource,
+                    },
+                  },
+                })
+              }}
+            >
+              {!entry.isTextureAvailable ? <option value="">No texture</option> : null}
+              {entry.originalLabel ? <option value="original">Original: {entry.originalLabel}</option> : null}
+              {entry.customLabel ? <option value="custom">Custom: {entry.customLabel}</option> : null}
+            </select>
+            <button
+              type="button"
+              className="material-asset-control__button"
+              disabled={!entry.isTextureAvailable}
+              onClick={() => inputRefs.current[entry.slot]?.click()}
+            >
+              {loadingSlots[entry.slot] ? 'Loading' : 'Replace'}
+            </button>
+          </div>
+          <input
+            ref={(node) => {
+              inputRefs.current[entry.slot] = node
+            }}
+            hidden
+            type="file"
+            accept="image/*"
+            onChange={(event) => {
+              const input = event.currentTarget
+              const file = input.files?.[0]
+              if (!file) {
+                return
+              }
+
+              const objectUrl = createObjectUrl(file)
+              setLoadingSlots((current) => ({
+                ...current,
+                [entry.slot]: true,
+              }))
+
+              void (async () => {
+                try {
+                  const texture = await loadTexture(objectUrl)
+                  texture.name = file.name
+
+                  const latestState = useEditorStore.getState()
+                  const latestMaterialState = latestState.materials[materialId]
+                  if (!latestMaterialState) {
+                    texture.dispose()
+                    return
+                  }
+
+                  const resolvedLatest = resolvePreviewRuntimeMaterial(
+                    materialId,
+                    latestMaterialState,
+                    latestState.runtime.materialById,
+                    latestState.runtime.objectById,
+                  ).material as PreviewCapableMaterial | null
+
+                  if (!resolvedLatest) {
+                    texture.dispose()
+                    latestState.setStatus(`Failed to replace ${entry.label} texture.`)
+                    return
+                  }
+
+                  const previousTexture =
+                    getCustomTextureForSlot(resolvedLatest, entry.slot) ??
+                    getOriginalTextureForSlot(resolvedLatest, entry.slot)
+                  const originalTexture = getOriginalTextureForSlot(resolvedLatest, entry.slot)
+                  copyTextureSettings(texture, previousTexture, entry.slot)
+                  texture.needsUpdate = true
+
+                  if (previousTexture && previousTexture !== originalTexture) {
+                    previousTexture.dispose()
+                  }
+
+                  resolvedLatest.userData.customTextureSlots = {
+                    ...(resolvedLatest.userData.customTextureSlots ?? {}),
+                    [entry.slot]: texture,
+                  }
+                  resolvedLatest[entry.slot] = texture
+                  resolvedLatest.needsUpdate = true
+
+                  registerMaterialRef(materialId, resolvedLatest)
+                  registerMaterialRef(`material:${resolvedLatest.uuid}`, resolvedLatest)
+                  updateMaterial(materialId, {
+                    textureSlots: {
+                      ...latestMaterialState.textureSlots,
+                      [entry.slot]: {
+                        ...latestMaterialState.textureSlots[entry.slot],
+                        customLabel: file.name,
+                        selectedSource: 'custom',
+                      },
+                    },
+                  })
+                  setStatus(`${entry.label} texture updated: ${file.name}`)
+                } catch (error) {
+                  console.error(error)
+                  setStatus(`Failed to replace ${entry.label} texture.`)
+                } finally {
+                  URL.revokeObjectURL(objectUrl)
+                  input.value = ''
+                  setLoadingSlots((current) => {
+                    const next = { ...current }
+                    delete next[entry.slot]
+                    return next
+                  })
+                }
+              })()
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function MaterialPreviewSphere({ materialId }: { materialId: string }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const materialName = useEditorStore((state) => state.materials[materialId]?.name ?? '')
+  const materialMeshIds = useEditorStore((state) => state.materials[materialId]?.meshIds ?? null)
+  const textureSlots = useEditorStore((state) => state.materials[materialId]?.textureSlots ?? null)
+  const materialColor = useEditorStore((state) => state.materials[materialId]?.color)
+  const materialEmissive = useEditorStore((state) => state.materials[materialId]?.emissive)
+  const materialMetalness = useEditorStore((state) => state.materials[materialId]?.metalness)
+  const materialRoughness = useEditorStore((state) => state.materials[materialId]?.roughness)
+  const materialEmissiveIntensity = useEditorStore((state) => state.materials[materialId]?.emissiveIntensity)
+  const materialEnvMapIntensity = useEditorStore((state) => state.materials[materialId]?.envMapIntensity)
+  const materialEnvironmentOverrideId = useEditorStore((state) => state.materials[materialId]?.environmentOverrideId)
+  const materialEnvironmentRotation = useEditorStore((state) => state.materials[materialId]?.environmentRotation)
+  const environment = useEditorStore((state) => state.environment)
+  const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const sceneEnvironmentMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
+  const materialEnvironmentMaps = useEditorStore((state) => state.runtimeTextures.materialEnvironmentMaps)
+  const sphereRef = useRef<THREE.Mesh | null>(null)
+  const previewMaterialRef = useRef<THREE.Material | null>(null)
+  const frameIdRef = useRef<number>(0)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const materialState = useMemo(() => {
+    if (!materialMeshIds || !textureSlots) {
+      return null
+    }
+
+    return {
+      name: materialName,
+      meshIds: materialMeshIds,
+      textureSlots,
+      color: materialColor,
+      emissive: materialEmissive,
+      metalness: materialMetalness,
+      roughness: materialRoughness,
+      emissiveIntensity: materialEmissiveIntensity,
+      envMapIntensity: materialEnvMapIntensity,
+      environmentOverrideId: materialEnvironmentOverrideId,
+      environmentRotation: materialEnvironmentRotation,
+    }
+  }, [
+    materialColor,
+    materialEmissive,
+    materialEmissiveIntensity,
+    materialEnvMapIntensity,
+    materialEnvironmentOverrideId,
+    materialEnvironmentRotation,
+    materialMeshIds,
+    materialMetalness,
+    materialName,
+    materialRoughness,
+    textureSlots,
+  ])
+  const resolvedPreview = useMemo(() => {
+    if (!materialState) {
+      return null
+    }
+
+    return resolvePreviewRuntimeMaterial(materialId, materialState, runtimeMaterialById, runtimeObjectById)
+  }, [materialId, materialState, runtimeMaterialById, runtimeObjectById])
+
+  const textureSelectionKey = useMemo(() => {
+    if (!materialState) {
+      return ''
+    }
+
+    return EDITABLE_TEXTURE_SLOTS.map(({ slot }) => {
+      const selection = materialState.textureSlots[slot]?.selectedSource ?? 'none'
+      const runtimeMaterial = resolvedPreview?.material as PreviewCapableMaterial | null
+      const originalTexture = runtimeMaterial ? getOriginalTextureForSlot(runtimeMaterial, slot) : null
+      const customTexture = runtimeMaterial ? getCustomTextureForSlot(runtimeMaterial, slot) : null
+      return `${slot}:${selection}:${originalTexture?.uuid ?? 'none'}:${customTexture?.uuid ?? 'none'}`
+    }).join('|')
+  }, [materialState, resolvedPreview])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) {
+      return
+    }
+
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      canvas,
+      powerPreference: 'high-performance',
+    })
+    renderer.outputColorSpace = THREE.SRGBColorSpace
+    renderer.setClearColor(0x000000, 0)
+
+    const scene = new THREE.Scene()
+    scene.background = new THREE.Color('#131c22')
+    const camera = new THREE.PerspectiveCamera(24, 1, 0.1, 100)
+    camera.position.set(0, 0.06, 4.75)
+
+    const ambientLight = new THREE.AmbientLight('#d7e4ec', 1.9)
+    const keyLight = new THREE.DirectionalLight('#fffaf2', 2.8)
+    keyLight.position.set(2.8, 2.4, 4.8)
+    const fillLight = new THREE.DirectionalLight('#abc5d5', 1.45)
+    fillLight.position.set(-2.8, 1.1, 3.4)
+    const rimLight = new THREE.DirectionalLight('#89a4b6', 0.8)
+    rimLight.position.set(0.8, -2.2, 2.8)
+    const hemiLight = new THREE.HemisphereLight('#f0f6fa', '#172026', 1.05)
+
+    scene.add(ambientLight, keyLight, fillLight, rimLight, hemiLight)
+
+    const initialMaterial = buildFallbackPreviewMaterial()
+    const sphereGeometry = buildPreviewSphereGeometry(initialMaterial as PreviewCapableMaterial)
+    const sphere = new THREE.Mesh(sphereGeometry, initialMaterial)
+    sphere.position.y = 0.08
+    sphere.rotation.x = -0.18
+    sphere.rotation.y = 0.62
+    sphere.scale.setScalar(0.9)
+    sphereRef.current = sphere
+    previewMaterialRef.current = initialMaterial
+    scene.add(sphere)
+
+    const backdrop = new THREE.Mesh(
+      new THREE.CircleGeometry(2.8, 64),
+      new THREE.MeshBasicMaterial({
+        color: '#1a252d',
+        transparent: true,
+        opacity: 0.94,
+      }),
+    )
+    backdrop.position.set(0, 0, -1.2)
+    scene.add(backdrop)
+
+    const resize = () => {
+      const width = Math.max(220, Math.round(canvas.clientWidth || 280))
+      const height = Math.max(180, Math.round(canvas.clientHeight || 220))
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      renderer.setPixelRatio(dpr)
+      renderer.setSize(width, height, false)
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+    }
+
+    resize()
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null
+    resizeObserver?.observe(canvas)
+    resizeObserverRef.current = resizeObserver
+
+    const renderFrame = () => {
+      sphere.rotation.y += 0.0008333333333333334
+      renderer.render(scene, camera)
+      frameIdRef.current = window.requestAnimationFrame(renderFrame)
+    }
+    renderFrame()
+
+    return () => {
+      window.cancelAnimationFrame(frameIdRef.current)
+      resizeObserverRef.current?.disconnect()
+      resizeObserverRef.current = null
+      sphereGeometry.dispose()
+      backdrop.geometry.dispose()
+      ;(backdrop.material as THREE.Material).dispose()
+      previewMaterialRef.current?.dispose()
+      previewMaterialRef.current = null
+      sphereRef.current = null
+      renderer.dispose()
+    }
+  }, [])
+
+  useEffect(() => {
+    const sphere = sphereRef.current
+    if (!sphere || !materialState) {
+      return
+    }
+
+    const resolvedMaterial = resolvedPreview?.material as PreviewCapableMaterial | null
+    const nextPreviewMaterial =
+      resolvedMaterial != null
+        ? cloneMaterialForPreview(resolvedMaterial)
+        : buildFallbackPreviewMaterial(materialState)
+
+    applyPreviewTextureSelections(
+      nextPreviewMaterial as PreviewCapableMaterial,
+      materialState,
+      resolvedMaterial as PreviewCapableMaterial | null,
+    )
+    applyPreviewMaterialState(nextPreviewMaterial as PreviewCapableMaterial, materialState)
+    applyPreviewEnvironment(
+      nextPreviewMaterial as PreviewCapableMaterial,
+      materialState,
+      environment,
+      sceneEnvironmentMap,
+      materialEnvironmentMaps,
+    )
+    markPreviewTexturesForUpdate(nextPreviewMaterial)
+
+    const requiresVertexColors = Boolean((nextPreviewMaterial as PreviewCapableMaterial).vertexColors)
+    const hasVertexColors = sphere.geometry.getAttribute('color') != null
+
+    if (requiresVertexColors !== hasVertexColors) {
+      sphere.geometry.dispose()
+      sphere.geometry = buildPreviewSphereGeometry(nextPreviewMaterial as PreviewCapableMaterial)
+    }
+
+    const previousMaterial = previewMaterialRef.current
+    sphere.material = nextPreviewMaterial
+    previewMaterialRef.current = nextPreviewMaterial
+    previousMaterial?.dispose()
+  }, [
+    materialState,
+    resolvedPreview,
+    textureSelectionKey,
+  ])
+
+  useEffect(() => {
+    const material = previewMaterialRef.current as PreviewCapableMaterial | null
+    if (!material || !materialState) {
+      return
+    }
+
+    applyPreviewMaterialState(material, materialState)
+    applyPreviewEnvironment(material, materialState, environment, sceneEnvironmentMap, materialEnvironmentMaps)
+    markPreviewTexturesForUpdate(material)
+  }, [
+    environment,
+    materialEnvironmentMaps,
+    materialState?.color,
+    materialState?.emissive,
+    materialState?.metalness,
+    materialState?.roughness,
+    materialState?.emissiveIntensity,
+    materialState?.envMapIntensity,
+    materialState?.environmentOverrideId,
+    materialState?.environmentRotation,
+    sceneEnvironmentMap,
+  ])
+
+  return (
+    <div className="material-preview">
+      <canvas ref={canvasRef} className="material-preview__canvas" />
+    </div>
+  )
+}
+
+function MaterialIdentity({
+  materialId,
+  isCollapsed,
+  onToggle,
+}: {
+  materialId: string
+  isCollapsed: boolean
+  onToggle: () => void
+}) {
+  const hasMaterial = useEditorStore((state) => Boolean(state.materials[materialId]))
+  const materialName = useEditorStore((state) => state.materials[materialId]?.name ?? '')
+  const meshCount = useEditorStore((state) => state.materials[materialId]?.meshIds.length ?? 0)
+
+  if (!hasMaterial) {
+    return null
+  }
+
+  const usedByLabel = `Used by: ${meshCount} ${meshCount === 1 ? 'mesh' : 'meshes'}`
+
+  return (
+    <section className="inspector-section material-inspector-summary">
+      <div className="inspector-section__header">
+        <span>Material Summary</span>
+        <button type="button" className="inspector-section__toggle" onClick={onToggle} aria-label={isCollapsed ? 'Expand Material Summary' : 'Collapse Material Summary'}>
+          <SectionChevron isCollapsed={isCollapsed} />
+        </button>
+      </div>
+      {!isCollapsed ? <div className="inspector-section__body material-inspector-summary__body">
+        <div className="material-inspector-summary__text">
+          <p className="material-inspector-summary__name">{materialName || 'Unnamed Material'}</p>
+          <p className="material-inspector-summary__meta">{usedByLabel}</p>
+        </div>
+        <MaterialPreviewSphere materialId={materialId} />
+        <MaterialTextureList materialId={materialId} />
+      </div> : null}
+    </section>
+  )
+}
+
+function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
+  const material = useEditorStore((state) => state.materials[materialId] ?? null)
+  const materialEnvironments = useEditorStore((state) => state.materialEnvironments)
+  const environmentEnabled = useEditorStore((state) => state.environment.isEnvironmentEnabled)
+  const environmentRotation = useEditorStore((state) => state.environment.rotation)
+  const environmentSource = useEditorStore((state) => state.environment.source ?? state.assets.reflections)
+  const defaultEnvUrl = useEditorStore((state) => state.defaultEnvUrl)
+  const sceneEnvironmentMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
+  const previewMaterialEnvironmentId = useEditorStore((state) => state.environment.previewMaterialEnvironmentId)
+  const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
+  const removeMaterialEnvironment = useEditorStore((state) => state.removeMaterialEnvironment)
+  const setEnvironment = useEditorStore((state) => state.setEnvironment)
+  const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
+  const setStatus = useEditorStore((state) => state.setStatus)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const dropdownRef = useRef<HTMLDivElement | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
+  const environmentOptions = useMemo(
+    () => Object.values(materialEnvironments).sort((left, right) => left.label.localeCompare(right.label)),
+    [materialEnvironments],
+  )
+
+  if (!material) {
+    return null
+  }
+
+  const usesSceneEnvironment = !material.environmentOverrideId
+  const hasActiveSceneEnvironment = environmentEnabled && Boolean(sceneEnvironmentMap)
+  const isSceneEnvironmentUnavailable = usesSceneEnvironment && !hasActiveSceneEnvironment
+  const hasAnyEnvironmentChoice = hasActiveSceneEnvironment || environmentOptions.length > 0
+  const isEnvironmentSelectorDisabled = !hasAnyEnvironmentChoice
+  const rotationValue = usesSceneEnvironment ? environmentRotation : material.environmentRotation ?? 0
+  const activeLabel =
+    material.environmentOverrideId && materialEnvironments[material.environmentOverrideId]
+      ? materialEnvironments[material.environmentOverrideId].label
+      : isSceneEnvironmentUnavailable
+        ? 'Scene HDRI unavailable'
+        : getSceneEnvironmentOptionLabel(environmentSource, defaultEnvUrl)
+
+  useEffect(() => {
+    if (!previewMaterialEnvironmentId) {
+      return
+    }
+
+    const clearMaterialEnvironmentPreview = () => {
+      useEditorStore.getState().setEnvironment({
+        previewMaterialEnvironmentId: null,
+        previewReflections: false,
+      })
+    }
+
+    window.addEventListener('pointerup', clearMaterialEnvironmentPreview)
+    window.addEventListener('pointercancel', clearMaterialEnvironmentPreview)
+    window.addEventListener('mouseup', clearMaterialEnvironmentPreview)
+    window.addEventListener('touchend', clearMaterialEnvironmentPreview)
+    window.addEventListener('blur', clearMaterialEnvironmentPreview)
+
+    return () => {
+      window.removeEventListener('pointerup', clearMaterialEnvironmentPreview)
+      window.removeEventListener('pointercancel', clearMaterialEnvironmentPreview)
+      window.removeEventListener('mouseup', clearMaterialEnvironmentPreview)
+      window.removeEventListener('touchend', clearMaterialEnvironmentPreview)
+      window.removeEventListener('blur', clearMaterialEnvironmentPreview)
+    }
+  }, [previewMaterialEnvironmentId])
+
+  useEffect(() => {
+    if (!isDropdownOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!dropdownRef.current?.contains(event.target as Node)) {
+        setIsDropdownOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [isDropdownOpen])
+
+  useEffect(() => {
+    if (!isSceneEnvironmentUnavailable || material.environmentOverrideId || !environmentOptions.length) {
+      return
+    }
+
+    updateMaterial(materialId, {
+      environmentOverrideId: environmentOptions[0].id,
+      environmentRotation: 0,
+    })
+  }, [
+    environmentOptions,
+    isSceneEnvironmentUnavailable,
+    material.environmentOverrideId,
+    materialId,
+    updateMaterial,
+  ])
+
+  return (
+    <>
+      <div className="material-environment-control" ref={dropdownRef}>
+        <div
+          className={`material-environment-control__field${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}
+          title={activeLabel}
+        >
+          <button
+            type="button"
+            className={`material-asset-control__select material-asset-control__select-button${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}
+            disabled={isEnvironmentSelectorDisabled}
+            onClick={() => setIsDropdownOpen((current) => !current)}
+          >
+            <span className="material-asset-control__select-label">{activeLabel}</span>
+            <span className={`material-asset-control__chevron${isDropdownOpen ? ' is-open' : ''}`}>⌄</span>
+          </button>
+          {isDropdownOpen ? (
+            <div className="material-asset-control__menu">
+              <div className="material-asset-control__menu-row">
+                <button
+                  type="button"
+                  className={`material-asset-control__menu-option${usesSceneEnvironment ? ' is-active' : ''}${!hasActiveSceneEnvironment ? ' is-disabled' : ''}`}
+                  disabled={!hasActiveSceneEnvironment}
+                  onClick={() => {
+                    updateMaterial(materialId, { environmentOverrideId: null, environmentRotation: 0 })
+                    setIsDropdownOpen(false)
+                  }}
+                >
+                  {hasActiveSceneEnvironment
+                    ? getSceneEnvironmentOptionLabel(environmentSource, defaultEnvUrl)
+                    : 'Scene HDRI unavailable'}
+                </button>
+                {hasActiveSceneEnvironment ? (
+                  <button
+                    type="button"
+                    className="material-asset-control__menu-remove"
+                    aria-label="Delete scene HDRI"
+                    onClick={() => {
+                      removeEnvironment()
+                      setIsDropdownOpen(false)
+                    }}
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+              {environmentOptions.map((entry) => (
+                <div key={entry.id} className="material-asset-control__menu-row">
+                  <button
+                    type="button"
+                    className={`material-asset-control__menu-option${material.environmentOverrideId === entry.id ? ' is-active' : ''}`}
+                    onClick={() => {
+                      updateMaterial(materialId, { environmentOverrideId: entry.id })
+                      setIsDropdownOpen(false)
+                    }}
+                  >
+                    {entry.label}
+                  </button>
+                  <button
+                    type="button"
+                    className="material-asset-control__menu-remove"
+                    aria-label={`Delete ${entry.label}`}
+                    onClick={() => {
+                      removeMaterialEnvironment(entry.id)
+                      setIsDropdownOpen(false)
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="material-asset-control__button material-asset-control__button--compact"
+          onClick={() => inputRef.current?.click()}
+        >
+          {isLoading ? 'Loading HDRI' : 'Load HDRI'}
+        </button>
+      </div>
+      <div className="grid-two">
+        <label className="field">
+          <span>
+            Env Map Intensity <output>{formatNumber(material.envMapIntensity ?? 1)}</output>
+          </span>
+          <input
+            type="range"
+            min="0"
+            max="10"
+            step="0.01"
+            value={material.envMapIntensity ?? 1}
+            onInput={(event) => updateMaterial(materialId, { envMapIntensity: Number(event.currentTarget.value) })}
+          />
+        </label>
+      </div>
+      <label className={`left-slider material-environment-rotation${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}>
+        <span>Rotation</span>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          disabled={isEnvironmentSelectorDisabled}
+          value={rotationValue}
+          onInput={(event) => {
+            const nextValue = Number(event.currentTarget.value)
+
+            if (usesSceneEnvironment) {
+              setEnvironment({ rotation: nextValue })
+              return
+            }
+
+            updateMaterial(materialId, { environmentRotation: nextValue })
+            setEnvironment({ previewMaterialEnvironmentRotation: nextValue })
+          }}
+          onPointerDown={() => {
+            if (usesSceneEnvironment) {
+              setEnvironment({ previewReflections: true })
+              return
+            }
+
+            if (material.environmentOverrideId) {
+              setEnvironment({
+                previewMaterialEnvironmentId: material.environmentOverrideId,
+                previewMaterialEnvironmentRotation: material.environmentRotation ?? 0,
+              })
+            }
+          }}
+          onPointerUp={() =>
+            setEnvironment({
+              previewReflections: false,
+              previewMaterialEnvironmentId: null,
+            })
+          }
+          onPointerCancel={() =>
+            setEnvironment({
+              previewReflections: false,
+              previewMaterialEnvironmentId: null,
+            })
+          }
+          onBlur={() =>
+            setEnvironment({
+              previewReflections: false,
+              previewMaterialEnvironmentId: null,
+            })
+          }
+        />
+        <strong>{formatDegrees(rotationValue)}</strong>
+      </label>
+      <input
+        ref={inputRef}
+        hidden
+        type="file"
+        accept=".hdr,.exr,.jpg,.jpeg,.png,image/*"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          if (!file) {
+            return
+          }
+
+          const objectUrl = createObjectUrl(file)
+          setIsLoading(true)
+
+          void (async () => {
+            try {
+              const texture = await loadEnvironmentTexture(objectUrl, file.name)
+              texture.name = file.name
+
+              const id = createMaterialEnvironmentId(file.name)
+              upsertMaterialEnvironment(
+                {
+                  id,
+                  label: file.name,
+                  kind: isHdriAsset(file.name) ? 'hdri' : 'panorama',
+                },
+                texture,
+              )
+              updateMaterial(materialId, { environmentOverrideId: id })
+              setStatus(`Material HDRI loaded: ${file.name}`)
+            } catch (error) {
+              console.error(error)
+              setStatus(`Failed to load material HDRI: ${file.name}`)
+            } finally {
+              URL.revokeObjectURL(objectUrl)
+              event.currentTarget.value = ''
+              setIsLoading(false)
+            }
+          })()
+        }}
+      />
+    </>
+  )
+}
+
+function MaterialBaseSection({
+  materialId,
+  isCollapsed,
+  onToggle,
+}: {
+  materialId: string
+  isCollapsed: boolean
+  onToggle: () => void
+}) {
+  const material = useEditorStore((state) => state.materials[materialId])
+  const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
+  const setStatus = useEditorStore((state) => state.setStatus)
+  const [isLoadingBaseColorTexture, setIsLoadingBaseColorTexture] = useState(false)
+  const baseColorInputRef = useRef<HTMLInputElement | null>(null)
+
+  const resolvedMaterial = useMemo(() => {
+    if (!material) {
+      return null
+    }
+    return resolvePreviewRuntimeMaterial(materialId, material, runtimeMaterialById, runtimeObjectById)
+      .material as PreviewCapableMaterial | null
+  }, [material, materialId, runtimeMaterialById, runtimeObjectById])
+
+  const resolvedBaseColor = useMemo(() => {
+    const runtimeColor = resolvedMaterial?.color
+    if (runtimeColor instanceof THREE.Color) {
+      return `#${runtimeColor.getHexString()}`
+    }
+
+    return material?.color ?? '#ffffff'
+  }, [material?.color, resolvedMaterial])
+
+  if (!material) {
+    return null
+  }
+
+  const baseColorTextureState = material.textureSlots.map
+  const baseColorTextureSource = getSelectedTextureSource(baseColorTextureState)
+  const hasBaseColorTexture = Boolean(baseColorTextureState.originalLabel || baseColorTextureState.customLabel)
+
+  return (
+    <SectionPanel title="Base Material" isCollapsed={isCollapsed} onToggle={onToggle}>
+      <div className="material-texture-row base-material-texture-row">
+        <div className="material-asset-control material-asset-control--with-swatch">
+          <label className="material-color-swatch" title={`Base Color: ${resolvedBaseColor}`}>
+            <input
+              type="color"
+              value={resolvedBaseColor}
+              onChange={(event) => updateMaterial(materialId, { color: event.currentTarget.value })}
+            />
+            <span className="material-color-swatch__chip" style={{ backgroundColor: resolvedBaseColor }} />
+          </label>
+          <select
+            className="material-asset-control__select material-texture-row__select"
+            value={baseColorTextureSource ?? ''}
+            disabled={!hasBaseColorTexture}
+            onChange={(event) => {
+              const nextSource = event.currentTarget.value as 'original' | 'custom'
+              updateMaterial(materialId, {
+                textureSlots: {
+                  ...material.textureSlots,
+                  map: {
+                    ...material.textureSlots.map,
+                    selectedSource: nextSource,
+                  },
+                },
+              })
+            }}
+          >
+            {!hasBaseColorTexture ? <option value="">No texture</option> : null}
+            {baseColorTextureState.originalLabel ? (
+              <option value="original">Original: {baseColorTextureState.originalLabel}</option>
+            ) : null}
+            {baseColorTextureState.customLabel ? (
+              <option value="custom">Custom: {baseColorTextureState.customLabel}</option>
+            ) : null}
+          </select>
+          <button
+            type="button"
+            className="material-asset-control__button"
+            disabled={!hasBaseColorTexture}
+            onClick={() => baseColorInputRef.current?.click()}
+          >
+            {isLoadingBaseColorTexture ? 'Loading' : 'Replace'}
+          </button>
+        </div>
+        <input
+          ref={baseColorInputRef}
+          hidden
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const input = event.currentTarget
+            const file = input.files?.[0]
+            if (!file) {
+              return
+            }
+
+            const objectUrl = createObjectUrl(file)
+            setIsLoadingBaseColorTexture(true)
+
+            void (async () => {
+              try {
+                const texture = await loadTexture(objectUrl)
+                texture.name = file.name
+
+                const latestState = useEditorStore.getState()
+                const latestMaterialState = latestState.materials[materialId]
+                if (!latestMaterialState) {
+                  texture.dispose()
+                  return
+                }
+
+                const resolvedLatest = resolvePreviewRuntimeMaterial(
+                  materialId,
+                  latestMaterialState,
+                  latestState.runtime.materialById,
+                  latestState.runtime.objectById,
+                ).material as PreviewCapableMaterial | null
+
+                if (!resolvedLatest) {
+                  texture.dispose()
+                  latestState.setStatus('Failed to replace Base Color texture.')
+                  return
+                }
+
+                const previousTexture =
+                  getCustomTextureForSlot(resolvedLatest, 'map') ??
+                  getOriginalTextureForSlot(resolvedLatest, 'map')
+                const originalTexture = getOriginalTextureForSlot(resolvedLatest, 'map')
+                copyTextureSettings(texture, previousTexture, 'map')
+                texture.needsUpdate = true
+
+                if (previousTexture && previousTexture !== originalTexture) {
+                  previousTexture.dispose()
+                }
+
+                resolvedLatest.userData.customTextureSlots = {
+                  ...(resolvedLatest.userData.customTextureSlots ?? {}),
+                  map: texture,
+                }
+                resolvedLatest.map = texture
+                resolvedLatest.needsUpdate = true
+
+                registerMaterialRef(materialId, resolvedLatest)
+                registerMaterialRef(`material:${resolvedLatest.uuid}`, resolvedLatest)
+                updateMaterial(materialId, {
+                  textureSlots: {
+                    ...latestMaterialState.textureSlots,
+                    map: {
+                      ...latestMaterialState.textureSlots.map,
+                      customLabel: file.name,
+                      selectedSource: 'custom',
+                    },
+                  },
+                })
+                setStatus(`Base Color texture updated: ${file.name}`)
+              } catch (error) {
+                console.error(error)
+                setStatus('Failed to replace Base Color texture.')
+              } finally {
+                URL.revokeObjectURL(objectUrl)
+                input.value = ''
+                setIsLoadingBaseColorTexture(false)
+              }
+            })()
+          }}
+        />
+      </div>
+      <label className="field">
+        <span>
+          Metalness <output>{formatNumber(material.metalness ?? 0)}</output>
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={material.metalness ?? 0}
+          onInput={(event) => updateMaterial(materialId, { metalness: Number(event.currentTarget.value) })}
+        />
+      </label>
+      <label className="field">
+        <span>
+          Roughness <output>{formatNumber(material.roughness ?? 1)}</output>
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={material.roughness ?? 1}
+          onInput={(event) => updateMaterial(materialId, { roughness: Number(event.currentTarget.value) })}
+        />
+      </label>
+      <div className="material-environment-block">
+        <p className="settings-note">Material Environment (HDRI)</p>
+        <MaterialEnvironmentControls materialId={materialId} />
+      </div>
+    </SectionPanel>
+  )
+}
+
+function EmissionSection({
+  materialId,
+  isCollapsed,
+  onToggle,
+}: {
+  materialId: string
+  isCollapsed: boolean
+  onToggle: () => void
+}) {
+  const material = useEditorStore((state) => state.materials[materialId])
+  const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
+  const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
+  const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
+  const setStatus = useEditorStore((state) => state.setStatus)
+  const [isLoadingTexture, setIsLoadingTexture] = useState(false)
+  const emissiveInputRef = useRef<HTMLInputElement | null>(null)
+
+  const resolvedMaterial = useMemo(() => {
+    if (!material) {
+      return null
+    }
+    return resolvePreviewRuntimeMaterial(materialId, material, runtimeMaterialById, runtimeObjectById)
+      .material as PreviewCapableMaterial | null
+  }, [material, materialId, runtimeMaterialById, runtimeObjectById])
+
+  const resolvedEmissiveColor = useMemo(() => {
+    const runtimeEmissive = resolvedMaterial?.emissive
+    if (runtimeEmissive instanceof THREE.Color) {
+      return `#${runtimeEmissive.getHexString()}`
+    }
+
+    return material?.emissive ?? '#000000'
+  }, [material?.emissive, resolvedMaterial])
+
+  if (!material) {
+    return null
+  }
+
+  const emissiveTextureState = material.textureSlots.emissiveMap
+  const emissiveTextureSource = getSelectedTextureSource(emissiveTextureState)
+  const hasEmissiveTexture = Boolean(emissiveTextureState.originalLabel || emissiveTextureState.customLabel)
+
+  return (
+    <SectionPanel title="Emission" isCollapsed={isCollapsed} onToggle={onToggle}>
+      <div className="material-texture-row emission-texture-row">
+        <div className="material-asset-control material-asset-control--with-swatch">
+          <label className="material-color-swatch" title={`Emissive Color: ${resolvedEmissiveColor}`}>
+            <input
+              type="color"
+              value={resolvedEmissiveColor}
+              onChange={(event) => updateMaterial(materialId, { emissive: event.currentTarget.value })}
+            />
+            <span className="material-color-swatch__chip" style={{ backgroundColor: resolvedEmissiveColor }} />
+          </label>
+          <select
+            className="material-asset-control__select material-texture-row__select"
+            value={emissiveTextureSource ?? ''}
+            disabled={!hasEmissiveTexture}
+            onChange={(event) => {
+              const nextSource = event.currentTarget.value as 'original' | 'custom'
+              updateMaterial(materialId, {
+                textureSlots: {
+                  ...material.textureSlots,
+                  emissiveMap: {
+                    ...material.textureSlots.emissiveMap,
+                    selectedSource: nextSource,
+                  },
+                },
+              })
+            }}
+          >
+            {!hasEmissiveTexture ? <option value="">No texture</option> : null}
+            {emissiveTextureState.originalLabel ? (
+              <option value="original">Original: {emissiveTextureState.originalLabel}</option>
+            ) : null}
+            {emissiveTextureState.customLabel ? (
+              <option value="custom">Custom: {emissiveTextureState.customLabel}</option>
+            ) : null}
+          </select>
+          <button
+            type="button"
+            className="material-asset-control__button"
+            disabled={!hasEmissiveTexture}
+            onClick={() => emissiveInputRef.current?.click()}
+          >
+            {isLoadingTexture ? 'Loading' : 'Replace'}
+          </button>
+        </div>
+        <input
+          ref={emissiveInputRef}
+          hidden
+          type="file"
+          accept="image/*"
+          onChange={(event) => {
+            const input = event.currentTarget
+            const file = input.files?.[0]
+            if (!file) {
+              return
+            }
+
+            const objectUrl = createObjectUrl(file)
+            setIsLoadingTexture(true)
+
+            void (async () => {
+              try {
+                const texture = await loadTexture(objectUrl)
+                texture.name = file.name
+
+                const latestState = useEditorStore.getState()
+                const latestMaterialState = latestState.materials[materialId]
+                if (!latestMaterialState) {
+                  texture.dispose()
+                  return
+                }
+
+                const resolvedLatest = resolvePreviewRuntimeMaterial(
+                  materialId,
+                  latestMaterialState,
+                  latestState.runtime.materialById,
+                  latestState.runtime.objectById,
+                ).material as PreviewCapableMaterial | null
+
+                if (!resolvedLatest) {
+                  texture.dispose()
+                  latestState.setStatus('Failed to replace Emissive texture.')
+                  return
+                }
+
+                const previousTexture =
+                  getCustomTextureForSlot(resolvedLatest, 'emissiveMap') ??
+                  getOriginalTextureForSlot(resolvedLatest, 'emissiveMap')
+                const originalTexture = getOriginalTextureForSlot(resolvedLatest, 'emissiveMap')
+                copyTextureSettings(texture, previousTexture, 'emissiveMap')
+                texture.needsUpdate = true
+
+                if (previousTexture && previousTexture !== originalTexture) {
+                  previousTexture.dispose()
+                }
+
+                resolvedLatest.userData.customTextureSlots = {
+                  ...(resolvedLatest.userData.customTextureSlots ?? {}),
+                  emissiveMap: texture,
+                }
+                resolvedLatest.emissiveMap = texture
+                resolvedLatest.needsUpdate = true
+
+                registerMaterialRef(materialId, resolvedLatest)
+                registerMaterialRef(`material:${resolvedLatest.uuid}`, resolvedLatest)
+                updateMaterial(materialId, {
+                  textureSlots: {
+                    ...latestMaterialState.textureSlots,
+                    emissiveMap: {
+                      ...latestMaterialState.textureSlots.emissiveMap,
+                      customLabel: file.name,
+                      selectedSource: 'custom',
+                    },
+                  },
+                })
+                setStatus(`Emissive texture updated: ${file.name}`)
+              } catch (error) {
+                console.error(error)
+                setStatus('Failed to replace Emissive texture.')
+              } finally {
+                URL.revokeObjectURL(objectUrl)
+                input.value = ''
+                setIsLoadingTexture(false)
+              }
+            })()
+          }}
+        />
+      </div>
+      <label className="field">
+        <span>
+          Emissive Intensity <output>{formatNumber(material.emissiveIntensity ?? 1)}</output>
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="10"
+          step="0.01"
+          value={material.emissiveIntensity ?? 1}
+          onInput={(event) => updateMaterial(materialId, { emissiveIntensity: Number(event.currentTarget.value) })}
+        />
+      </label>
+    </SectionPanel>
+  )
 }
 
 function AtlasPreviewCanvas({ materialId }: { materialId: string }) {
@@ -175,135 +1827,21 @@ function AtlasPreviewCanvas({ materialId }: { materialId: string }) {
 
   return (
     <div className="atlas-preview-wrap">
-      <canvas ref={canvasRef} id="atlasPreview" width={360} height={220} />
+      <canvas ref={canvasRef} width={360} height={220} />
     </div>
   )
 }
 
-function MaterialBaseSection({ materialId }: { materialId: string }) {
-  const material = useEditorStore((state) => state.materials[materialId])
-  const environment = useEditorStore((state) => state.environment)
-  const updateMaterial = useEditorStore((state) => state.updateMaterial)
-
-  if (!material) {
-    return null
-  }
-
-  return (
-    <SectionPanel title="PBR Base">
-      <div className="grid-two">
-        <label className="field">
-          <span>Color</span>
-          <input
-            type="color"
-            value={material.color ?? '#ffffff'}
-            onChange={(event) => updateMaterial(materialId, { color: event.currentTarget.value })}
-          />
-        </label>
-        <div className="field">
-          <span>Material</span>
-          <div className="material-meta muted">{material.name || material.type}</div>
-        </div>
-      </div>
-      <div className="grid-two">
-        <label className="field">
-          <span>
-            Metalness <output>{formatNumber(material.metalness ?? 0)}</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={material.metalness ?? 0}
-            onInput={(event) => updateMaterial(materialId, { metalness: Number(event.currentTarget.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>
-            Roughness <output>{formatNumber(material.roughness ?? 1)}</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={material.roughness ?? 1}
-            onInput={(event) => updateMaterial(materialId, { roughness: Number(event.currentTarget.value) })}
-          />
-        </label>
-      </div>
-      <div className="grid-two">
-        <label className="field">
-          <span>
-            Env Map Intensity <output>{formatNumber(material.envMapIntensity ?? environment.intensity)}</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="0.01"
-            value={material.envMapIntensity ?? environment.intensity}
-            onInput={(event) => updateMaterial(materialId, { envMapIntensity: Number(event.currentTarget.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>
-            Clearcoat <output>{formatNumber(material.clearcoat ?? 0)}</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={material.clearcoat ?? 0}
-            onInput={(event) => updateMaterial(materialId, { clearcoat: Number(event.currentTarget.value) })}
-          />
-        </label>
-      </div>
-    </SectionPanel>
-  )
-}
-
-function EmissiveSection({ materialId }: { materialId: string }) {
-  const material = useEditorStore((state) => state.materials[materialId])
-  const updateMaterial = useEditorStore((state) => state.updateMaterial)
-
-  if (!material) {
-    return null
-  }
-
-  return (
-    <SectionPanel title="Emissive">
-      <div className="grid-two">
-        <label className="field">
-          <span>Emissive Color</span>
-          <input
-            type="color"
-            value={material.emissive ?? '#000000'}
-            onChange={(event) => updateMaterial(materialId, { emissive: event.currentTarget.value })}
-          />
-        </label>
-        <label className="field">
-          <span>
-            Emissive Intensity <output>{formatNumber(material.emissiveIntensity ?? 1)}</output>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="10"
-            step="0.01"
-            value={material.emissiveIntensity ?? 1}
-            onInput={(event) => updateMaterial(materialId, { emissiveIntensity: Number(event.currentTarget.value) })}
-          />
-        </label>
-      </div>
-    </SectionPanel>
-  )
-}
-
-function AtlasOverlaySection({ materialId }: { materialId: string }) {
-  const material = useEditorStore((state) => state.materials[materialId])
+function AtlasEffectSection({
+  materialId,
+  isCollapsed,
+  onToggle,
+}: {
+  materialId: string
+  isCollapsed: boolean
+  onToggle: () => void
+}) {
+  const material = useEditorStore((state) => state.materials[materialId] ?? null)
   const atlasLoaded = useEditorStore((state) => Boolean(state.assets.atlas && state.runtimeTextures.atlasTexture))
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
   const setAssets = useEditorStore((state) => state.setAssets)
@@ -317,64 +1855,33 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
   }
 
   return (
-    <SectionPanel title="Special Features">
+    <SectionPanel title="Material Effects" isCollapsed={isCollapsed} onToggle={onToggle}>
       <div className="section-head">
-        <h2>Emissive Atlas</h2>
-        <span className="small-muted">{atlasLoaded ? 'Overlay loaded' : 'Awaiting atlas texture'}</span>
+        <span className="left-controls__label">Add Effect</span>
+        <span className="small-muted">{material.effect.enabled ? 'Atlas active' : 'No effect selected'}</span>
       </div>
-      <div className="inspector-action-row inspector-action-row--atlas">
-        {!atlasLoaded ? (
-          <button type="button" className="tool-button tool-button--secondary left-full-button" onClick={() => atlasInputRef.current?.click()}>
-            <span className="tool-button__glyph">ATL</span>
-            <span className="tool-button__label">Load Atlas Texture</span>
-          </button>
-        ) : null}
-        {atlasLoaded ? (
-          <button
-            type="button"
-            className="tool-button tool-button--secondary"
-            onClick={() => updateMaterialEffect(materialId, { play: !material.effect.play })}
-          >
-            <span className="tool-button__glyph">{material.effect.play ? 'PAUSE' : 'PLAY'}</span>
-            <span className="tool-button__label">Playback</span>
-          </button>
-        ) : null}
-        {atlasLoaded ? (
-          <button type="button" className="tool-button tool-button--secondary" onClick={() => atlasInputRef.current?.click()}>
-            <span className="tool-button__glyph">ATL</span>
-            <span className="tool-button__label">Replace Atlas</span>
-          </button>
-        ) : null}
-        {atlasLoaded ? (
-          <button
-            type="button"
-            className="tool-button tool-button--secondary"
-            onClick={() => {
-              const currentAtlas = useEditorStore.getState().runtimeTextures.atlasTexture
-              currentAtlas?.dispose()
-              setAtlasTexture(null)
-              setAtlasFrameTexture(null)
-              setAssets({ atlas: null })
-              updateMaterialEffect(materialId, { enabled: false, play: false, currentFrame: 0 })
-            }}
-          >
-            <span className="tool-button__glyph">CLR</span>
-            <span className="tool-button__label">Remove Overlay</span>
-          </button>
-        ) : null}
+      <div className="inspector-action-row inspector-action-row--single">
+        <button
+          type="button"
+          className={`tool-button tool-button--secondary ${material.effect.enabled ? 'is-active' : ''}`}
+          onClick={() => updateMaterialEffect(materialId, { enabled: true })}
+        >
+          <span className="tool-button__glyph">Atlas</span>
+          <span className="tool-button__label">{material.effect.enabled ? 'Added' : 'Create'}</span>
+        </button>
       </div>
-      <label className="checkbox">
-        <input
-          type="checkbox"
-          checked={material.effect.enabled}
-          onChange={(event) => updateMaterialEffect(materialId, { enabled: event.currentTarget.checked })}
-        />
-        <span>Enable atlas overlay</span>
-      </label>
-      {atlasLoaded ? <AtlasPreviewCanvas materialId={materialId} /> : null}
-      {atlasLoaded ? (
+
+      {material.effect.enabled ? (
         <>
           <div className="grid-two">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={material.effect.enabled}
+                onChange={(event) => updateMaterialEffect(materialId, { enabled: event.currentTarget.checked })}
+              />
+              <span>Enabled</span>
+            </label>
             <label className="field">
               <span>Target Slot</span>
               <select
@@ -389,21 +1896,21 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
                 <option value="baseColor">Base Color</option>
               </select>
             </label>
-            <label className="field">
-              <span>Frame Order</span>
-              <select
-                value={material.effect.frameOrder}
-                onChange={(event) =>
-                  updateMaterialEffect(materialId, {
-                    frameOrder: event.currentTarget.value as typeof material.effect.frameOrder,
-                  })
-                }
-              >
-                <option value="row">Row</option>
-                <option value="column">Column</option>
-              </select>
-            </label>
           </div>
+
+          <div className="inspector-action-row inspector-action-row--single">
+            <button
+              type="button"
+              className="tool-button tool-button--secondary"
+              onClick={() => atlasInputRef.current?.click()}
+            >
+              <span className="tool-button__glyph">ATL</span>
+              <span className="tool-button__label">{atlasLoaded ? 'Replace Atlas Texture' : 'Load Atlas Texture'}</span>
+            </button>
+          </div>
+
+          {atlasLoaded ? <AtlasPreviewCanvas materialId={materialId} /> : null}
+
           <div className="grid-two">
             <label className="field">
               <span>
@@ -432,20 +1939,8 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
               />
             </label>
           </div>
+
           <div className="grid-two">
-            <label className="field">
-              <span>
-                FPS <output>{material.effect.fps}</output>
-              </span>
-              <input
-                type="range"
-                min="1"
-                max="60"
-                step="1"
-                value={material.effect.fps}
-                onInput={(event) => updateMaterialEffect(materialId, { fps: Number(event.currentTarget.value) })}
-              />
-            </label>
             <label className="field">
               <span>
                 Frame Count <output>{material.effect.frameCount}</output>
@@ -459,92 +1954,40 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
                 onInput={(event) => updateMaterialEffect(materialId, { frameCount: Number(event.currentTarget.value) })}
               />
             </label>
-          </div>
-          <div className="grid-two">
             <label className="field">
               <span>
-                Current Frame <output>{material.effect.currentFrame}</output>
+                FPS <output>{material.effect.fps}</output>
               </span>
               <input
                 type="range"
-                min="0"
-                max={Math.max(0, material.effect.frameCount - 1)}
+                min="1"
+                max="60"
                 step="1"
-                value={material.effect.currentFrame}
-                onInput={(event) =>
-                  updateMaterialEffect(materialId, {
-                    currentFrame: Number(event.currentTarget.value),
-                    play: false,
-                  })
-                }
-              />
-            </label>
-            <label className="field">
-              <span>
-                Opacity <output>{formatNumber(material.effect.opacity)}</output>
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={material.effect.opacity}
-                onInput={(event) => updateMaterialEffect(materialId, { opacity: Number(event.currentTarget.value) })}
+                value={material.effect.fps}
+                onInput={(event) => updateMaterialEffect(materialId, { fps: Number(event.currentTarget.value) })}
               />
             </label>
           </div>
-          <div className="grid-two">
-            <label className="field">
-              <span>UV Channel</span>
-              <select
-                value={material.effect.uvChannel}
-                onChange={(event) =>
-                  updateMaterialEffect(materialId, {
-                    uvChannel: event.currentTarget.value as typeof material.effect.uvChannel,
-                  })
-                }
-              >
-                <option value="auto">Auto</option>
-                <option value="normal">Normal</option>
-                <option value="baseColor">BaseColor</option>
-                <option value="emissive">Emissive</option>
-                <option value="uv">UV</option>
-                <option value="uv2">UV2</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Wrap Mode</span>
-              <select
-                value={material.effect.wrapMode}
-                onChange={(event) =>
-                  updateMaterialEffect(materialId, {
-                    wrapMode: event.currentTarget.value as typeof material.effect.wrapMode,
-                  })
-                }
-              >
-                <option value="repeat">Repeat</option>
-                <option value="clamp">Clamp</option>
-              </select>
-            </label>
-          </div>
-          <div className="grid-two">
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={material.effect.frameBlend}
-                onChange={(event) => updateMaterialEffect(materialId, { frameBlend: event.currentTarget.checked })}
-              />
-              <span>Frame Blend</span>
-            </label>
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={material.effect.loop}
-                onChange={(event) => updateMaterialEffect(materialId, { loop: event.currentTarget.checked })}
-              />
-              <span>Loop Playback</span>
-            </label>
-          </div>
+
+          <label className="field">
+            <span>
+              Current Frame <output>{material.effect.currentFrame}</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max={Math.max(0, material.effect.frameCount - 1)}
+              step="1"
+              value={material.effect.currentFrame}
+              onInput={(event) =>
+                updateMaterialEffect(materialId, {
+                  currentFrame: Number(event.currentTarget.value),
+                  play: false,
+                })
+              }
+            />
+          </label>
+
           <div className="grid-two">
             <label className="checkbox">
               <input
@@ -557,83 +2000,191 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
             <label className="checkbox">
               <input
                 type="checkbox"
-                checked={material.effect.swapXY}
-                onChange={(event) => updateMaterialEffect(materialId, { swapXY: event.currentTarget.checked })}
+                checked={material.effect.loop}
+                onChange={(event) => updateMaterialEffect(materialId, { loop: event.currentTarget.checked })}
               />
-              <span>Swap X / Y</span>
+              <span>Loop</span>
             </label>
           </div>
-          <div className="grid-two">
+
+          <details className="panel-subsection">
+            <summary>Advanced</summary>
+            <div className="grid-two">
+              <label className="field">
+                <span>Frame Order</span>
+                <select
+                  value={material.effect.frameOrder}
+                  onChange={(event) =>
+                    updateMaterialEffect(materialId, {
+                      frameOrder: event.currentTarget.value as typeof material.effect.frameOrder,
+                    })
+                  }
+                >
+                  <option value="row">Row</option>
+                  <option value="column">Column</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>
+                  Opacity <output>{formatNumber(material.effect.opacity)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={material.effect.opacity}
+                  onInput={(event) => updateMaterialEffect(materialId, { opacity: Number(event.currentTarget.value) })}
+                />
+              </label>
+            </div>
+
+            <div className="grid-two">
+              <label className="field">
+                <span>UV Channel</span>
+                <select
+                  value={material.effect.uvChannel}
+                  onChange={(event) =>
+                    updateMaterialEffect(materialId, {
+                      uvChannel: event.currentTarget.value as typeof material.effect.uvChannel,
+                    })
+                  }
+                >
+                  <option value="auto">Auto</option>
+                  <option value="normal">Normal</option>
+                  <option value="baseColor">BaseColor</option>
+                  <option value="emissive">Emissive</option>
+                  <option value="uv">UV</option>
+                  <option value="uv2">UV2</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Wrap Mode</span>
+                <select
+                  value={material.effect.wrapMode}
+                  onChange={(event) =>
+                    updateMaterialEffect(materialId, {
+                      wrapMode: event.currentTarget.value as typeof material.effect.wrapMode,
+                    })
+                  }
+                >
+                  <option value="repeat">Repeat</option>
+                  <option value="clamp">Clamp</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="grid-two">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={material.effect.frameBlend}
+                  onChange={(event) => updateMaterialEffect(materialId, { frameBlend: event.currentTarget.checked })}
+                />
+                <span>Frame Blend</span>
+              </label>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={material.effect.swapXY}
+                  onChange={(event) => updateMaterialEffect(materialId, { swapXY: event.currentTarget.checked })}
+                />
+                <span>Swap X / Y</span>
+              </label>
+            </div>
+
+            <div className="grid-two">
+              <label className="field">
+                <span>
+                  Offset X <output>{formatNumber(material.effect.offsetX)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="-2"
+                  max="2"
+                  step="0.01"
+                  value={material.effect.offsetX}
+                  onInput={(event) => updateMaterialEffect(materialId, { offsetX: Number(event.currentTarget.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>
+                  Offset Y <output>{formatNumber(material.effect.offsetY)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="-2"
+                  max="2"
+                  step="0.01"
+                  value={material.effect.offsetY}
+                  onInput={(event) => updateMaterialEffect(materialId, { offsetY: Number(event.currentTarget.value) })}
+                />
+              </label>
+            </div>
+
+            <div className="grid-two">
+              <label className="field">
+                <span>
+                  Scale X <output>{formatNumber(material.effect.scaleX)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="0.01"
+                  max="4"
+                  step="0.01"
+                  value={material.effect.scaleX}
+                  onInput={(event) => updateMaterialEffect(materialId, { scaleX: Number(event.currentTarget.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>
+                  Scale Y <output>{formatNumber(material.effect.scaleY)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="0.01"
+                  max="4"
+                  step="0.01"
+                  value={material.effect.scaleY}
+                  onInput={(event) => updateMaterialEffect(materialId, { scaleY: Number(event.currentTarget.value) })}
+                />
+              </label>
+            </div>
+
             <label className="field">
               <span>
-                Offset X <output>{formatNumber(material.effect.offsetX)}</output>
+                Rotation <output>{formatNumber(material.effect.rotation)}</output>
               </span>
               <input
                 type="range"
-                min="-2"
-                max="2"
-                step="0.01"
-                value={material.effect.offsetX}
-                onInput={(event) => updateMaterialEffect(materialId, { offsetX: Number(event.currentTarget.value) })}
+                min="-180"
+                max="180"
+                step="0.1"
+                value={material.effect.rotation}
+                onInput={(event) => updateMaterialEffect(materialId, { rotation: Number(event.currentTarget.value) })}
               />
             </label>
-            <label className="field">
-              <span>
-                Offset Y <output>{formatNumber(material.effect.offsetY)}</output>
-              </span>
-              <input
-                type="range"
-                min="-2"
-                max="2"
-                step="0.01"
-                value={material.effect.offsetY}
-                onInput={(event) => updateMaterialEffect(materialId, { offsetY: Number(event.currentTarget.value) })}
-              />
-            </label>
-          </div>
-          <div className="grid-two">
-            <label className="field">
-              <span>
-                Scale X <output>{formatNumber(material.effect.scaleX)}</output>
-              </span>
-              <input
-                type="range"
-                min="0.01"
-                max="4"
-                step="0.01"
-                value={material.effect.scaleX}
-                onInput={(event) => updateMaterialEffect(materialId, { scaleX: Number(event.currentTarget.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>
-                Scale Y <output>{formatNumber(material.effect.scaleY)}</output>
-              </span>
-              <input
-                type="range"
-                min="0.01"
-                max="4"
-                step="0.01"
-                value={material.effect.scaleY}
-                onInput={(event) => updateMaterialEffect(materialId, { scaleY: Number(event.currentTarget.value) })}
-              />
-            </label>
-          </div>
-          <label className="field">
-            <span>
-              Rotation <output>{formatNumber(material.effect.rotation)}</output>
-            </span>
-            <input
-              type="range"
-              min="-180"
-              max="180"
-              step="0.1"
-              value={material.effect.rotation}
-              onInput={(event) => updateMaterialEffect(materialId, { rotation: Number(event.currentTarget.value) })}
-            />
-          </label>
+
+            <div className="inspector-action-row inspector-action-row--single">
+              <button
+                type="button"
+                className="tool-button tool-button--secondary"
+                onClick={() => {
+                  const currentAtlas = useEditorStore.getState().runtimeTextures.atlasTexture
+                  currentAtlas?.dispose()
+                  setAtlasTexture(null)
+                  setAtlasFrameTexture(null)
+                  setAssets({ atlas: null })
+                }}
+              >
+                <span className="tool-button__glyph">CLR</span>
+                <span className="tool-button__label">Remove Atlas Texture</span>
+              </button>
+            </div>
+          </details>
         </>
       ) : null}
+
       <input
         ref={atlasInputRef}
         hidden
@@ -641,7 +2192,9 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
         accept="image/*"
         onChange={(event) => {
           const file = event.currentTarget.files?.[0]
-          if (!file) return
+          if (!file) {
+            return
+          }
           requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: null })
           event.currentTarget.value = ''
         }}
@@ -650,211 +2203,113 @@ function AtlasOverlaySection({ materialId }: { materialId: string }) {
   )
 }
 
-function LightSection({ objectId }: { objectId: string }) {
-  const store = useCreateStore()
-  const runtimeObject = useEditorStore((state) => state.runtime.objectById[objectId] as THREE.Object3D | undefined)
-  const extraLight = useEditorStore((state) => state.extraLights.find((entry) => entry.id === objectId))
-  const setLights = useEditorStore((state) => state.setLights)
-  const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
-  const light = runtimeObject && (runtimeObject as THREE.Light).isLight ? (runtimeObject as THREE.Light) : undefined
-
-  const lightWithShadows = light as (THREE.Light & { castShadow?: boolean; shadow?: { bias: number } }) | undefined
-  const pointLikeLight = light as (THREE.PointLight | THREE.SpotLight | undefined)
-  const spotLight = light as (THREE.SpotLight | undefined)
-  const isAmbientSystemLight = objectId === 'light:ambient:system'
-
-  useControls(
-    () => ({
-      color: {
-        value: extraLight?.color ?? (light ? `#${light.color.getHexString()}` : '#ffffff'),
-        onChange: (value: string) => {
-          if (light) light.color.set(value)
-          if (extraLight) updateExtraLight(objectId, { color: value })
-          if (isAmbientSystemLight) setLights({ ambient: { color: value } })
-        },
-      },
-      intensity: {
-        value: extraLight?.intensity ?? light?.intensity ?? 1,
-        min: 0,
-        max: 20,
-        step: 0.01,
-        onChange: (value: number) => {
-          if (light) light.intensity = value
-          if (extraLight) updateExtraLight(objectId, { intensity: value })
-          if (isAmbientSystemLight) setLights({ ambient: { intensity: value } })
-        },
-      },
-      distance: {
-        value: extraLight?.distance ?? (pointLikeLight && 'distance' in pointLikeLight ? pointLikeLight.distance : 0),
-        min: 0,
-        max: 50,
-        step: 0.1,
-        onChange: (value: number) => {
-          if (pointLikeLight && 'distance' in pointLikeLight) pointLikeLight.distance = value
-          if (extraLight) updateExtraLight(objectId, { distance: value })
-        },
-      },
-      decay: {
-        value: extraLight?.decay ?? (pointLikeLight && 'decay' in pointLikeLight ? pointLikeLight.decay : 2),
-        min: 0,
-        max: 4,
-        step: 0.01,
-        onChange: (value: number) => {
-          if (pointLikeLight && 'decay' in pointLikeLight) pointLikeLight.decay = value
-          if (extraLight) updateExtraLight(objectId, { decay: value })
-        },
-      },
-      angle: {
-        value: extraLight?.angle ?? (spotLight && 'angle' in spotLight ? THREE.MathUtils.radToDeg(spotLight.angle) : 30),
-        min: 1,
-        max: 90,
-        step: 1,
-        onChange: (value: number) => {
-          if (spotLight && 'angle' in spotLight) spotLight.angle = THREE.MathUtils.degToRad(value)
-          if (extraLight) updateExtraLight(objectId, { angle: value })
-        },
-      },
-      penumbra: {
-        value: extraLight?.penumbra ?? (spotLight && 'penumbra' in spotLight ? spotLight.penumbra : 0),
-        min: 0,
-        max: 1,
-        step: 0.01,
-        onChange: (value: number) => {
-          if (spotLight && 'penumbra' in spotLight) spotLight.penumbra = value
-          if (extraLight) updateExtraLight(objectId, { penumbra: value })
-        },
-      },
-      castShadow: {
-        value: extraLight?.castShadow ?? Boolean(lightWithShadows?.castShadow),
-        onChange: (value: boolean) => {
-          if (lightWithShadows && 'castShadow' in lightWithShadows) lightWithShadows.castShadow = value
-          if (extraLight) updateExtraLight(objectId, { castShadow: value })
-        },
-      },
-      shadowBias: {
-        value: extraLight?.shadowBias ?? lightWithShadows?.shadow?.bias ?? 0,
-        min: -0.01,
-        max: 0.01,
-        step: 0.0001,
-        onChange: (value: number) => {
-          if (lightWithShadows?.shadow) lightWithShadows.shadow.bias = value
-          if (extraLight) updateExtraLight(objectId, { shadowBias: value })
-        },
-      },
-    }),
-    { store },
-    [
-      extraLight,
-      isAmbientSystemLight,
-      light,
-      lightWithShadows?.castShadow,
-      lightWithShadows?.shadow?.bias,
-      objectId,
-      pointLikeLight,
-      setLights,
-      spotLight,
-      updateExtraLight,
-    ],
+export function InspectorContent() {
+  const [collapsedSectionsByMaterial, setCollapsedSectionsByMaterial] = useState<
+    Record<string, Partial<Record<MaterialInspectorSectionKey, boolean>>>
+  >({})
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
+  const selectedObjectType = useEditorStore((state) =>
+    selectedObjectId ? state.sceneGraph[selectedObjectId]?.type ?? null : null,
+  )
+  const selectedObjectIsMaterial = useEditorStore((state) =>
+    selectedObjectId ? Boolean(state.materials[selectedObjectId]) : false,
+  )
+  const hasSelectedMaterial = useEditorStore((state) =>
+    selectedMaterialId ? Boolean(state.materials[selectedMaterialId]) : false,
   )
 
-  return (
-    <SectionPanel title="Light Properties">
-      <LevaSection store={store} />
-    </SectionPanel>
+  const resolvedMaterialId = resolveInspectorMaterialId({
+    selectedObjectId,
+    selectedObjectType,
+    selectedObjectIsMaterial,
+    selectedMaterialId,
+    hasSelectedMaterial,
+  })
+
+  const hasResolvedMaterial = useEditorStore((state) =>
+    resolvedMaterialId ? Boolean(state.materials[resolvedMaterialId]) : false,
   )
-}
 
-function SelectionSummarySection({
-  objectId,
-  materialId,
-}: {
-  objectId: string
-  materialId: string | null
-}) {
-  const selectedNode = useEditorStore((state) => state.sceneGraph[objectId] ?? null)
-  const runtimeObject = useEditorStore((state) => state.runtime.objectById[objectId] ?? null)
-  const material = useEditorStore((state) => (materialId ? state.materials[materialId] ?? null : null))
-
-  if (!selectedNode) {
+  if (!resolvedMaterialId || !hasResolvedMaterial) {
     return null
   }
 
-  return (
-    <SectionPanel title="Selection">
-      <div className="field">
-        <span>Name</span>
-        <div className="material-meta">{selectedNode.label}</div>
-      </div>
-      <div className="field">
-        <span>Type</span>
-        <div className="material-meta muted">{runtimeObject?.type ?? selectedNode.type}</div>
-      </div>
-      <div className="field">
-        <span>Object ID</span>
-        <div className="material-meta muted">{selectedNode.id}</div>
-      </div>
-      <div className="field">
-        <span>Material</span>
-        <div className="material-meta muted">{material?.name ?? materialId ?? 'No material on this selection.'}</div>
-      </div>
-    </SectionPanel>
-  )
-}
+  const isSectionCollapsed = (sectionKey: MaterialInspectorSectionKey) =>
+    collapsedSectionsByMaterial[resolvedMaterialId]?.[sectionKey] ?? (sectionKey === 'effects')
 
-export function InspectorContent() {
-  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
-  const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
-  const sceneGraph = useEditorStore((state) => state.sceneGraph)
-
-  if (!selectedObjectId) return null
-
-  const selectedNode = sceneGraph[selectedObjectId]
-  if (!selectedNode) return null
-
-  if (selectedNode.type === 'light') {
-    return (
-      <>
-        <SelectionSummarySection objectId={selectedNode.id} materialId={null} />
-        <LightSection objectId={selectedNode.id} />
-      </>
-    )
+  const toggleSection = (sectionKey: MaterialInspectorSectionKey) => {
+    setCollapsedSectionsByMaterial((current) => ({
+      ...current,
+      [resolvedMaterialId]: {
+        ...(current[resolvedMaterialId] ?? {}),
+        [sectionKey]: !(current[resolvedMaterialId]?.[sectionKey] ?? false),
+      },
+    }))
   }
 
   return (
     <>
-      <SelectionSummarySection objectId={selectedNode.id} materialId={selectedMaterialId} />
-      {selectedMaterialId ? (
-        <>
-          <MaterialBaseSection materialId={selectedMaterialId} />
-          <EmissiveSection materialId={selectedMaterialId} />
-          <AtlasOverlaySection materialId={selectedMaterialId} />
-        </>
-      ) : null}
+      <MaterialIdentity
+        materialId={resolvedMaterialId}
+        isCollapsed={isSectionCollapsed('summary')}
+        onToggle={() => toggleSection('summary')}
+      />
+      <MaterialBaseSection
+        materialId={resolvedMaterialId}
+        isCollapsed={isSectionCollapsed('baseMaterial')}
+        onToggle={() => toggleSection('baseMaterial')}
+      />
+      <EmissionSection
+        materialId={resolvedMaterialId}
+        isCollapsed={isSectionCollapsed('emission')}
+        onToggle={() => toggleSection('emission')}
+      />
+      <AtlasEffectSection
+        materialId={resolvedMaterialId}
+        isCollapsed={isSectionCollapsed('effects')}
+        onToggle={() => toggleSection('effects')}
+      />
     </>
   )
 }
 
 export function Inspector() {
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
-  const selectedNode = useEditorStore((state) =>
-    state.selectedObjectId ? state.sceneGraph[state.selectedObjectId] ?? null : null,
+  const selectedObjectType = useEditorStore((state) =>
+    selectedObjectId ? state.sceneGraph[selectedObjectId]?.type ?? null : null,
   )
+  const selectedObjectIsMaterial = useEditorStore((state) =>
+    selectedObjectId ? Boolean(state.materials[selectedObjectId]) : false,
+  )
+  const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
+  const hasSelectedMaterial = useEditorStore((state) =>
+    selectedMaterialId ? Boolean(state.materials[selectedMaterialId]) : false,
+  )
+
+  const resolvedMaterialId = resolveInspectorMaterialId({
+    selectedObjectId,
+    selectedObjectType,
+    selectedObjectIsMaterial,
+    selectedMaterialId,
+    hasSelectedMaterial,
+  })
+
+  const canInspectMaterial =
+    selectedObjectType === 'material' || selectedObjectType === 'mesh' || Boolean(resolvedMaterialId)
+  const hasMaterial = Boolean(resolvedMaterialId)
 
   return (
     <aside className="inspector-dock">
       <div className="inspector-dock__header">
-        <div className="panel-header__stack">
-          <p className="panel-eyebrow">Inspector</p>
-          <p className="panel-heading">Inspector</p>
-        </div>
-        <p className="panel-meta">{selectedNode?.label ?? 'No Selection'}</p>
+        <span>Material Inspector</span>
       </div>
       <div className="inspector-dock__content">
-        {!selectedObjectId ? (
+        {!canInspectMaterial || !hasMaterial ? (
           <div className="inspector-placeholder">
-            <p className="inspector-placeholder__title">Select a mesh or light</p>
+            <p className="inspector-placeholder__title">No material selected</p>
             <p className="inspector-placeholder__body">
-              Choose an object in the viewport or outliner to edit its properties here.
+              Select a mesh or material to edit its material settings.
             </p>
           </div>
         ) : (

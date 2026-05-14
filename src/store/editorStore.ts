@@ -9,6 +9,27 @@ export type AtlasWrapMode = 'repeat' | 'clamp'
 export type TransformMode = 'translate' | 'rotate' | 'none'
 export type MeasurementUnit = 'cm' | 'm'
 export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
+export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap' | 'aoMap' | 'emissiveMap' | 'alphaMap' | 'bumpMap' | 'displacementMap' | 'specularMap'
+export type MaterialTextureSource = 'original' | 'custom'
+
+export interface MaterialTextureSlotState {
+  originalLabel: string | null
+  customLabel: string | null
+  selectedSource: MaterialTextureSource | null
+}
+
+export const MATERIAL_TEXTURE_SLOTS: MaterialTextureSlot[] = [
+  'map',
+  'normalMap',
+  'roughnessMap',
+  'metalnessMap',
+  'aoMap',
+  'emissiveMap',
+  'alphaMap',
+  'bumpMap',
+  'displacementMap',
+  'specularMap',
+]
 
 export const DEFAULT_VIEWER_FOCAL_LENGTH = 20
 export const DEFAULT_VIEWER_CAMERA_FOV = 63.5
@@ -89,6 +110,8 @@ export interface PbrMaterialState {
   name: string
   type: string
   meshIds: string[]
+  environmentOverrideId?: string | null
+  environmentRotation?: number
   useSystemMaterial?: boolean
   color?: string
   emissive?: string
@@ -105,7 +128,14 @@ export interface PbrMaterialState {
     roughness: boolean
     metalness: boolean
   }
+  textureSlots: Record<MaterialTextureSlot, MaterialTextureSlotState>
   effect: AtlasEffectState
+}
+
+export interface MaterialEnvironmentAssetState {
+  id: string
+  label: string
+  kind: 'hdri' | 'panorama'
 }
 
 export interface EnvironmentState {
@@ -122,11 +152,14 @@ export interface EnvironmentState {
   backgroundIntensity: number
   backgroundBlur: number
   previewReflections: boolean
+  previewMaterialEnvironmentId: string | null
+  previewMaterialEnvironmentRotation: number
 }
 
 export interface ViewportHudState {
   orbitEnabled: boolean
   fpsEnabled: boolean
+  performanceStatsVisible: boolean
   gridVisible: boolean
   axesVisible: boolean
   postEffectsEnabled: boolean
@@ -204,6 +237,7 @@ export interface RuntimeTextureState {
   atlasFrameTexture: THREE.CanvasTexture | null
   environmentMap: THREE.Texture | null
   environmentBackground: THREE.Texture | null
+  materialEnvironmentMaps: Record<string, THREE.Texture>
 }
 
 export interface RuntimeRegistryState {
@@ -289,6 +323,31 @@ export interface SceneConfigRequest {
   nonce: number
 }
 
+interface HistorySnapshot {
+  sceneGraph: Record<string, SceneGraphNode>
+  objects: Record<string, ObjectTransformState>
+  materials: Record<string, PbrMaterialState>
+  environment: EnvironmentState
+  lights: {
+    ambient: AmbientLightState
+    rig: LightRigState
+  }
+  transformSettings: TransformSettingsState
+  viewer: ViewerState
+  backgroundMode: BackgroundMode
+  backgroundColor: string
+  backgroundRotation: number
+  extraLights: ExtraLightState[]
+}
+
+interface HistoryState {
+  past: HistorySnapshot[]
+  future: HistorySnapshot[]
+  isApplying: boolean
+  gestureSnapshot: HistorySnapshot | null
+  gestureActive: boolean
+}
+
 interface EditorState {
   sceneGraph: Record<string, SceneGraphNode>
   rootNodeId: string | null
@@ -307,6 +366,7 @@ interface EditorState {
   selectedAnchorIndex: number | null
   objects: Record<string, ObjectTransformState>
   materials: Record<string, PbrMaterialState>
+  materialEnvironments: Record<string, MaterialEnvironmentAssetState>
   environment: EnvironmentState
   lights: {
     ambient: AmbientLightState
@@ -326,6 +386,7 @@ interface EditorState {
   environmentRequest: EnvironmentRequest | null
   configRequest: SceneConfigRequest | null
   sceneResetNonce: number
+  history: HistoryState
   setSelectedObjectId: (id: string | null) => void
   setSelectedMaterialId: (id: string | null) => void
   setSelectedAnchorIndex: (index: number | null) => void
@@ -380,12 +441,18 @@ interface EditorState {
   setAtlasTexture: (texture: THREE.Texture | null) => void
   setAtlasFrameTexture: (texture: THREE.CanvasTexture | null) => void
   setEnvironmentTextures: (patch: Partial<RuntimeTextureState>) => void
+  upsertMaterialEnvironment: (entry: MaterialEnvironmentAssetState, texture: THREE.Texture) => void
+  removeMaterialEnvironment: (id: string) => void
   setViewportMetrics: (patch: Partial<ViewportMetricsState>) => void
   requestModelLoad: (payload: Omit<AssetRequest, 'nonce'>) => void
   requestAtlasLoad: (payload: Omit<AssetRequest, 'nonce'>) => void
   requestEnvironmentLoad: (payload: Omit<EnvironmentRequest, 'nonce'>) => void
   requestConfigImport: (payload: Omit<SceneConfigRequest, 'nonce'>) => void
   requestSceneReset: () => void
+  beginHistoryGesture: () => void
+  endHistoryGesture: () => void
+  undoHistory: () => void
+  redoHistory: () => void
 }
 
 function clampEffect(effect: AtlasEffectState): AtlasEffectState {
@@ -398,6 +465,7 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
 }
 
 function disposeRuntimeMaterial(material: THREE.Material) {
+  disposeCustomRuntimeTextures(material)
   const standardMaterial = material as THREE.MeshStandardMaterial
   standardMaterial.map?.dispose()
   standardMaterial.normalMap?.dispose()
@@ -408,6 +476,38 @@ function disposeRuntimeMaterial(material: THREE.Material) {
   material.dispose()
 }
 
+function createEmptyMaterialTextureSlots() {
+  return Object.fromEntries(
+    MATERIAL_TEXTURE_SLOTS.map((slot) => [
+      slot,
+      {
+        originalLabel: null,
+        customLabel: null,
+        selectedSource: null,
+      },
+    ]),
+  ) as Record<MaterialTextureSlot, MaterialTextureSlotState>
+}
+
+function disposeCustomRuntimeTextures(material: THREE.Material) {
+  const runtimeLike = material as THREE.Material & {
+    userData: THREE.Material['userData'] & {
+      customTextureSlots?: Partial<Record<MaterialTextureSlot, THREE.Texture | null>>
+    }
+  }
+
+  const customTextureSlots = runtimeLike.userData.customTextureSlots
+  if (!customTextureSlots) {
+    return
+  }
+
+  Object.values(customTextureSlots).forEach((texture) => {
+    texture?.dispose()
+  })
+
+  delete runtimeLike.userData.customTextureSlots
+}
+
 function disposeRuntimeObject(object: THREE.Object3D) {
   if (!(object as THREE.Mesh).isMesh) {
     return
@@ -415,6 +515,129 @@ function disposeRuntimeObject(object: THREE.Object3D) {
 
   const mesh = object as THREE.Mesh
   mesh.geometry?.dispose()
+}
+
+const HISTORY_LIMIT = 100
+
+function cloneSceneGraphState(sceneGraph: Record<string, SceneGraphNode>) {
+  return Object.fromEntries(
+    Object.entries(sceneGraph).map(([id, node]) => [
+      id,
+      {
+        ...node,
+        children: [...node.children],
+      },
+    ]),
+  )
+}
+
+function cloneObjectsState(objects: Record<string, ObjectTransformState>) {
+  return Object.fromEntries(
+    Object.entries(objects).map(([id, object]) => [
+      id,
+      {
+        ...object,
+        position: [...object.position] as [number, number, number],
+        rotation: [...object.rotation] as [number, number, number],
+        scale: [...object.scale] as [number, number, number],
+      },
+    ]),
+  )
+}
+
+function cloneMaterialsState(materials: Record<string, PbrMaterialState>) {
+  return Object.fromEntries(
+    Object.entries(materials).map(([id, material]) => [
+      id,
+      {
+        ...material,
+        meshIds: [...material.meshIds],
+        hasMaps: { ...material.hasMaps },
+        textureSlots: Object.fromEntries(
+          Object.entries(material.textureSlots).map(([slot, textureState]) => [slot, { ...textureState }]),
+        ) as Record<MaterialTextureSlot, MaterialTextureSlotState>,
+        effect: { ...material.effect },
+      },
+    ]),
+  )
+}
+
+function cloneExtraLightsState(extraLights: ExtraLightState[]) {
+  return extraLights.map((light) => ({
+    ...light,
+    position: [...light.position] as [number, number, number],
+    targetPosition: [...light.targetPosition] as [number, number, number],
+  }))
+}
+
+function cloneViewerState(viewer: ViewerState): ViewerState {
+  return {
+    ...viewer,
+    cameraPosition: [...viewer.cameraPosition],
+    orbitTarget: [...viewer.orbitTarget],
+    resetCameraPosition: [...viewer.resetCameraPosition],
+    resetOrbitTarget: [...viewer.resetOrbitTarget],
+  }
+}
+
+function createHistorySnapshot(state: EditorState): HistorySnapshot {
+  return {
+    sceneGraph: cloneSceneGraphState(state.sceneGraph),
+    objects: cloneObjectsState(state.objects),
+    materials: cloneMaterialsState(state.materials),
+    environment: {
+      ...state.environment,
+      previewReflections: false,
+      previewMaterialEnvironmentId: null,
+      previewMaterialEnvironmentRotation: 0,
+    },
+    lights: {
+      ambient: { ...state.lights.ambient },
+      rig: { ...state.lights.rig },
+    },
+    transformSettings: { ...state.transformSettings },
+    viewer: cloneViewerState(state.viewer),
+    backgroundMode: state.backgroundMode,
+    backgroundColor: state.backgroundColor,
+    backgroundRotation: state.backgroundRotation,
+    extraLights: cloneExtraLightsState(state.extraLights),
+  }
+}
+
+function withHistory(state: EditorState, patch: Partial<EditorState>, shouldRecord = true) {
+  if (!shouldRecord || state.history.isApplying) {
+    return patch
+  }
+
+  if (state.history.gestureActive) {
+    return patch
+  }
+
+  const past = [...state.history.past, createHistorySnapshot(state)].slice(-HISTORY_LIMIT)
+  return {
+    ...patch,
+    history: {
+      past,
+      future: [],
+      isApplying: false,
+      gestureSnapshot: null,
+      gestureActive: false,
+    },
+  }
+}
+
+function clearHistory(): HistoryState {
+  return {
+    past: [],
+    future: [],
+    isApplying: false,
+    gestureSnapshot: null,
+    gestureActive: false,
+  }
+}
+
+function historySnapshotsEqual(left: HistorySnapshot, right: HistorySnapshot) {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function resolveSelectedMaterialId(
@@ -752,6 +975,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedAnchorIndex: null,
   objects: {},
   materials: {},
+  materialEnvironments: {},
   environment: {
     source: null,
     customHdriUrl: null,
@@ -766,6 +990,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     backgroundIntensity: 1,
     backgroundBlur: 0,
     previewReflections: false,
+    previewMaterialEnvironmentId: null,
+    previewMaterialEnvironmentRotation: 0,
   },
   lights: {
     ambient: {
@@ -784,6 +1010,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   hud: {
     orbitEnabled: true,
     fpsEnabled: false,
+    performanceStatsVisible: true,
     gridVisible: true,
     axesVisible: false,
     postEffectsEnabled: false,
@@ -834,6 +1061,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     atlasFrameTexture: null,
     environmentMap: null,
     environmentBackground: null,
+    materialEnvironmentMaps: {},
   },
   runtime: {
     objectById: {},
@@ -850,12 +1078,17 @@ export const useEditorStore = create<EditorState>((set) => ({
   environmentRequest: null,
   configRequest: null,
   sceneResetNonce: 0,
+  history: clearHistory(),
   setSelectedObjectId: (id) =>
-    set((state) => ({
-      selectedObjectId: id,
-      selectedMaterialId: resolveSelectedMaterialId(id, state.sceneGraph),
-      selectedAnchorIndex: null,
-    })),
+    set((state) => {
+      const resolvedMaterialId = resolveSelectedMaterialId(id, state.sceneGraph)
+
+      return {
+        selectedObjectId: id,
+        selectedMaterialId: resolvedMaterialId ?? state.selectedMaterialId,
+        selectedAnchorIndex: null,
+      }
+    }),
   setSelectedMaterialId: (id) =>
     set((state) => {
       if (!id) {
@@ -913,6 +1146,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedObjectId: nextSelectedObjectId,
         selectedAnchorIndex: null,
         selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
+        history: clearHistory(),
       }
     }),
   addLoadedModel: (sceneGraph, objects, materials, rootNodeId, loadedModelLabel, selectedObjectId) =>
@@ -945,28 +1179,33 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedObjectId: nextSelectedObjectId,
         selectedAnchorIndex: null,
         selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
+        history: clearHistory(),
       }
     }),
   updateObjectTransform: (id, patch) =>
-    set((state) => ({
-      objects: {
-        ...state.objects,
-        [id]: {
-          ...state.objects[id],
-          ...patch,
+    set((state) =>
+      withHistory(state, {
+        objects: {
+          ...state.objects,
+          [id]: {
+            ...state.objects[id],
+            ...patch,
+          },
         },
-      },
-    })),
+      }),
+    ),
   updateMaterial: (id, patch) =>
-    set((state) => ({
-      materials: {
-        ...state.materials,
-        [id]: {
-          ...state.materials[id],
-          ...patch,
+    set((state) =>
+      withHistory(state, {
+        materials: {
+          ...state.materials,
+          [id]: {
+            ...state.materials[id],
+            ...patch,
+          },
         },
-      },
-    })),
+      }),
+    ),
   updateMaterialEffect: (materialId, patch) =>
     set((state) => {
       const current = state.materials[materialId]
@@ -979,7 +1218,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...patch,
       })
 
-      return {
+      return withHistory(state, {
         materials: {
           ...state.materials,
           [materialId]: {
@@ -987,25 +1226,36 @@ export const useEditorStore = create<EditorState>((set) => ({
             effect: nextEffect,
           },
         },
-      }
+      })
     }),
   toggleObjectVisibility: (id) =>
     set((state) => buildVisibilityPatch(state, id)),
   toggleVisibility: (id) =>
     set((state) => buildVisibilityPatch(state, id)),
   removeSceneNode: (id) =>
-    set((state) => buildDeletePatch(state, id)),
+    set((state) => ({
+      ...buildDeletePatch(state, id),
+      history: clearHistory(),
+    })),
   deleteObject: (id) =>
     set((state) => {
       const materialState = state.materials[id]
       if (!materialState) {
-        return buildDeletePatch(state, id)
+        return {
+          ...buildDeletePatch(state, id),
+          history: clearHistory(),
+        }
       }
 
-      return materialState.meshIds.reduce<EditorState | Partial<EditorState>>((nextState, meshId) => {
+      const nextState = materialState.meshIds.reduce<EditorState | Partial<EditorState>>((nextState, meshId) => {
         const resolvedState = 'sceneGraph' in nextState ? (nextState as EditorState) : { ...state, ...nextState }
         return buildDeletePatch(resolvedState as EditorState, meshId)
       }, state)
+
+      return {
+        ...nextState,
+        history: clearHistory(),
+      }
     }),
   resetMaterialToDefault: (id) =>
     set((state) => {
@@ -1016,6 +1266,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       if (runtimeMaterial) {
+        disposeCustomRuntimeTextures(runtimeMaterial)
         runtimeMaterial.map = null
         runtimeMaterial.normalMap = null
         runtimeMaterial.roughnessMap = null
@@ -1037,11 +1288,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         runtimeMaterial.needsUpdate = true
       }
 
-      return {
+      return withHistory(state, {
         materials: {
           ...state.materials,
           [id]: {
             ...material,
+            environmentOverrideId: null,
+            environmentRotation: 0,
             useSystemMaterial: false,
             color: '#ffffff',
             emissive: '#000000',
@@ -1058,9 +1311,10 @@ export const useEditorStore = create<EditorState>((set) => ({
               roughness: false,
               metalness: false,
             },
+            textureSlots: createEmptyMaterialTextureSlots(),
           },
         },
-      }
+      })
     }),
   toggleMaterialSystemState: (id) =>
     set((state) => {
@@ -1069,7 +1323,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         return state
       }
 
-      return {
+      return withHistory(state, {
         materials: {
           ...state.materials,
           [id]: {
@@ -1077,7 +1331,7 @@ export const useEditorStore = create<EditorState>((set) => ({
             useSystemMaterial: !material.useSystemMaterial,
           },
         },
-      }
+      })
     }),
   resetMaterial: (id) =>
     set((state) => {
@@ -1088,6 +1342,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       if (runtimeMaterial) {
+        disposeCustomRuntimeTextures(runtimeMaterial)
         runtimeMaterial.map = null
         runtimeMaterial.normalMap = null
         runtimeMaterial.roughnessMap = null
@@ -1109,11 +1364,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         runtimeMaterial.needsUpdate = true
       }
 
-      return {
+      return withHistory(state, {
         materials: {
           ...state.materials,
           [id]: {
             ...material,
+            environmentOverrideId: null,
+            environmentRotation: 0,
             useSystemMaterial: false,
             color: '#ffffff',
             emissive: '#000000',
@@ -1130,17 +1387,27 @@ export const useEditorStore = create<EditorState>((set) => ({
               roughness: false,
               metalness: false,
             },
+            textureSlots: createEmptyMaterialTextureSlots(),
           },
         },
-      }
+      })
     }),
   setEnvironment: (patch) =>
-    set((state) => ({
-      environment: {
-        ...state.environment,
-        ...patch,
-      },
-    })),
+    set((state) =>
+      withHistory(
+        state,
+        {
+          environment: {
+            ...state.environment,
+            ...patch,
+          },
+        },
+        Object.keys(patch).some(
+          (key) =>
+            !['previewReflections', 'previewMaterialEnvironmentId', 'previewMaterialEnvironmentRotation'].includes(key),
+        ),
+      ),
+    ),
   removeEnvironment: () =>
     set((state) => {
       state.runtimeTextures.environmentMap?.dispose()
@@ -1150,6 +1417,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       ) {
         state.runtimeTextures.environmentBackground.dispose()
       }
+      Object.values(state.runtimeTextures.materialEnvironmentMaps).forEach((texture) => texture.dispose())
 
       return {
         environment: {
@@ -1161,6 +1429,8 @@ export const useEditorStore = create<EditorState>((set) => ({
           background: 'none',
           backgroundVisible: false,
           previewReflections: false,
+          previewMaterialEnvironmentId: null,
+          previewMaterialEnvironmentRotation: 0,
         },
         backgroundMode: 'none',
         backgroundPanoramaUrl: '',
@@ -1179,21 +1449,24 @@ export const useEditorStore = create<EditorState>((set) => ({
           state.selectedObjectId === 'environment:system'
             ? null
             : resolveSelectedMaterialId(state.selectedObjectId, state.sceneGraph),
+        history: clearHistory(),
       }
     }),
   setLights: (patch) =>
-    set((state) => ({
-      lights: {
-        ambient: {
-          ...state.lights.ambient,
-          ...(patch.ambient ?? {}),
+    set((state) =>
+      withHistory(state, {
+        lights: {
+          ambient: {
+            ...state.lights.ambient,
+            ...(patch.ambient ?? {}),
+          },
+          rig: {
+            ...state.lights.rig,
+            ...(patch.rig ?? {}),
+          },
         },
-        rig: {
-          ...state.lights.rig,
-          ...(patch.rig ?? {}),
-        },
-      },
-    })),
+      }),
+    ),
   removeAmbientLight: () =>
     set((state) => ({
       lights: {
@@ -1210,6 +1483,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         state.selectedObjectId === 'light:ambient:system'
           ? null
           : resolveSelectedMaterialId(state.selectedObjectId, state.sceneGraph),
+      history: clearHistory(),
     })),
   restoreAmbientLight: () =>
     set((state) => ({
@@ -1225,6 +1499,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       selectedObjectId: 'light:ambient:system',
       selectedAnchorIndex: null,
       selectedMaterialId: null,
+      history: clearHistory(),
     })),
   setZenMode: (value) => set({ isZenMode: value }),
   toggleZenMode: () =>
@@ -1232,24 +1507,33 @@ export const useEditorStore = create<EditorState>((set) => ({
       isZenMode: !state.isZenMode,
     })),
   setBackgroundEnabled: (value) => set({ backgroundEnabled: value }),
-  setBackgroundMode: (value) => set({ backgroundMode: value }),
+  setBackgroundMode: (value) =>
+    set((state) =>
+      withHistory(state, {
+        backgroundMode: value,
+      }),
+    ),
   setBackgroundColor: (value) =>
-    set((state) => ({
-      backgroundColor: value,
-      environment: {
-        ...state.environment,
+    set((state) =>
+      withHistory(state, {
         backgroundColor: value,
-      },
-    })),
+        environment: {
+          ...state.environment,
+          backgroundColor: value,
+        },
+      }),
+    ),
   setBackgroundPanoramaUrl: (value) => set({ backgroundPanoramaUrl: value }),
   setBackgroundRotation: (value) =>
-    set((state) => ({
-      backgroundRotation: value,
-      environment: {
-        ...state.environment,
+    set((state) =>
+      withHistory(state, {
         backgroundRotation: value,
-      },
-    })),
+        environment: {
+          ...state.environment,
+          backgroundRotation: value,
+        },
+      }),
+    ),
   setHud: (patch) =>
     set((state) => ({
       hud: {
@@ -1258,19 +1542,30 @@ export const useEditorStore = create<EditorState>((set) => ({
       },
     })),
   setTransformSettings: (patch) =>
-    set((state) => ({
-      transformSettings: {
-        ...state.transformSettings,
-        ...patch,
-      },
-    })),
+    set((state) =>
+      withHistory(state, {
+        transformSettings: {
+          ...state.transformSettings,
+          ...patch,
+        },
+      }),
+    ),
   setViewer: (patch) =>
-    set((state) => ({
-      viewer: {
-        ...state.viewer,
-        ...patch,
-      },
-    })),
+    set((state) =>
+      withHistory(
+        state,
+        {
+          viewer: {
+            ...state.viewer,
+            ...patch,
+          },
+        },
+        Object.keys(patch).some(
+          (key) =>
+            !['cameraPosition', 'orbitTarget', 'resetCameraPosition', 'resetOrbitTarget', 'cameraMode'].includes(key),
+        ),
+      ),
+    ),
   setAssets: (patch) =>
     set((state) => ({
       assets: {
@@ -1342,6 +1637,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedObjectId: id,
         selectedAnchorIndex: null,
         selectedMaterialId: null,
+        history: clearHistory(),
       }
     }),
   removeExtraLight: (id) =>
@@ -1372,6 +1668,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           state.selectedObjectId === targetId
             ? null
             : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+        history: clearHistory(),
       }
     }),
   updateExtraLight: (id, patch) =>
@@ -1382,7 +1679,7 @@ export const useEditorStore = create<EditorState>((set) => ({
       }
 
       const nextLight = { ...light, ...patch }
-      return {
+      return withHistory(state, {
         extraLights: state.extraLights.map((entry) => (entry.id === id ? nextLight : entry)),
         sceneGraph: {
           ...state.sceneGraph,
@@ -1405,7 +1702,7 @@ export const useEditorStore = create<EditorState>((set) => ({
             visible: nextLight.visible,
           },
         },
-      }
+      })
     }),
   setStatus: (status) => set({ status }),
   registerObjectRef: (id, object) =>
@@ -1459,6 +1756,65 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...patch,
       },
     })),
+  upsertMaterialEnvironment: (entry, texture) =>
+    set((state) => {
+      const previousTexture = state.runtimeTextures.materialEnvironmentMaps[entry.id]
+      if (previousTexture && previousTexture !== texture) {
+        previousTexture.dispose()
+      }
+
+      return {
+        materialEnvironments: {
+          ...state.materialEnvironments,
+          [entry.id]: entry,
+        },
+        runtimeTextures: {
+          ...state.runtimeTextures,
+          materialEnvironmentMaps: {
+            ...state.runtimeTextures.materialEnvironmentMaps,
+            [entry.id]: texture,
+          },
+        },
+      }
+    }),
+  removeMaterialEnvironment: (id) =>
+    set((state) => {
+      const texture = state.runtimeTextures.materialEnvironmentMaps[id]
+      texture?.dispose()
+
+      const materialEnvironments = { ...state.materialEnvironments }
+      delete materialEnvironments[id]
+
+      const materialEnvironmentMaps = { ...state.runtimeTextures.materialEnvironmentMaps }
+      delete materialEnvironmentMaps[id]
+
+      const materials = Object.fromEntries(
+        Object.entries(state.materials).map(([materialId, material]) => [
+          materialId,
+          material.environmentOverrideId === id
+            ? {
+                ...material,
+                environmentOverrideId: null,
+                environmentRotation: 0,
+              }
+            : material,
+        ]),
+      )
+
+      return {
+        materials,
+        materialEnvironments,
+        environment: {
+          ...state.environment,
+          previewMaterialEnvironmentId:
+            state.environment.previewMaterialEnvironmentId === id ? null : state.environment.previewMaterialEnvironmentId,
+        },
+        runtimeTextures: {
+          ...state.runtimeTextures,
+          materialEnvironmentMaps,
+        },
+      }
+    }),
   setViewportMetrics: (patch) =>
     set((state) => ({
       viewportMetrics: {
@@ -1524,6 +1880,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedAnchorIndex: null,
         objects: {},
         materials: {},
+        materialEnvironments: {},
         environment: {
           source: null,
           customHdriUrl: null,
@@ -1538,6 +1895,8 @@ export const useEditorStore = create<EditorState>((set) => ({
           backgroundIntensity: 1,
           backgroundBlur: 0,
           previewReflections: false,
+          previewMaterialEnvironmentId: null,
+          previewMaterialEnvironmentRotation: 0,
         },
         lights: {
           ambient: {
@@ -1576,6 +1935,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         hud: {
           orbitEnabled: true,
           fpsEnabled: false,
+          performanceStatsVisible: true,
           gridVisible: true,
           axesVisible: false,
           postEffectsEnabled: false,
@@ -1605,6 +1965,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           atlasFrameTexture: null,
           environmentMap: null,
           environmentBackground: null,
+          materialEnvironmentMaps: {},
         },
         runtime: {
           objectById: {},
@@ -1622,6 +1983,114 @@ export const useEditorStore = create<EditorState>((set) => ({
         configRequest: null,
         sceneResetNonce: state.sceneResetNonce + 1,
         status: 'Scene reset.',
+        history: clearHistory(),
+      }
+    }),
+  beginHistoryGesture: () =>
+    set((state) => {
+      if (state.history.isApplying || state.history.gestureActive) {
+        return state
+      }
+
+      return {
+        history: {
+          ...state.history,
+          gestureSnapshot: createHistorySnapshot(state),
+          gestureActive: true,
+        },
+      }
+    }),
+  endHistoryGesture: () =>
+    set((state) => {
+      if (state.history.isApplying || !state.history.gestureActive || !state.history.gestureSnapshot) {
+        return state
+      }
+
+      const currentSnapshot = createHistorySnapshot(state)
+      if (historySnapshotsEqual(state.history.gestureSnapshot, currentSnapshot)) {
+        return {
+          history: {
+            ...state.history,
+            gestureSnapshot: null,
+            gestureActive: false,
+          },
+        }
+      }
+
+      return {
+        history: {
+          past: [...state.history.past, state.history.gestureSnapshot].slice(-HISTORY_LIMIT),
+          future: [],
+          isApplying: false,
+          gestureSnapshot: null,
+          gestureActive: false,
+        },
+      }
+    }),
+  undoHistory: () =>
+    set((state) => {
+      if (!state.history.past.length) {
+        return state
+      }
+
+      const previous = state.history.past[state.history.past.length - 1]
+      const current = createHistorySnapshot(state)
+
+      return {
+        sceneGraph: cloneSceneGraphState(previous.sceneGraph),
+        objects: cloneObjectsState(previous.objects),
+        materials: cloneMaterialsState(previous.materials),
+        environment: { ...previous.environment },
+        lights: {
+          ambient: { ...previous.lights.ambient },
+          rig: { ...previous.lights.rig },
+        },
+        transformSettings: { ...previous.transformSettings },
+        viewer: cloneViewerState(previous.viewer),
+        backgroundMode: previous.backgroundMode,
+        backgroundColor: previous.backgroundColor,
+        backgroundRotation: previous.backgroundRotation,
+        extraLights: cloneExtraLightsState(previous.extraLights),
+        history: {
+          past: state.history.past.slice(0, -1),
+          future: [current, ...state.history.future].slice(0, HISTORY_LIMIT),
+          isApplying: false,
+          gestureSnapshot: null,
+          gestureActive: false,
+        },
+      }
+    }),
+  redoHistory: () =>
+    set((state) => {
+      if (!state.history.future.length) {
+        return state
+      }
+
+      const next = state.history.future[0]
+      const current = createHistorySnapshot(state)
+
+      return {
+        sceneGraph: cloneSceneGraphState(next.sceneGraph),
+        objects: cloneObjectsState(next.objects),
+        materials: cloneMaterialsState(next.materials),
+        environment: { ...next.environment },
+        lights: {
+          ambient: { ...next.lights.ambient },
+          rig: { ...next.lights.rig },
+        },
+        transformSettings: { ...next.transformSettings },
+        viewer: cloneViewerState(next.viewer),
+        backgroundMode: next.backgroundMode,
+        backgroundColor: next.backgroundColor,
+        backgroundRotation: next.backgroundRotation,
+        extraLights: cloneExtraLightsState(next.extraLights),
+        history: {
+          past: [...state.history.past, current].slice(-HISTORY_LIMIT),
+          future: state.history.future.slice(1),
+          isApplying: false,
+          gestureSnapshot: null,
+          gestureActive: false,
+        },
       }
     }),
 }))

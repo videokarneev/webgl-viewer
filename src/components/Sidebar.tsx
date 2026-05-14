@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
 import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
@@ -20,8 +20,23 @@ function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
 }
 
+function getAssetName(value: string | null | undefined, fallback: string) {
+  if (!value) {
+    return fallback
+  }
+
+  const sanitized = value.split('#')[0]?.split('?')[0] ?? value
+  const pieces = sanitized.split(/[\\/]/)
+  const fileName = pieces[pieces.length - 1]
+  return fileName ? decodeURIComponent(fileName) : fallback
+}
+
 function formatNumber(value: number, digits = 2) {
   return value.toFixed(digits)
+}
+
+function formatDegrees(value: number) {
+  return `${value.toFixed(0)}°`
 }
 
 function LightColorIntensityControl({
@@ -130,7 +145,7 @@ function ExtraLightSettings({
               value={light.angle}
               onInput={(event) => onPatch({ angle: Number(event.currentTarget.value) })}
             />
-            <strong>{light.angle.toFixed(0)} deg</strong>
+            <strong>{formatDegrees(light.angle)}</strong>
           </label>
           <label className="left-slider">
             <span>Penumbra</span>
@@ -240,7 +255,7 @@ function SceneTabContent() {
                 value={backgroundRotation}
                 onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
               />
-              <strong>{backgroundRotation.toFixed(0)} deg</strong>
+              <strong>{formatDegrees(backgroundRotation)}</strong>
             </label>
           </>
         ) : null}
@@ -258,7 +273,7 @@ function SceneTabContent() {
                 value={backgroundRotation}
                 onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
               />
-              <strong>{backgroundRotation.toFixed(0)} deg</strong>
+              <strong>{formatDegrees(backgroundRotation)}</strong>
             </label>
           </>
         ) : null}
@@ -333,6 +348,7 @@ function CameraTabContent() {
 function LightTabContent() {
   const lights = useEditorStore((state) => state.lights)
   const extraLights = useEditorStore((state) => state.extraLights)
+  const defaultEnvUrl = useEditorStore((state) => state.defaultEnvUrl)
   const setLights = useEditorStore((state) => state.setLights)
   const addExtraLight = useEditorStore((state) => state.addExtraLight)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
@@ -341,10 +357,17 @@ function LightTabContent() {
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
   const selectedExtraLight = extraLights.find((light) => light.id === selectedObjectId) ?? null
   const isAmbientSelected = selectedObjectId === ambientSystemLightNodeId && lights.ambient.exists
   const isEnvironmentSelected =
     Boolean(selectedObjectId && environmentNodeIds.has(selectedObjectId)) && environment.isEnvironmentEnabled
+  const hdriInputRef = useRef<HTMLInputElement | null>(null)
+
+  const defaultEnvironmentLabel = `Scene HDRI (${getAssetName(defaultEnvUrl, 'studio.exr')})`
+  const currentEnvironmentLabel = environment.source
+    ? `Scene HDRI (${getAssetName(environment.source, environment.source)})`
+    : defaultEnvironmentLabel
 
   return (
     <div className="settings-tab">
@@ -419,13 +442,31 @@ function LightTabContent() {
         {isEnvironmentSelected ? (
           <>
             <p className="settings-note">Environment (HDRI)</p>
-            <label className="left-toggle">
+            <div className="material-environment-control">
+              <div className="material-environment-control__field">
+                <div className="material-asset-control__value" title={currentEnvironmentLabel}>
+                  {currentEnvironmentLabel}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="material-asset-control__button material-asset-control__button--compact"
+                onClick={() => hdriInputRef.current?.click()}
+              >
+                Load HDRI
+              </button>
+            </div>
+            <label className="left-slider">
+              <span>Intensity</span>
               <input
-                type="checkbox"
-                checked={environment.isEnvironmentEnabled}
-                onChange={(event) => setEnvironment({ isEnvironmentEnabled: event.currentTarget.checked })}
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                value={environment.intensity}
+                onInput={(event) => setEnvironment({ intensity: Number(event.currentTarget.value) })}
               />
-              <span>Enabled</span>
+              <strong>{formatNumber(environment.intensity)}</strong>
             </label>
             <label className="left-slider">
               <span>Rotation</span>
@@ -441,20 +482,29 @@ function LightTabContent() {
                 onPointerCancel={() => setEnvironment({ previewReflections: false })}
                 onBlur={() => setEnvironment({ previewReflections: false })}
               />
-              <strong>{environment.rotation.toFixed(0)} deg</strong>
+              <strong>{formatDegrees(environment.rotation)}</strong>
             </label>
-            <label className="left-slider">
-              <span>Intensity</span>
-              <input
-                type="range"
-                min="0"
-                max="10"
-                step="0.1"
-                value={environment.intensity}
-                onInput={(event) => setEnvironment({ intensity: Number(event.currentTarget.value) })}
-              />
-              <strong>{formatNumber(environment.intensity)}</strong>
-            </label>
+            <input
+              ref={hdriInputRef}
+              hidden
+              type="file"
+              accept=".hdr,.exr,.jpg,.jpeg,.png,image/*"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                if (!file) {
+                  return
+                }
+
+                requestEnvironmentLoad({
+                  url: createObjectUrl(file),
+                  label: file.name,
+                  kind: /\.(hdr|exr)$/i.test(file.name) ? 'hdri' : 'image',
+                  revokeAfter: true,
+                  fileSize: file.size,
+                })
+                event.currentTarget.value = ''
+              }}
+            />
           </>
         ) : null}
         {selectedExtraLight ? (
@@ -476,7 +526,6 @@ function FxTabContent() {
   const viewer = useEditorStore((state) => state.viewer)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
-  const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
   const isBloomSelected = selectedObjectId === 'effect:bloom'
@@ -494,7 +543,6 @@ function FxTabContent() {
                 setHud({ postEffectsEnabled: true, postEffectsVisible: true })
               }
               setSelectedObjectId('effect:bloom')
-              setSelectedMaterialId(null)
             }}
           >
             <span className="tool-button__glyph">Bloom</span>
@@ -552,11 +600,42 @@ function FxTabContent() {
 export function Sidebar() {
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const materials = useEditorStore((state) => state.materials)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
   const requestConfigImport = useEditorStore((state) => state.requestConfigImport)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
+
+  useEffect(() => {
+    if (!selectedObjectId) {
+      return
+    }
+
+    if (environmentNodeIds.has(selectedObjectId) || selectedObjectId === ambientSystemLightNodeId) {
+      setActiveTab('lgt')
+      return
+    }
+
+    const selectedNode = sceneGraph[selectedObjectId]
+    if (!selectedNode) {
+      return
+    }
+
+    if (selectedNode.type === 'light') {
+      setActiveTab('lgt')
+      return
+    }
+
+    if (selectedNode.type === 'camera') {
+      setActiveTab('cam')
+      return
+    }
+
+    if (selectedObjectId.startsWith('effect:')) {
+      setActiveTab('fx')
+    }
+  }, [sceneGraph, selectedObjectId])
 
   const objectCount = useMemo(
     () => Object.values(sceneGraph).filter((node) => node.type !== 'material').length,

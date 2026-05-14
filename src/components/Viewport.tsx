@@ -712,6 +712,8 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
   const cameraMode = useEditorStore((state) => state.viewer.cameraMode)
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
   const canRotate = selectedNode?.type !== 'light'
   const pivotObject = useMemo(() => new THREE.Object3D(), [])
   const previousPivotStateRef = useRef<{
@@ -923,6 +925,7 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
         syncTransform()
       }}
       onMouseDown={() => {
+        beginHistoryGesture()
         isDraggingRef.current = true
         if (usesCustomPivot) {
           previousPivotStateRef.current = {
@@ -945,6 +948,7 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
           }
         }
         onDraggingChange(false)
+        endHistoryGesture()
       }}
     />
   )
@@ -1127,6 +1131,8 @@ function ViewportScene({
 }
 
 function PerformanceStats() {
+  const performanceStatsVisible = useEditorStore((state) => state.hud.performanceStatsVisible)
+  const setHud = useEditorStore((state) => state.setHud)
   const metrics = useEditorStore((state) => state.viewportMetrics)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const selectedNode = useEditorStore((state) =>
@@ -1144,43 +1150,56 @@ function PerformanceStats() {
   })
 
   return (
-    <div className="performance-stats">
-      <div className="performance-stats__row performance-stats__row--header">
-        <span />
-        <span>TOTAL</span>
-        <span title={selectedColumnLabel}>{selectedColumnLabel}</span>
-      </div>
-      <div className="performance-stats__row">
-        <span>VERTICES</span>
-        <strong>{metrics.vertices.toLocaleString('en-US')}</strong>
-        <strong>{(selectedMeshStats?.vertices ?? 0).toLocaleString('en-US')}</strong>
-      </div>
-      <div className="performance-stats__row">
-        <span>TRIANGLES</span>
-        <strong>{metrics.triangles.toLocaleString('en-US')}</strong>
-        <strong>{(selectedMeshStats?.triangles ?? 0).toLocaleString('en-US')}</strong>
-      </div>
-      <div className="performance-stats__spacer" />
-      <div className="performance-stats__row">
-        <span>VRAM SCENE</span>
-        <strong>{sceneTextureStatsLabel}</strong>
-        <strong />
-      </div>
-      <div className="performance-stats__row">
-        <span>DISK</span>
-        <strong>{assets.fileSize ? `${(assets.fileSize / 1024 / 1024).toFixed(1)} MB` : '--'}</strong>
-        <strong />
-      </div>
-      <div className="performance-stats__row">
-        <span>DRAW CALLS</span>
-        <strong>{metrics.drawCalls.toLocaleString('en-US')}</strong>
-        <strong />
-      </div>
-      <div className="performance-stats__row">
-        <span>FPS</span>
-        <strong>{metrics.fps.toLocaleString('en-US')}</strong>
-        <strong />
-      </div>
+    <div className={`performance-stats-wrap${performanceStatsVisible ? ' is-open' : ''}`}>
+      <button
+        type="button"
+        className={`performance-stats__toggle${performanceStatsVisible ? ' is-open' : ''}`}
+        aria-label={performanceStatsVisible ? 'Hide statistics' : 'Show statistics'}
+        title={performanceStatsVisible ? 'Hide statistics' : 'Show statistics'}
+        onClick={() => setHud({ performanceStatsVisible: !performanceStatsVisible })}
+      >
+        ˅
+      </button>
+      {performanceStatsVisible ? (
+        <div className="performance-stats">
+          <div className="performance-stats__row performance-stats__row--header">
+            <span />
+            <span>TOTAL</span>
+            <span title={selectedColumnLabel}>{selectedColumnLabel}</span>
+          </div>
+          <div className="performance-stats__row">
+            <span>VERTICES</span>
+            <strong>{metrics.vertices.toLocaleString('en-US')}</strong>
+            <strong>{(selectedMeshStats?.vertices ?? 0).toLocaleString('en-US')}</strong>
+          </div>
+          <div className="performance-stats__row">
+            <span>TRIANGLES</span>
+            <strong>{metrics.triangles.toLocaleString('en-US')}</strong>
+            <strong>{(selectedMeshStats?.triangles ?? 0).toLocaleString('en-US')}</strong>
+          </div>
+          <div className="performance-stats__spacer" />
+          <div className="performance-stats__row">
+            <span>VRAM SCENE</span>
+            <strong>{sceneTextureStatsLabel}</strong>
+            <strong />
+          </div>
+          <div className="performance-stats__row">
+            <span>DISK</span>
+            <strong>{assets.fileSize ? `${(assets.fileSize / 1024 / 1024).toFixed(1)} MB` : '--'}</strong>
+            <strong />
+          </div>
+          <div className="performance-stats__row">
+            <span>DRAW CALLS</span>
+            <strong>{metrics.drawCalls.toLocaleString('en-US')}</strong>
+            <strong />
+          </div>
+          <div className="performance-stats__row">
+            <span>FPS</span>
+            <strong>{metrics.fps.toLocaleString('en-US')}</strong>
+            <strong />
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

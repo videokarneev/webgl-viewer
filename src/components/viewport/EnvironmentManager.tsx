@@ -33,6 +33,9 @@ export function EnvironmentManager() {
   )
   const currentEnvMap = runtimeTextures.environmentMap
   const currentBackgroundMap = runtimeTextures.environmentBackground
+  const previewMaterialTexture = environment.previewMaterialEnvironmentId
+    ? runtimeTextures.materialEnvironmentMaps[environment.previewMaterialEnvironmentId] ?? null
+    : null
 
   useEffect(() => {
     if (!environment.isEnvironmentEnabled || currentEnvMap) {
@@ -74,6 +77,12 @@ export function EnvironmentManager() {
   useEffect(() => {
     scene.environment = environment.isEnvironmentEnabled ? currentEnvMap : null
 
+    if (previewMaterialTexture) {
+      scene.background = previewMaterialTexture
+      scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(environment.previewMaterialEnvironmentRotation), 0)
+      return
+    }
+
     if (environment.previewReflections && environment.isEnvironmentEnabled && currentEnvMap) {
       scene.background = currentEnvMap
       scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
@@ -100,6 +109,8 @@ export function EnvironmentManager() {
     backgroundMode,
     currentBackgroundMap,
     currentEnvMap,
+    previewMaterialTexture,
+    environment.previewMaterialEnvironmentRotation,
     environment.isEnvironmentEnabled,
     environment.previewReflections,
     environment.rotation,
@@ -109,7 +120,9 @@ export function EnvironmentManager() {
 
   useEffect(() => {
     const backgroundTexture =
-      environment.previewReflections
+      previewMaterialTexture
+        ? previewMaterialTexture
+        : environment.previewReflections
         ? currentEnvMap
         : backgroundMode === 'hdri'
         ? currentEnvMap
@@ -122,10 +135,19 @@ export function EnvironmentManager() {
     }
 
     backgroundTexture.offset.x = (environment.previewReflections ? environment.rotation : backgroundRotation) / 360
+    if (previewMaterialTexture) {
+      backgroundTexture.offset.x = environment.previewMaterialEnvironmentRotation / 360
+    }
     backgroundTexture.needsUpdate = true
     scene.backgroundRotation.set(
       0,
-      THREE.MathUtils.degToRad(environment.previewReflections ? environment.rotation : backgroundRotation),
+      THREE.MathUtils.degToRad(
+        previewMaterialTexture
+          ? environment.previewMaterialEnvironmentRotation
+          : environment.previewReflections
+            ? environment.rotation
+            : backgroundRotation,
+      ),
       0,
     )
   }, [
@@ -133,6 +155,8 @@ export function EnvironmentManager() {
     backgroundRotation,
     currentBackgroundMap,
     currentEnvMap,
+    previewMaterialTexture,
+    environment.previewMaterialEnvironmentRotation,
     environment.previewReflections,
     environment.rotation,
     scene,
@@ -145,9 +169,32 @@ export function EnvironmentManager() {
     scene.backgroundIntensity = 1
     scene.backgroundBlurriness = 0
 
+    if (previewMaterialTexture) {
+      scene.background = previewMaterialTexture
+      scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(environment.previewMaterialEnvironmentRotation), 0)
+      return
+    }
+
     if (environment.previewReflections && environment.isEnvironmentEnabled && currentEnvMap) {
       scene.background = currentEnvMap
       scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
+      return
+    }
+
+    if (environment.isEnvironmentEnabled && backgroundMode === 'hdri' && currentEnvMap) {
+      scene.background = currentEnvMap
+      scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(backgroundRotation), 0)
+      return
+    }
+
+    if (backgroundMode === 'background' && currentBackgroundMap) {
+      scene.background = currentBackgroundMap
+      scene.backgroundRotation.set(0, THREE.MathUtils.degToRad(backgroundRotation), 0)
+      return
+    }
+
+    if (backgroundMode === 'color') {
+      scene.background = fallbackBackgroundColor
       return
     }
 

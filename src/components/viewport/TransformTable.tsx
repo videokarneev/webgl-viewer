@@ -31,6 +31,8 @@ export function TransformTable() {
   const transformSettings = useEditorStore((state) => state.transformSettings)
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
 
   const canTransform = Boolean(
     selectedObjectId &&
@@ -62,6 +64,7 @@ export function TransformTable() {
 
   useEffect(() => {
     const handleMouseUp = () => {
+      endHistoryGesture()
       if (repeatTimeoutRef.current != null) {
         window.clearTimeout(repeatTimeoutRef.current)
         repeatTimeoutRef.current = null
@@ -77,7 +80,7 @@ export function TransformTable() {
       window.removeEventListener('mouseup', handleMouseUp)
       handleMouseUp()
     }
-  }, [])
+  }, [endHistoryGesture])
 
   const handleValueChange = (axis: AxisKey, value: number) => {
     if (!canTransform || !selectedObjectId || !selectedNode || !runtimeObject) {
@@ -136,6 +139,7 @@ export function TransformTable() {
   }
 
   const startRepeating = (axis: AxisKey, direction: 1 | -1) => {
+    beginHistoryGesture()
     stopRepeating()
     nudgeAxis(axis, direction)
     repeatTimeoutRef.current = window.setTimeout(() => {

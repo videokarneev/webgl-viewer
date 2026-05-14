@@ -26,9 +26,8 @@ export function FlightController() {
     KeyA: false,
     KeyS: false,
     KeyD: false,
-    KeyQ: false,
-    KeyE: false,
     Space: false,
+    ControlLeft: false,
     ShiftLeft: false,
     ShiftRight: false,
   })
@@ -178,9 +177,8 @@ export function FlightController() {
         KeyA: false,
         KeyS: false,
         KeyD: false,
-        KeyQ: false,
-        KeyE: false,
         Space: false,
+        ControlLeft: false,
         ShiftLeft: false,
         ShiftRight: false,
       }
@@ -200,7 +198,7 @@ export function FlightController() {
 
     const forward = Number(keys.current.KeyW) - Number(keys.current.KeyS)
     const strafe = Number(keys.current.KeyD) - Number(keys.current.KeyA)
-    const vertical = Number(keys.current.KeyE || keys.current.Space) - Number(keys.current.KeyQ)
+    const vertical = Number(keys.current.Space) - Number(keys.current.ControlLeft)
     const boost = keys.current.ShiftLeft || keys.current.ShiftRight ? 3 : 1
     const speedFactor = getFlightSpeedFactor(flightSpeed)
     const acceleration = 10 * speedFactor * boost
