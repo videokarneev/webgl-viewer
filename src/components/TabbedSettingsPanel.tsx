@@ -679,7 +679,7 @@ export function TabbedSettingsPanel({
                   <button
                     key={effect.id}
                     type="button"
-                    className={`tool-button tool-button--secondary ${activeFx === effect.id ? 'is-active' : ''}`}
+                    className={`tool-button effect-create-button ${activeFx === effect.id ? 'is-active' : ''}`}
                     onClick={effect.onSelect}
                   >
                     <span className="tool-button__glyph">{effect.label}</span>

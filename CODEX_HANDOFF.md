@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-05-14
+Last updated: 2026-05-15
 
 ## Project
 
@@ -43,7 +43,7 @@ Current shell order:
 3. `<Viewport />`
 4. optional `<Inspector />`
 
-Important recent detail:
+Important runtime detail:
 
 - `App.tsx` keys major app sections by `sceneResetNonce`, so `Reset Scene` hard-remounts runtime-heavy UI and behaves closer to a page refresh.
 
@@ -59,21 +59,21 @@ The old `SceneCanvas` / legacy runtime files still exist, but the active path is
 
 ## Current Big Picture
 
-The app is centered around a material-editing workflow:
+The app is currently centered around a material-first workflow:
 
-- left panel = scene / camera / light / FX controls
+- left panel = scene / camera / light / FX tools
 - center = viewport
 - right panel = material-only inspector
 
 Most important current systems:
 
 1. multi-GLB scene loading
-2. grouped outliner
-3. material-only inspector
-4. runtime material preview sphere
+2. grouped outliner with synchronized special modes
+3. material-only inspector with persistent material context
+4. interactive runtime preview sphere
 5. per-material HDRI overrides
 6. per-slot original/custom texture source selection
-7. atlas effect controls on materials
+7. per-material flipbook effect controls
 8. lightweight undo/redo for parameter editing
 
 If a future task touches material UX, start in:
@@ -81,8 +81,9 @@ If a future task touches material UX, start in:
 - `src/components/Inspector.tsx`
 - `src/store/editorStore.ts`
 - `src/features/scene/runtime/LoadedSceneRoot.tsx`
-- `src/features/scene/buildSceneGraph.ts`
-- `src/components/viewport/EnvironmentManager.tsx`
+- `src/components/Sidebar.tsx`
+- `src/components/Outliner.tsx`
+- `src/styles.css`
 
 ## Material Inspector
 
@@ -98,7 +99,8 @@ Current behavior:
 - If the user selects a material node directly, the inspector opens that material.
 - If no material can be resolved, it shows:
   - `Select a mesh or material to edit its material settings.`
-- The dock title styling was aligned with the `Outliner` header style.
+- The inspector should not clear itself just because the user temporarily works with a light, camera, or effect.
+- `selectedMaterialId` is treated as persistent context.
 
 Current section order:
 
@@ -106,11 +108,6 @@ Current section order:
 2. `Base Material`
 3. `Emission`
 4. `Material Effects`
-
-Important UX rule:
-
-- The inspector should not clear itself just because the user temporarily works with a light, camera, or effect.
-- `selectedMaterialId` is treated as persistent context.
 
 ## Per-Material Collapsible Sections
 
@@ -130,10 +127,6 @@ Current behavior:
   - `emission` = open
   - `effects` = closed
 
-Important nuance:
-
-- The inspector container uses `align-content: start` so collapsed cards keep compact height and do not stretch vertically.
-
 ## Material Summary
 
 Main file:
@@ -143,12 +136,17 @@ Main file:
 Current behavior:
 
 - The top card is named `Material Summary`.
-- It uses the same section header/body pattern as the other inspector sections.
 - It contains:
   - material name
   - `Used by: N mesh(es)`
   - preview sphere
-  - texture rows shown under the preview
+  - texture rows for non-special slots
+
+Important recent changes:
+
+- `Base Color` was removed from `Material Summary`.
+- `Emission` was removed from `Material Summary`.
+- Other applicable texture rows still appear here.
 
 ## Preview Sphere
 
@@ -160,11 +158,14 @@ Current behavior:
 
 - The preview sphere uses a cloned runtime `THREE.Material`, not a synthetic material rebuilt only from store values.
 - Preview textures respect per-slot `original` / `custom` selection.
-- `cloneMaterialForPreview()` explicitly copies `originalTextureSlots` and `customTextureSlots`.
-- Preview texture selection also reads directly from the source runtime material so `Original` fallback does not get lost.
-- Heavy preview material reconstruction is separated from lighter parameter updates:
-  - texture/source changes trigger a heavier rebuild
-  - common sliders like `metalness`, `roughness`, `emissiveIntensity`, etc. update the existing preview material in place
+- Heavy preview material reconstruction is separated from lighter parameter updates.
+
+Recent UX upgrade:
+
+- The preview sphere is now mouse-interactive.
+- Dragging rotates it.
+- Auto-rotation pauses while dragging.
+- On release, the sphere smoothly returns toward its default pose/rotation and resumes normal motion.
 
 Helpers worth preserving:
 
@@ -205,48 +206,50 @@ Important behavior:
 5. The original GLB texture remains available for return-selection.
 6. This is tracked per slot, independently.
 
-Important publish-oriented rule already established in UX:
-
-- The future publish/export path should include only the actually selected texture source per slot.
-- Non-selected custom replacements should not be shipped.
-
-## Texture Rows Under Preview
+## Base Material
 
 Main file:
 
 - `src/components/Inspector.tsx`
 
-Current behavior:
+Current structure:
 
-- `Base Color` always appears.
-- If a material has no base-color texture:
-  - the row still appears
-  - color swatch remains editable
-  - selector shows `No texture`
-  - `Replace` is disabled
-- Non-base slots appear only when they actually exist, except for special moved controls like `Emissive`.
+1. `Base Color`
+2. `Metalness`
+3. `Roughness`
+4. `Material Environment (HDRI)`
+5. HDRI picker row
+6. `Env Map Intensity`
+7. `Rotation`
 
-Current placement:
+Important recent changes:
 
-- `Base Color`, `Normal`, `Roughness`, `Metalness`, `AO`, etc. stay under `Material Summary`
-- `Emissive` texture row was moved out of the summary block and into the `Emission` section
+- `Base Color` was moved out of `Material Summary` into the start of `Base Material`.
+- `Base Color` follows the same compact row family as `Emission`.
+- Extra framing around the `Base Color` row was removed.
+- Spacing under `Base Color` was tuned to match the visual rhythm used in `Emission`.
 
-## Base Color / Emissive Row Pattern
+Base Color rules:
+
+- color swatch remains editable even if there is no base-color texture
+- selector shows `No texture` when no map exists
+- `Replace` is disabled when no base-color texture exists
+
+## Emission
 
 Main file:
 
 - `src/components/Inspector.tsx`
 
-Current UI pattern:
+Current structure:
 
-- color swatch
-- texture source selector with filename
-- `Replace`
+1. Emissive texture row
+2. `Emissive Intensity`
 
 Current rules:
 
-- `Base Color` color swatch remains active even when there is no base-color texture.
-- `Emissive` row follows the same visual pattern as `Base Color`.
+- No duplicated `Emissive` subheading above the row.
+- Emissive texture row has no extra outer framed card inside the section.
 - If a material has no `emissiveMap` in the original model:
   - selector shows `No texture`
   - `Replace` is disabled
@@ -270,11 +273,6 @@ Store shape:
 - `materialEnvironments: Record<string, MaterialEnvironmentAssetState>`
 - `runtimeTextures.materialEnvironmentMaps: Record<string, THREE.Texture>`
 
-Store actions:
-
-- `upsertMaterialEnvironment(entry, texture)`
-- `removeMaterialEnvironment(id)`
-
 Runtime material behavior:
 
 1. If a material has `environmentOverrideId`, it uses that override texture.
@@ -283,30 +281,143 @@ Runtime material behavior:
 
 That explicit nulling remains critical.
 
-## Base Material Block
+## Material Effects
 
-Main file:
+Main files:
 
 - `src/components/Inspector.tsx`
+- `src/store/editorStore.ts`
+- `src/features/atlas/useAtlasAnimator.ts`
 
-Current structure:
+Current effect model:
 
-1. `Metalness`
-2. `Roughness`
-3. `Material Environment (HDRI)`
-4. HDRI picker row
-5. `Env Map Intensity`
-6. `Rotation`
+- `Material Effects` is inside the material inspector.
+- Effects now have separate concepts for:
+  - `isAdded`
+  - `enabled`
+- `isAdded` controls whether the effect exists in the material's effect list/UI.
+- `enabled` is the visibility/on-off state and is controlled by the eye icon in the list.
 
-Important recent change:
+Current section layout:
 
-- The old separate `Environment Map` section was merged into `Base Material`.
-- `Metalness` and `Roughness` are now separate full-width rows, not a side-by-side pair.
-- Material HDRI spacing was tuned to match the global HDRI block more closely.
+1. effect create buttons row
+2. dynamic effect list
+3. active effect title
+4. active effect controls
 
-Recent wording choice:
+Important UI details:
 
-- Material-local HDRI label is now `Material Environment (HDRI)` to distinguish it from global `Environment (HDRI)`.
+- The create buttons row is above the list and should stay there.
+- The create button area currently has one effect button:
+  - button glyph text = `FLIPBOOK`
+  - button caption = `Create` or `Added`
+- All effect create buttons should use the shared `.effect-create-button` sizing/design pattern.
+- The list has extra horizontal divider lines.
+- When no effect is added, the list still shows a single empty placeholder row.
+- Added effect rows include:
+  - eye toggle
+  - trash remove
+- The active effect title under the list is `Flipbook Animation`.
+- That title uses the same label family as `BACKGROUND` via `left-controls__label`.
+
+Naming convention now in use:
+
+- Full effect name: `Flipbook Animation`
+- Short button label: `FLIPBOOK`
+
+## Flipbook Animation
+
+Main files:
+
+- `src/components/Inspector.tsx`
+- `src/store/editorStore.ts`
+- `src/features/atlas/useAtlasAnimator.ts`
+
+This effect used to be the older atlas/anim block. It has since been reworked heavily.
+
+Current top controls:
+
+- atlas texture field on the left
+- compact square `ATLAS LOAD` / swap button in the middle
+- `Target Slot` compact select on the right
+- `Opacity` directly under that row
+- atlas preview canvas directly under `Opacity`
+
+Important recent behavior:
+
+- `Opacity` now also affects the atlas preview image itself, not only the material in scene.
+- The preview canvas applies `ctx.globalAlpha = effect.opacity`.
+
+Current setup row under preview:
+
+- `Column`
+- `Row`
+- `Frame Order`
+- `FPS`
+
+Current rules:
+
+- `Grid X` was renamed to `Column`.
+- `Grid Y` was renamed to `Row`.
+- Column/Row no longer use sliders.
+- Column/Row/FPS are numeric fields only.
+- `Frame Order` was moved out of `Advanced` into this compact row.
+- `Current Frame` is again a separate full-width row with slider + displayed value only.
+
+Playback row:
+
+- `Play` is an icon button styled from the same `tool-button` family as the top app buttons.
+- `Frame Blend` and `Loop` sit in the same lightweight row without extra background boxes.
+
+Advanced:
+
+- `Opacity` is no longer here.
+- `Frame Order` is no longer here.
+- The old `CLR / Remove Atlas Texture` button was removed.
+
+Defaults in `DEFAULT_ATLAS_EFFECT`:
+
+- `isAdded: false`
+- `enabled: true`
+- `frameOrder: 'column'`
+- `fps: 12`
+- `play: false`
+- `loop: true`
+
+Important behavioral rules:
+
+- Loading an atlas texture should not auto-start playback.
+- Users are expected to configure the effect first, then press play.
+- Frame order should default to `column`.
+
+Implementation nuance:
+
+- `frameCount` still exists in state for compatibility, but the active UI no longer exposes it.
+- Playback and preview clamping now use `gridX * gridY`.
+- `clampEffect()` forces `frameCount` to full grid size and clamps `currentFrame` to that range.
+
+## Shared Effect Create Buttons
+
+Primary files:
+
+- `src/components/Inspector.tsx`
+- `src/components/Sidebar.tsx`
+- `src/components/TabbedSettingsPanel.tsx`
+- `src/styles.css`
+
+Current rule:
+
+- Effect create buttons should use the shared `.effect-create-button` class.
+
+Known current usage:
+
+- `FLIPBOOK Create` in `Material Effects`
+- `BLOOM Create` in FX blocks
+
+Important sizing note:
+
+- This class was explicitly tuned to match the width family of the top-left `GLB / LOAD / SAVE / RST` buttons.
+- Do not reintroduce custom one-off widths for individual effect buttons unless deliberately redesigning the whole pattern.
 
 ## Global Environment / Lighting Selection
 
@@ -333,90 +444,36 @@ Important design decision:
 
 - Scene HDRI is treated as a single global slot, not a reusable dropdown library like per-material HDRIs.
 
-## Slider Styling
+## Outliner / Sidebar Sync
 
-Primary files:
+Main files:
 
-- `src/styles.css`
-- `src/components/Inspector.tsx`
+- `src/components/Outliner.tsx`
 - `src/components/Sidebar.tsx`
 
 Current behavior:
 
-- Range sliders are visually unified across the app.
-- Current slider style goals:
-  - thinner track
-  - smaller thumb
-  - compact spacing
-  - value aligned right on the same row as the label
-- Global CSS also strips text-input-like background/border/padding from range controls so sliders do not inherit field chrome.
+- `Sidebar` owns `outlinerViewMode`.
+- `Outliner` can run in controlled mode via:
+  - `viewMode`
+  - `onViewModeChange`
 
-Important nuance:
+Special mode sync:
 
-- There are still two markup families:
-  - `.left-slider`
-  - `.field` with range input
-- They are visually aligned through CSS rather than fully merged into one React abstraction.
+- clicking sidebar tab `LGT` switches outliner to `lights`
+- clicking sidebar tab `FX` switches outliner to `effects`
+- clicking `lights` inside outliner switches sidebar to `LGT`
+- clicking `effects` inside outliner switches sidebar to `FX`
 
-Watchout:
+Important implementation note:
 
-- `Sidebar.tsx` has a clean `formatDegrees()` using `${value.toFixed(0)}°`.
-- `Inspector.tsx` may still contain an encoding-damaged degree string in source from earlier edits.
-- If degree labels look wrong again, inspect `formatDegrees()` in both files first.
+- This was intentionally rewritten as direct event-driven sync, not a reactive `useEffect` loop.
 
-## Emission
+Auto-selection rule in special modes:
 
-Main file:
-
-- `src/components/Inspector.tsx`
-
-Current structure:
-
-1. Emissive texture row
-2. `Emissive Intensity`
-
-Current rules:
-
-- No duplicated `Emissive` subheading above the row.
-- Emissive texture row has no extra outer framed card inside the section.
-- Spacing under the emissive texture row was manually tuned to match the material HDRI block rhythm.
-
-## Atlas Effect Workflow
-
-Main files:
-
-- `src/components/Inspector.tsx`
-- `src/store/editorStore.ts`
-
-Current behavior:
-
-- Atlas is part of the material inspector.
-- `Material Effects` contains:
-  - `Add Effect`
-  - `Atlas`
-- Visible v1 controls:
-  - Enabled
-  - Target Slot
-  - Load Atlas Texture
-  - Grid X
-  - Grid Y
-  - Frame Count
-  - FPS
-  - Current Frame
-  - Play
-  - Loop
-- Advanced section holds the rest.
-
-## Material Selection Persistence
-
-Important invariant:
-
-- Switching to lights / FX / other non-material work should not wipe material inspector context.
-
-How it works:
-
-- `setSelectedObjectId()` in `src/store/editorStore.ts` preserves `selectedMaterialId` when the new object does not resolve to a material.
-- `Inspector` and `InspectorContent` in `src/components/Inspector.tsx` fall back to the last valid material.
+- When entering `lights` or `effects`, the first row should auto-select if there is no valid current selection for that mode.
+- Once the user has clicked a mesh/material again, the outliner should not keep stealing selection back.
+- `previousViewModeRef` in `Outliner.tsx` is part of this fix.
 
 ## Outliner
 
@@ -433,10 +490,7 @@ Current behavior:
   - selection
   - visibility eye
   - delete trash
-
-Lights / FX:
-
-- `lights` and `effects` modes remain flat lists.
+- `lights` and `effects` remain flat lists.
 
 Environment-specific watchout:
 
@@ -478,6 +532,23 @@ Important nuance:
 
 - Auto-frame still targets the current primary root (`rootNodeId`), meaning the most recently loaded model.
 
+## Transform Defaults
+
+Main file:
+
+- `src/store/editorStore.ts`
+
+Current behavior:
+
+- Default `Rotate` step is now `15` degrees.
+- `Reset Scene` should also restore `rotationStep: 15`.
+
+Related files:
+
+- `src/components/TransformToolbar.tsx`
+- `src/components/viewport/TransformTable.tsx`
+- `src/components/Viewport.tsx`
+
 ## Flight Controls
 
 Main file:
@@ -510,7 +581,7 @@ Included in history:
 
 - object transforms
 - material params
-- material atlas/effect params
+- material flipbook/effect params
 - environment/light/background params
 - viewer params
 - transform settings
@@ -530,21 +601,6 @@ Important implementation detail:
 - one gizmo drag = one undo step
 - coordinate spinners and decimal text fields are also grouped into single undo gestures
 
-## Performance Stats Overlay
-
-Main files:
-
-- `src/components/Viewport.tsx`
-- `src/store/editorStore.ts`
-- `src/styles.css`
-
-Current behavior:
-
-- The custom stats text overlay can be hidden/shown by a small chevron button beside it.
-- HUD state field:
-  - `hud.performanceStatsVisible`
-- The chevron remains visible even when the stats block is hidden.
-
 ## Reset Scene Semantics
 
 Main files:
@@ -553,9 +609,9 @@ Main files:
 - `src/app/App.tsx`
 - `src/components/AssetController.tsx`
 
-Important recent change:
+Important current behavior:
 
-- `Reset Scene` now does more than wipe store values.
+- `Reset Scene` does more than wipe store values.
 - `App.tsx` keys major app sections by `sceneResetNonce`, forcing hard remount of:
   - `AssetController`
   - `Sidebar`
@@ -629,9 +685,11 @@ If another model needs fast context, show these first:
 - `src/components/Sidebar.tsx`
 - `src/components/Outliner.tsx`
 - `src/components/Viewport.tsx`
+- `src/components/TabbedSettingsPanel.tsx`
 - `src/components/viewport/FlightController.tsx`
 - `src/components/viewport/EnvironmentManager.tsx`
 - `src/components/AssetController.tsx`
+- `src/features/atlas/useAtlasAnimator.ts`
 - `src/features/scene/runtime/LoadedSceneRoot.tsx`
 - `src/features/scene/runtime/SceneBindings.tsx`
 - `src/features/scene/buildSceneGraph.ts`
@@ -647,31 +705,34 @@ Sensitive zones right now:
    - reset cleanup
    - selection persistence
    - per-slot texture source state
+   - `DEFAULT_ATLAS_EFFECT`
+   - `clampEffect()`
 2. `src/components/Inspector.tsx`
    - runtime material resolution
-   - preview sphere lifecycle
+   - preview sphere lifecycle and drag interaction
    - per-material collapse state
    - moved texture rows (`Base Color`, `Emissive`)
-   - custom HDRI dropdown logic
-   - degree-format helper
-3. `src/features/scene/runtime/LoadedSceneRoot.tsx`
+   - flipbook effect UI layout
+   - atlas preview canvas behavior
+3. `src/features/atlas/useAtlasAnimator.ts`
+   - full-grid frame stepping
+   - play/pause behavior
+   - frame blending
+4. `src/components/Outliner.tsx`
+   - controlled mode sync
+   - first-row auto-selection in `lights` / `effects`
+   - selection preservation after returning to meshes/materials
+5. `src/components/Sidebar.tsx`
+   - `LGT` / `FX` tab sync with outliner
+   - environment controls
+   - shared effect create button use
+6. `src/features/scene/runtime/LoadedSceneRoot.tsx`
    - original/custom texture source application
    - explicit `envMap = null`
-4. `src/components/Sidebar.tsx`
-   - `LGT` environment controls
-   - global `Intensity` / `Rotation` order
-   - degree-format helper
-5. `src/components/Viewport.tsx`
+7. `src/components/Viewport.tsx`
    - transform gizmo gesture batching
    - selector stability
-   - stats overlay
-6. `src/app/App.tsx`
-   - reset remount behavior
-   - global history shortcut handling
-   - slider/field gesture hooks
-7. `src/components/AssetController.tsx`
-   - runtime cleanup
-   - nonce-based loading
+   - transform rotate-step usage
 
 ## Legacy / Secondary Files
 
@@ -691,4 +752,4 @@ Assume the workspace may be dirty.
 
 Do not blindly revert unrelated user changes.
 
-If editing files around inspector/material/HDRI/texture flow, read them carefully first because this branch has moved quickly in those zones.
+If editing files around inspector/material/effects/outliner flow, read them carefully first because this branch has moved quickly in those zones.

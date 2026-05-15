@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditorStore } from '../store/editorStore'
 
 type ViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
@@ -173,7 +173,13 @@ function RowIcon({ kind }: { kind: OutlinerEntry['kind'] | 'root' }) {
   return <CubeIcon />
 }
 
-export function Outliner() {
+export function Outliner({
+  viewMode,
+  onViewModeChange,
+}: {
+  viewMode?: ViewMode
+  onViewModeChange?: (mode: ViewMode) => void
+}) {
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const objects = useEditorStore((state) => state.objects)
   const materials = useEditorStore((state) => state.materials)
@@ -199,12 +205,22 @@ export function Outliner() {
   const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
 
   const [search, setSearch] = useState('')
-  const [viewMode, setViewMode] = useState<ViewMode>('layers')
+  const [internalViewMode, setInternalViewMode] = useState<ViewMode>('layers')
   const [collapsedRootsByMode, setCollapsedRootsByMode] = useState<Record<RootViewMode, Record<string, boolean>>>({
     layers: {},
     meshes: {},
     materials: {},
   })
+
+  const resolvedViewMode = viewMode ?? internalViewMode
+  const previousViewModeRef = useRef<ViewMode>(resolvedViewMode)
+
+  const setResolvedViewMode = (mode: ViewMode) => {
+    if (viewMode == null) {
+      setInternalViewMode(mode)
+    }
+    onViewModeChange?.(mode)
+  }
 
   const rootModels = useMemo(
     () =>
@@ -318,7 +334,7 @@ export function Outliner() {
 
   const rootSections = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (viewMode === 'lights' || viewMode === 'effects') {
+    if (resolvedViewMode === 'lights' || resolvedViewMode === 'effects') {
       return []
     }
 
@@ -328,7 +344,7 @@ export function Outliner() {
         const meshIds = meshIdsByRoot[rootId] ?? []
         const entries: OutlinerEntry[] = []
 
-        if (viewMode === 'layers' || viewMode === 'meshes') {
+        if (resolvedViewMode === 'layers' || resolvedViewMode === 'meshes') {
           meshIds.forEach((meshId) => {
             const node = sceneGraph[meshId]
             if (!node) {
@@ -348,7 +364,7 @@ export function Outliner() {
               materialIds,
             })
 
-            const shouldShowMaterials = viewMode === 'layers' || (viewMode === 'meshes' && selectedObjectId === node.id)
+            const shouldShowMaterials = resolvedViewMode === 'layers' || (resolvedViewMode === 'meshes' && selectedObjectId === node.id)
             if (!shouldShowMaterials) {
               return
             }
@@ -373,7 +389,7 @@ export function Outliner() {
               })
             })
           })
-        } else if (viewMode === 'materials') {
+        } else if (resolvedViewMode === 'materials') {
           const seen = new Set<string>()
           meshIds.forEach((meshId) => {
             const node = sceneGraph[meshId]
@@ -424,29 +440,51 @@ export function Outliner() {
         }
       })
       .filter((section): section is NonNullable<typeof section> => Boolean(section))
-  }, [materials, meshIdsByRoot, objects, rootModels, sceneGraph, search, selectedObjectId, viewMode])
+  }, [materials, meshIdsByRoot, objects, resolvedViewMode, rootModels, sceneGraph, search, selectedObjectId])
 
   const visibleEntries = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const source = viewMode === 'lights' ? lightEntries : viewMode === 'effects' ? effectEntries : []
+    const source = resolvedViewMode === 'lights' ? lightEntries : resolvedViewMode === 'effects' ? effectEntries : []
 
     if (!query) {
       return source
     }
 
     return source.filter((entry) => entry.label.toLowerCase().includes(query))
-  }, [effectEntries, lightEntries, search, viewMode])
+  }, [effectEntries, lightEntries, resolvedViewMode, search])
+
+  useEffect(() => {
+    if (resolvedViewMode !== 'lights' && resolvedViewMode !== 'effects') {
+      previousViewModeRef.current = resolvedViewMode
+      return
+    }
+
+    const firstEntry = visibleEntries[0]
+    if (!firstEntry) {
+      previousViewModeRef.current = resolvedViewMode
+      return
+    }
+
+    const hasEnteredSpecialMode = previousViewModeRef.current !== resolvedViewMode
+    const shouldAutoSelect = hasEnteredSpecialMode || selectedObjectId == null
+
+    if (shouldAutoSelect) {
+      setSelectedObjectId(firstEntry.selectionId)
+    }
+
+    previousViewModeRef.current = resolvedViewMode
+  }, [resolvedViewMode, selectedObjectId, setSelectedObjectId, visibleEntries])
 
   const handleToggleRootCollapsed = (rootId: string) => {
-    if (viewMode !== 'layers' && viewMode !== 'meshes' && viewMode !== 'materials') {
+    if (resolvedViewMode !== 'layers' && resolvedViewMode !== 'meshes' && resolvedViewMode !== 'materials') {
       return
     }
 
     setCollapsedRootsByMode((current) => ({
       ...current,
-      [viewMode]: {
-        ...current[viewMode],
-        [rootId]: !current[viewMode][rootId],
+      [resolvedViewMode]: {
+        ...current[resolvedViewMode],
+        [rootId]: !current[resolvedViewMode][rootId],
       },
     }))
   }
@@ -535,28 +573,28 @@ export function Outliner() {
             ) : null}
           </div>
           <div className="outliner-filters" aria-label="Outliner display mode">
-            <ModeButton active={viewMode === 'layers'} title="Layers" onClick={() => setViewMode('layers')}>
+            <ModeButton active={resolvedViewMode === 'layers'} title="Layers" onClick={() => setResolvedViewMode('layers')}>
               <LayersIcon />
             </ModeButton>
-            <ModeButton active={viewMode === 'meshes'} title="Geometry" onClick={() => setViewMode('meshes')}>
+            <ModeButton active={resolvedViewMode === 'meshes'} title="Geometry" onClick={() => setResolvedViewMode('meshes')}>
               <CubeIcon />
             </ModeButton>
-            <ModeButton active={viewMode === 'materials'} title="Materials" onClick={() => setViewMode('materials')}>
+            <ModeButton active={resolvedViewMode === 'materials'} title="Materials" onClick={() => setResolvedViewMode('materials')}>
               <SphereIcon />
             </ModeButton>
-            <ModeButton active={viewMode === 'lights'} title="Lights" onClick={() => setViewMode('lights')}>
+            <ModeButton active={resolvedViewMode === 'lights'} title="Lights" onClick={() => setResolvedViewMode('lights')}>
               <LightIcon />
             </ModeButton>
-            <ModeButton active={viewMode === 'effects'} title="Effects" onClick={() => setViewMode('effects')}>
+            <ModeButton active={resolvedViewMode === 'effects'} title="Effects" onClick={() => setResolvedViewMode('effects')}>
               <FxIcon />
             </ModeButton>
           </div>
         </div>
       </div>
       <div className="tree-view outliner-list">
-        {(viewMode === 'layers' || viewMode === 'meshes' || viewMode === 'materials')
+        {(resolvedViewMode === 'layers' || resolvedViewMode === 'meshes' || resolvedViewMode === 'materials')
           ? rootSections.map((section) => {
-              const isCollapsed = !search.trim() && collapsedRootsByMode[viewMode][section.rootId]
+              const isCollapsed = !search.trim() && collapsedRootsByMode[resolvedViewMode][section.rootId]
               const entriesToRender = search.trim() ? section.filteredEntries : section.entries
               const hasChildren = section.entries.length > 0
 
@@ -784,7 +822,7 @@ export function Outliner() {
             </div>
           )
         })}
-        {(viewMode === 'layers' || viewMode === 'meshes' || viewMode === 'materials')
+        {(resolvedViewMode === 'layers' || resolvedViewMode === 'meshes' || resolvedViewMode === 'materials')
           ? !rootSections.length
             ? <p className="panel-empty">No objects match the current mode.</p>
             : null

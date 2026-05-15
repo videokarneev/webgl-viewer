@@ -5,6 +5,7 @@ import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
 import { useEditorStore, type ExtraLightState } from '../store/editorStore'
 
 type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx'
+type OutlinerViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
 
 const TAB_LABELS: Record<SidebarTab, string> = {
   scn: 'SCN',
@@ -537,7 +538,7 @@ function FxTabContent() {
         <div className="fx-buttons-row">
           <button
             type="button"
-            className={`tool-button${hud.postEffectsEnabled ? ' is-active' : ''}`}
+            className={`tool-button effect-create-button${hud.postEffectsEnabled ? ' is-active' : ''}`}
             onClick={() => {
               if (!hud.postEffectsEnabled) {
                 setHud({ postEffectsEnabled: true, postEffectsVisible: true })
@@ -606,6 +607,29 @@ export function Sidebar() {
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
+  const [outlinerViewMode, setOutlinerViewMode] = useState<OutlinerViewMode>('layers')
+
+  const handleSidebarTabChange = (tab: SidebarTab) => {
+    setActiveTab(tab)
+    if (tab === 'lgt') {
+      setOutlinerViewMode('lights')
+      return
+    }
+    if (tab === 'fx') {
+      setOutlinerViewMode('effects')
+    }
+  }
+
+  const handleOutlinerViewModeChange = (mode: OutlinerViewMode) => {
+    setOutlinerViewMode(mode)
+    if (mode === 'lights') {
+      setActiveTab('lgt')
+      return
+    }
+    if (mode === 'effects') {
+      setActiveTab('fx')
+    }
+  }
 
   useEffect(() => {
     if (!selectedObjectId) {
@@ -710,7 +734,7 @@ export function Sidebar() {
             <span className="tool-button__label">Reset Scene</span>
           </button>
         </section>
-        <Outliner />
+        <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">
           <div className="settings-panel__tabs">
@@ -719,7 +743,7 @@ export function Sidebar() {
                 key={tab}
                 type="button"
                 className={activeTab === tab ? 'is-active' : ''}
-                onClick={() => setActiveTab(tab)}
+                onClick={() => handleSidebarTabChange(tab)}
               >
                 {TAB_LABELS[tab]}
               </button>

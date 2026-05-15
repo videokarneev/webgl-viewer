@@ -37,6 +37,7 @@ export const DEFAULT_VIEWER_CAMERA_POSITION: [number, number, number] = [4, 3, 5
 export const DEFAULT_VIEWER_ORBIT_TARGET: [number, number, number] = [0, 0, 0]
 
 export interface AtlasEffectState {
+  isAdded: boolean
   enabled: boolean
   targetSlot: AtlasTargetSlot
   frameOrder: AtlasFrameOrder
@@ -60,17 +61,18 @@ export interface AtlasEffectState {
 }
 
 export const DEFAULT_ATLAS_EFFECT: AtlasEffectState = {
+  isAdded: false,
   enabled: true,
   targetSlot: 'emissive',
-  frameOrder: 'row',
+  frameOrder: 'column',
   gridX: 2,
   gridY: 25,
-  fps: 18,
+  fps: 12,
   frameCount: 50,
   currentFrame: 0,
   opacity: 0.85,
   frameBlend: true,
-  play: true,
+  play: false,
   loop: true,
   uvChannel: 'auto',
   wrapMode: 'repeat',
@@ -459,8 +461,8 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
   const maxFrames = Math.max(1, effect.gridX * effect.gridY)
   return {
     ...effect,
-    frameCount: Math.min(Math.max(1, effect.frameCount), maxFrames),
-    currentFrame: Math.min(Math.max(0, effect.currentFrame), Math.min(Math.max(1, effect.frameCount), maxFrames) - 1),
+    frameCount: maxFrames,
+    currentFrame: Math.min(Math.max(0, effect.currentFrame), maxFrames - 1),
   }
 }
 
@@ -1024,7 +1026,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     measurementUnit: 'cm',
     translationStep: 0,
     isGridSnapping: false,
-    rotationStep: 0,
+    rotationStep: 15,
     gridSize: 1,
   },
   viewer: {
@@ -1949,7 +1951,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           measurementUnit: 'cm',
           translationStep: 0,
           isGridSnapping: false,
-          rotationStep: 0,
+          rotationStep: 15,
           gridSize: 1,
         },
         assets: {

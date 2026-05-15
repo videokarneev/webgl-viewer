@@ -692,6 +692,73 @@ button {
   box-shadow: none;
 }
 
+.field--compact-number {
+  position: relative;
+  gap: 4px;
+  margin-bottom: 0;
+  padding-top: 24px;
+}
+
+.field--compact-number > span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 10px;
+  color: rgba(219, 232, 239, 0.76);
+}
+
+.field--compact-number input[type='number'] {
+  width: 54px;
+  min-width: 54px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(10, 14, 18, 0.92);
+  color: rgba(236, 243, 247, 0.92);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.field--compact-select {
+  position: relative;
+  gap: 4px;
+  margin-bottom: 0;
+  padding-top: 24px;
+}
+
+.field--compact-select > span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-size: 10px;
+  color: rgba(219, 232, 239, 0.76);
+}
+
+.field--compact-select select {
+  width: 78px;
+  min-width: 78px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(10, 14, 18, 0.92);
+  color: rgba(236, 243, 247, 0.92);
+  font-size: 11px;
+}
+
+.field--inline-range {
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+.field--inline-range > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  color: rgba(219, 232, 239, 0.76);
+}
+
 .hidden-input {
   display: none;
 }
@@ -757,6 +824,13 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.checkbox--bare {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .checkbox input,
@@ -2083,10 +2157,207 @@ button {
   margin-bottom: 6px;
 }
 
+.material-effects-list {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(165, 197, 216, 0.07);
+  border-bottom: 1px solid rgba(165, 197, 216, 0.07);
+}
+
+.material-effects-list__row {
+  min-height: 28px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid rgba(165, 197, 216, 0.07);
+  background: rgba(12, 17, 22, 0.72);
+}
+
+.material-effects-list__row--empty {
+  grid-template-columns: 1fr;
+}
+
+.material-effects-list__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: rgba(230, 240, 245, 0.86);
+}
+
+.material-effects-list__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.material-effects-list__icon-button {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: rgba(196, 211, 220, 0.62);
+  padding: 0;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.material-effects-list__icon-button:hover,
+.material-effects-list__icon-button.is-active {
+  color: rgba(235, 243, 248, 0.92);
+}
+
+.effect-row__icon {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.material-effect-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px 112px;
+  gap: 8px;
+  align-items: end;
+  padding-top: 14px;
+  margin-bottom: 6px;
+}
+
+.material-effect-toolbar__atlas {
+  cursor: default;
+}
+
+.material-effect-toolbar__atlas:disabled {
+  opacity: 1;
+}
+
+.material-effect-toolbar__atlas.is-disabled {
+  color: rgba(236, 243, 247, 0.56);
+}
+
+.material-effect-toolbar__load {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+}
+
+.material-effect-toolbar__load-line {
+  font-size: 6px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(224, 239, 248, 0.84);
+  line-height: 1;
+}
+
+.material-effect-toolbar__target {
+  position: relative;
+  width: 112px;
+  min-width: 112px;
+  margin-bottom: 0;
+}
+
+.material-effect-toolbar__target-label {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 4px);
+  font-size: 10px;
+  color: rgba(219, 232, 239, 0.76);
+  line-height: 1;
+}
+
+.material-effect-toolbar__target .material-asset-control__select {
+  width: 100%;
+}
+
 .inspector-action-row .tool-button.is-active {
   border-color: rgba(117, 185, 220, 0.24);
   background: rgba(73, 118, 144, 0.18);
   color: rgba(239, 245, 248, 0.92);
+}
+
+.effect-create-button {
+  width: 83.8235294118px;
+  min-width: 83.8235294118px;
+  max-width: 83.8235294118px;
+  padding: 2px 3px;
+  justify-self: start;
+}
+
+.material-effects-buttons-row {
+  margin-bottom: 6px;
+}
+
+.material-effect-active-title {
+  margin: 0 0 8px;
+}
+
+.material-effect-setup-row {
+  display: grid;
+  grid-template-columns: 54px 54px 78px 54px;
+  justify-content: space-between;
+  column-gap: 0;
+  row-gap: 8px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.material-effect-current-frame {
+  margin-bottom: 8px;
+}
+
+.material-effect-setup-row__fps {
+  grid-column: 4;
+}
+
+.material-effect-playback-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.material-effect-play-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  color: rgba(214, 229, 238, 0.72);
+}
+
+.material-effect-play-button:hover,
+.material-effect-play-button.is-active {
+  color: rgba(235, 243, 248, 0.94);
+}
+
+.material-effect-loop {
+  margin-left: auto;
+  padding-right: 2px;
+}
+
+.material-effect-toggle {
+  margin-bottom: 0;
 }
 
 .lens-preset-row--aperture {

@@ -128,7 +128,7 @@ export function useAtlasAnimator(materialId: string | null) {
         accumulatedTimeRef.current = 0
       }
 
-      const frameCount = Math.max(1, effect.frameCount)
+      const frameCount = Math.max(1, effect.gridX * effect.gridY)
       const frameInterval = effect.fps > 0 ? 1 / effect.fps : Number.POSITIVE_INFINITY
       accumulatedTimeRef.current += delta
 

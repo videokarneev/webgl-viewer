@@ -96,6 +96,47 @@ function SectionChevron({ isCollapsed }: { isCollapsed: boolean }) {
   )
 }
 
+function EyeIcon({ isOpen }: { isOpen: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      <path
+        d="M1.25 8s2.35-3.75 6.75-3.75S14.75 8 14.75 8s-2.35 3.75-6.75 3.75S1.25 8 1.25 8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <circle cx="8" cy="8" r="2.05" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      {!isOpen ? <path d="M2.2 13.3 13.8 2.7" fill="none" stroke="currentColor" strokeWidth="1.2" /> : null}
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      <path d="M5.25 2.75h5.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3 4.5h10" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 4.5v8h6v-8" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M6.6 6.4v4.2M9.4 6.4v4.2" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  )
+}
+
+function PlayIcon({ isPlaying }: { isPlaying: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      {isPlaying ? (
+        <>
+          <path d="M4.5 3.25h2.25v9.5H4.5z" fill="currentColor" />
+          <path d="M9.25 3.25h2.25v9.5H9.25z" fill="currentColor" />
+        </>
+      ) : (
+        <path d="M4.75 3.25 12 8l-7.25 4.75V3.25Z" fill="currentColor" />
+      )}
+    </svg>
+  )
+}
+
 function SectionPanel({
   title,
   children,
@@ -780,6 +821,16 @@ function MaterialTextureList({ materialId }: { materialId: string }) {
 
 function MaterialPreviewSphere({ materialId }: { materialId: string }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const interactionStateRef = useRef({
+    isDragging: false,
+    pointerId: -1,
+    lastX: 0,
+    lastY: 0,
+    rotationX: -0.18,
+    rotationY: 0.62,
+    targetRotationX: -0.18,
+    targetRotationY: 0.62,
+  })
   const materialName = useEditorStore((state) => state.materials[materialId]?.name ?? '')
   const materialMeshIds = useEditorStore((state) => state.materials[materialId]?.meshIds ?? null)
   const textureSlots = useEditorStore((state) => state.materials[materialId]?.textureSlots ?? null)
@@ -888,8 +939,8 @@ function MaterialPreviewSphere({ materialId }: { materialId: string }) {
     const sphereGeometry = buildPreviewSphereGeometry(initialMaterial as PreviewCapableMaterial)
     const sphere = new THREE.Mesh(sphereGeometry, initialMaterial)
     sphere.position.y = 0.08
-    sphere.rotation.x = -0.18
-    sphere.rotation.y = 0.62
+    sphere.rotation.x = interactionStateRef.current.rotationX
+    sphere.rotation.y = interactionStateRef.current.rotationY
     sphere.scale.setScalar(0.9)
     sphereRef.current = sphere
     previewMaterialRef.current = initialMaterial
@@ -921,14 +972,73 @@ function MaterialPreviewSphere({ materialId }: { materialId: string }) {
     resizeObserver?.observe(canvas)
     resizeObserverRef.current = resizeObserver
 
+    const handlePointerDown = (event: PointerEvent) => {
+      interactionStateRef.current.isDragging = true
+      interactionStateRef.current.pointerId = event.pointerId
+      interactionStateRef.current.lastX = event.clientX
+      interactionStateRef.current.lastY = event.clientY
+      canvas.setPointerCapture(event.pointerId)
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const interaction = interactionStateRef.current
+      if (!interaction.isDragging || interaction.pointerId !== event.pointerId) {
+        return
+      }
+
+      const deltaX = event.clientX - interaction.lastX
+      const deltaY = event.clientY - interaction.lastY
+      interaction.lastX = event.clientX
+      interaction.lastY = event.clientY
+
+      interaction.rotationY += deltaX * 0.01
+      interaction.rotationX = THREE.MathUtils.clamp(interaction.rotationX + deltaY * 0.008, -0.65, 0.28)
+      interaction.targetRotationY = interaction.rotationY
+      interaction.targetRotationX = interaction.rotationX
+    }
+
+    const stopDragging = (event: PointerEvent) => {
+      const interaction = interactionStateRef.current
+      if (interaction.pointerId !== event.pointerId) {
+        return
+      }
+
+      interaction.isDragging = false
+      interaction.pointerId = -1
+      interaction.targetRotationX = -0.18
+      interaction.targetRotationY = 0.62
+      if (canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId)
+      }
+    }
+
+    canvas.addEventListener('pointerdown', handlePointerDown)
+    canvas.addEventListener('pointermove', handlePointerMove)
+    canvas.addEventListener('pointerup', stopDragging)
+    canvas.addEventListener('pointercancel', stopDragging)
+
     const renderFrame = () => {
-      sphere.rotation.y += 0.0008333333333333334
+      const interaction = interactionStateRef.current
+      if (interaction.isDragging) {
+        sphere.rotation.x = interaction.rotationX
+        sphere.rotation.y = interaction.rotationY
+      } else {
+        interaction.rotationX = THREE.MathUtils.lerp(interaction.rotationX, -0.18, 0.045)
+        interaction.rotationY = THREE.MathUtils.lerp(interaction.rotationY, interaction.targetRotationY, 0.035)
+        interaction.targetRotationY += 0.0008333333333333334
+        sphere.rotation.x = interaction.rotationX
+        sphere.rotation.y = interaction.rotationY
+      }
       renderer.render(scene, camera)
       frameIdRef.current = window.requestAnimationFrame(renderFrame)
     }
     renderFrame()
 
     return () => {
+      canvas.removeEventListener('pointerdown', handlePointerDown)
+      canvas.removeEventListener('pointermove', handlePointerMove)
+      canvas.removeEventListener('pointerup', stopDragging)
+      canvas.removeEventListener('pointercancel', stopDragging)
       window.cancelAnimationFrame(frameIdRef.current)
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
@@ -1779,7 +1889,10 @@ function AtlasPreviewCanvas({ materialId }: { materialId: string }) {
     ctx.fillRect(0, 0, width, height)
 
     if (image) {
+      ctx.save()
+      ctx.globalAlpha = Math.min(Math.max(effect.opacity, 0), 1)
       ctx.drawImage(image, 0, 0, width, height)
+      ctx.restore()
     }
 
     const columns = Math.max(1, effect.gridX)
@@ -1788,7 +1901,7 @@ function AtlasPreviewCanvas({ materialId }: { materialId: string }) {
     const cellHeight = height / rows
     const activeFrame = Math.min(
       Math.max(0, effect.currentFrame),
-      Math.max(0, Math.min(effect.frameCount, columns * rows) - 1),
+      Math.max(0, columns * rows - 1),
     )
     const activeColumn =
       effect.frameOrder === 'column' ? Math.floor(activeFrame / rows) : activeFrame % columns
@@ -1842,11 +1955,9 @@ function AtlasEffectSection({
   onToggle: () => void
 }) {
   const material = useEditorStore((state) => state.materials[materialId] ?? null)
+  const atlasSource = useEditorStore((state) => state.assets.atlas)
   const atlasLoaded = useEditorStore((state) => Boolean(state.assets.atlas && state.runtimeTextures.atlasTexture))
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
-  const setAssets = useEditorStore((state) => state.setAssets)
-  const setAtlasTexture = useEditorStore((state) => state.setAtlasTexture)
-  const setAtlasFrameTexture = useEditorStore((state) => state.setAtlasFrameTexture)
   const requestAtlasLoad = useEditorStore((state) => state.requestAtlasLoad)
   const atlasInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1854,37 +1965,93 @@ function AtlasEffectSection({
     return null
   }
 
+  const totalFrames = Math.max(1, material.effect.gridX * material.effect.gridY)
+
+  const activeEffects = material.effect.isAdded
+      ? [
+        {
+          id: 'anim',
+          label: 'Flipbook Animation',
+          enabled: material.effect.enabled,
+        },
+      ]
+    : []
+
   return (
     <SectionPanel title="Material Effects" isCollapsed={isCollapsed} onToggle={onToggle}>
-      <div className="section-head">
-        <span className="left-controls__label">Add Effect</span>
-        <span className="small-muted">{material.effect.enabled ? 'Atlas active' : 'No effect selected'}</span>
-      </div>
-      <div className="inspector-action-row inspector-action-row--single">
+      <div className="fx-buttons-row material-effects-buttons-row">
         <button
           type="button"
-          className={`tool-button tool-button--secondary ${material.effect.enabled ? 'is-active' : ''}`}
-          onClick={() => updateMaterialEffect(materialId, { enabled: true })}
+          className={`tool-button effect-create-button ${material.effect.isAdded ? 'is-active' : ''}`}
+          onClick={() => updateMaterialEffect(materialId, { isAdded: true, enabled: true })}
         >
-          <span className="tool-button__glyph">Atlas</span>
-          <span className="tool-button__label">{material.effect.enabled ? 'Added' : 'Create'}</span>
+          <span className="tool-button__glyph">FLIPBOOK</span>
+          <span className="tool-button__label">{material.effect.isAdded ? 'Added' : 'Create'}</span>
         </button>
       </div>
 
-      {material.effect.enabled ? (
+      <div className="material-effects-list" aria-label="Material effects list">
+        {activeEffects.length ? (
+          activeEffects.map((effect) => (
+            <div key={effect.id} className="material-effects-list__row">
+              <span className="material-effects-list__label">{effect.label}</span>
+              <div className="material-effects-list__actions">
+                <button
+                  type="button"
+                  className={`material-effects-list__icon-button${effect.enabled ? ' is-active' : ''}`}
+                  aria-label={effect.enabled ? `Hide ${effect.label}` : `Show ${effect.label}`}
+                  title={effect.enabled ? `Hide ${effect.label}` : `Show ${effect.label}`}
+                  onClick={() => updateMaterialEffect(materialId, { enabled: !effect.enabled })}
+                >
+                  <EyeIcon isOpen={effect.enabled} />
+                </button>
+                <button
+                  type="button"
+                  className="material-effects-list__icon-button"
+                  aria-label={`Remove ${effect.label}`}
+                  title={`Remove ${effect.label}`}
+                  onClick={() => updateMaterialEffect(materialId, { isAdded: false, enabled: false })}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="material-effects-list__row material-effects-list__row--empty" aria-hidden="true" />
+        )}
+      </div>
+
+      {material.effect.isAdded ? (
         <>
-          <div className="grid-two">
-            <label className="checkbox">
-              <input
-                type="checkbox"
-                checked={material.effect.enabled}
-                onChange={(event) => updateMaterialEffect(materialId, { enabled: event.currentTarget.checked })}
-              />
-              <span>Enabled</span>
-            </label>
-            <label className="field">
-              <span>Target Slot</span>
+          <p className="left-controls__label material-effect-active-title">Flipbook Animation</p>
+
+          <div className="material-effect-toolbar">
+            <button
+              type="button"
+              className={`material-asset-control__select material-asset-control__select-button material-effect-toolbar__atlas${!atlasLoaded ? ' is-disabled' : ''}`}
+              disabled
+              aria-label={atlasLoaded ? `Atlas texture: ${getAssetName(atlasSource, 'Atlas texture')}` : 'No atlas texture loaded'}
+            >
+              <span className="material-asset-control__select-label">
+                {atlasLoaded ? getAssetName(atlasSource, 'Atlas texture') : 'No texture'}
+              </span>
+              <span className="material-asset-control__chevron">⌄</span>
+            </button>
+
+            <button
+              type="button"
+              className="material-asset-control__button material-effect-toolbar__load"
+              onClick={() => atlasInputRef.current?.click()}
+            >
+              <span className="material-effect-toolbar__load-line">Atlas</span>
+              <span className="material-effect-toolbar__load-line">{atlasLoaded ? 'swap' : 'load'}</span>
+            </button>
+
+            <label className="material-effect-toolbar__target">
+              <span className="material-effect-toolbar__target-label">Target Slot</span>
               <select
+                className="material-asset-control__select"
                 value={material.effect.targetSlot}
                 onChange={(event) =>
                   updateMaterialEffect(materialId, {
@@ -1898,85 +2065,88 @@ function AtlasEffectSection({
             </label>
           </div>
 
-          <div className="inspector-action-row inspector-action-row--single">
-            <button
-              type="button"
-              className="tool-button tool-button--secondary"
-              onClick={() => atlasInputRef.current?.click()}
-            >
-              <span className="tool-button__glyph">ATL</span>
-              <span className="tool-button__label">{atlasLoaded ? 'Replace Atlas Texture' : 'Load Atlas Texture'}</span>
-            </button>
-          </div>
+          <label className="field">
+            <span>
+              Opacity <output>{formatNumber(material.effect.opacity)}</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={material.effect.opacity}
+              onInput={(event) => updateMaterialEffect(materialId, { opacity: Number(event.currentTarget.value) })}
+            />
+          </label>
 
           {atlasLoaded ? <AtlasPreviewCanvas materialId={materialId} /> : null}
 
-          <div className="grid-two">
-            <label className="field">
-              <span>
-                Grid X <output>{material.effect.gridX}</output>
-              </span>
+          <div className="material-effect-setup-row">
+            <label className="field field--compact-number">
+              <span>Column</span>
               <input
-                type="range"
+                type="number"
                 min="1"
                 max="32"
                 step="1"
                 value={material.effect.gridX}
-                onInput={(event) => updateMaterialEffect(materialId, { gridX: Number(event.currentTarget.value) })}
+                onChange={(event) =>
+                  updateMaterialEffect(materialId, {
+                    gridX: Math.min(Math.max(1, Number(event.currentTarget.value) || 1), 32),
+                  })
+                }
               />
             </label>
-            <label className="field">
-              <span>
-                Grid Y <output>{material.effect.gridY}</output>
-              </span>
+            <label className="field field--compact-number">
+              <span>Row</span>
               <input
-                type="range"
+                type="number"
                 min="1"
                 max="32"
                 step="1"
                 value={material.effect.gridY}
-                onInput={(event) => updateMaterialEffect(materialId, { gridY: Number(event.currentTarget.value) })}
+                onChange={(event) =>
+                  updateMaterialEffect(materialId, {
+                    gridY: Math.min(Math.max(1, Number(event.currentTarget.value) || 1), 32),
+                  })
+                }
               />
             </label>
-          </div>
-
-          <div className="grid-two">
-            <label className="field">
-              <span>
-                Frame Count <output>{material.effect.frameCount}</output>
-              </span>
-              <input
-                type="range"
-                min="1"
-                max="128"
-                step="1"
-                value={material.effect.frameCount}
-                onInput={(event) => updateMaterialEffect(materialId, { frameCount: Number(event.currentTarget.value) })}
-              />
+            <label className="field field--compact-select">
+              <span>Frame Order</span>
+              <select
+                value={material.effect.frameOrder}
+                onChange={(event) =>
+                  updateMaterialEffect(materialId, {
+                    frameOrder: event.currentTarget.value as typeof material.effect.frameOrder,
+                  })
+                }
+              >
+                <option value="row">Row</option>
+                <option value="column">Column</option>
+              </select>
             </label>
-            <label className="field">
-              <span>
-                FPS <output>{material.effect.fps}</output>
-              </span>
+            <label className="field field--compact-number material-effect-setup-row__fps">
+              <span>FPS</span>
               <input
-                type="range"
+                type="number"
                 min="1"
                 max="60"
                 step="1"
                 value={material.effect.fps}
-                onInput={(event) => updateMaterialEffect(materialId, { fps: Number(event.currentTarget.value) })}
+                onChange={(event) => updateMaterialEffect(materialId, { fps: Number(event.currentTarget.value) || 1 })}
               />
             </label>
           </div>
 
-          <label className="field">
+          <label className="field field--inline-range material-effect-current-frame">
             <span>
               Current Frame <output>{material.effect.currentFrame}</output>
             </span>
             <input
               type="range"
               min="0"
-              max={Math.max(0, material.effect.frameCount - 1)}
+              max={Math.max(0, totalFrames - 1)}
               step="1"
               value={material.effect.currentFrame}
               onInput={(event) =>
@@ -1988,16 +2158,25 @@ function AtlasEffectSection({
             />
           </label>
 
-          <div className="grid-two">
-            <label className="checkbox">
+          <div className="material-effect-playback-row">
+            <button
+              type="button"
+              className={`tool-button material-effect-play-button${material.effect.play ? ' is-active' : ''}`}
+              aria-label={material.effect.play ? 'Pause animation' : 'Play animation'}
+              title={material.effect.play ? 'Pause animation' : 'Play animation'}
+              onClick={() => updateMaterialEffect(materialId, { play: !material.effect.play })}
+            >
+              <PlayIcon isPlaying={material.effect.play} />
+            </button>
+            <label className="checkbox checkbox--bare material-effect-toggle">
               <input
                 type="checkbox"
-                checked={material.effect.play}
-                onChange={(event) => updateMaterialEffect(materialId, { play: event.currentTarget.checked })}
+                checked={material.effect.frameBlend}
+                onChange={(event) => updateMaterialEffect(materialId, { frameBlend: event.currentTarget.checked })}
               />
-              <span>Play</span>
+              <span>Frame Blend</span>
             </label>
-            <label className="checkbox">
+            <label className="checkbox checkbox--bare material-effect-toggle material-effect-loop">
               <input
                 type="checkbox"
                 checked={material.effect.loop}
@@ -2009,36 +2188,6 @@ function AtlasEffectSection({
 
           <details className="panel-subsection">
             <summary>Advanced</summary>
-            <div className="grid-two">
-              <label className="field">
-                <span>Frame Order</span>
-                <select
-                  value={material.effect.frameOrder}
-                  onChange={(event) =>
-                    updateMaterialEffect(materialId, {
-                      frameOrder: event.currentTarget.value as typeof material.effect.frameOrder,
-                    })
-                  }
-                >
-                  <option value="row">Row</option>
-                  <option value="column">Column</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>
-                  Opacity <output>{formatNumber(material.effect.opacity)}</output>
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={material.effect.opacity}
-                  onInput={(event) => updateMaterialEffect(materialId, { opacity: Number(event.currentTarget.value) })}
-                />
-              </label>
-            </div>
-
             <div className="grid-two">
               <label className="field">
                 <span>UV Channel</span>
@@ -2075,14 +2224,6 @@ function AtlasEffectSection({
             </div>
 
             <div className="grid-two">
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={material.effect.frameBlend}
-                  onChange={(event) => updateMaterialEffect(materialId, { frameBlend: event.currentTarget.checked })}
-                />
-                <span>Frame Blend</span>
-              </label>
               <label className="checkbox">
                 <input
                   type="checkbox"
@@ -2164,23 +2305,6 @@ function AtlasEffectSection({
                 onInput={(event) => updateMaterialEffect(materialId, { rotation: Number(event.currentTarget.value) })}
               />
             </label>
-
-            <div className="inspector-action-row inspector-action-row--single">
-              <button
-                type="button"
-                className="tool-button tool-button--secondary"
-                onClick={() => {
-                  const currentAtlas = useEditorStore.getState().runtimeTextures.atlasTexture
-                  currentAtlas?.dispose()
-                  setAtlasTexture(null)
-                  setAtlasFrameTexture(null)
-                  setAssets({ atlas: null })
-                }}
-              >
-                <span className="tool-button__glyph">CLR</span>
-                <span className="tool-button__label">Remove Atlas Texture</span>
-              </button>
-            </div>
           </details>
         </>
       ) : null}

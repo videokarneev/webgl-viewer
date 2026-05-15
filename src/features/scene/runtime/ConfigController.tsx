@@ -232,6 +232,9 @@ export function ConfigController({
 
     if (targetMaterialId && config.materialEffect) {
       updateMaterialEffect(targetMaterialId, {
+        isAdded:
+          config.materialEffect.isAdded ??
+          (config.materialEffect.enabled != null ? true : materials[targetMaterialId].effect.isAdded),
         enabled: config.materialEffect.enabled ?? materials[targetMaterialId].effect.enabled,
         targetSlot: config.materialEffect.targetSlot ?? materials[targetMaterialId].effect.targetSlot,
         frameOrder: config.materialEffect.frameOrder ?? materials[targetMaterialId].effect.frameOrder,
