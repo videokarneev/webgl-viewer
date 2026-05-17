@@ -1,7 +1,6 @@
 import { useRef } from 'react'
 import { useEditorStore } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { copySceneConfigToClipboard, downloadSceneConfig } from '../features/config/buildSceneConfig'
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -36,34 +35,6 @@ export function AssetDock() {
         </button>
         <button type="button" onClick={() => configInputRef.current?.click()}>
           Load Config
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            try {
-              await copySceneConfigToClipboard()
-              setStatus('Scene config copied to clipboard.')
-            } catch (error) {
-              console.error(error)
-              setStatus('Failed to copy config to clipboard.')
-            }
-          }}
-        >
-          Copy JSON
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            try {
-              downloadSceneConfig()
-              setStatus('Scene config downloaded.')
-            } catch (error) {
-              console.error(error)
-              setStatus('Failed to download config.')
-            }
-          }}
-        >
-          Download Config
         </button>
       </div>
 

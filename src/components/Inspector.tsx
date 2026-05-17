@@ -250,6 +250,50 @@ type TextureRowEntry = {
   isTextureAvailable: boolean
 }
 
+function isFlipbookTargetSlotOverridden(
+  effect:
+    | {
+        isAdded: boolean
+        enabled: boolean
+        targetSlot: 'emissive' | 'baseColor'
+      }
+    | null
+    | undefined,
+  atlasLoaded: boolean,
+  slot: 'map' | 'emissiveMap',
+) {
+  if (!effect?.isAdded || !effect.enabled || !atlasLoaded) {
+    return false
+  }
+
+  return (
+    (slot === 'map' && effect.targetSlot === 'baseColor') ||
+    (slot === 'emissiveMap' && effect.targetSlot === 'emissive')
+  )
+}
+
+function getFlipbookTextureOptionLabel(slotLabel: 'Base Color' | 'Emissive') {
+  return `Flipbook texture (${slotLabel})`
+}
+
+function beginInspectorGesture(gestureRef: { current: boolean }, beginHistoryGesture: () => void) {
+  if (gestureRef.current) {
+    return
+  }
+
+  gestureRef.current = true
+  beginHistoryGesture()
+}
+
+function endInspectorGesture(gestureRef: { current: boolean }, endHistoryGesture: () => void) {
+  if (!gestureRef.current) {
+    return
+  }
+
+  gestureRef.current = false
+  endHistoryGesture()
+}
+
 function getResolvedTextureForSlot(
   material: PreviewCapableMaterial,
   slot: EditableTextureSlot,
@@ -559,6 +603,14 @@ function applyPreviewMaterialState(
     metalness?: number
     roughness?: number
     emissiveIntensity?: number
+    textureSlots: Record<
+      EditableTextureSlot,
+      {
+        selectedSource: 'original' | 'custom' | null
+        originalLabel: string | null
+        customLabel: string | null
+      }
+    >
   },
 ) {
   if (materialState.color && material.color) {
@@ -851,6 +903,16 @@ function MaterialPreviewSphere({ materialId }: { materialId: string }) {
   const previewMaterialRef = useRef<THREE.Material | null>(null)
   const frameIdRef = useRef<number>(0)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
+  const previewSourceState = useMemo(() => {
+    if (!materialMeshIds) {
+      return null
+    }
+
+    return {
+      name: materialName,
+      meshIds: materialMeshIds,
+    }
+  }, [materialMeshIds, materialName])
   const materialState = useMemo(() => {
     if (!materialMeshIds || !textureSlots) {
       return null
@@ -883,12 +945,12 @@ function MaterialPreviewSphere({ materialId }: { materialId: string }) {
     textureSlots,
   ])
   const resolvedPreview = useMemo(() => {
-    if (!materialState) {
+    if (!previewSourceState) {
       return null
     }
 
-    return resolvePreviewRuntimeMaterial(materialId, materialState, runtimeMaterialById, runtimeObjectById)
-  }, [materialId, materialState, runtimeMaterialById, runtimeObjectById])
+    return resolvePreviewRuntimeMaterial(materialId, previewSourceState, runtimeMaterialById, runtimeObjectById)
+  }, [materialId, previewSourceState, runtimeMaterialById, runtimeObjectById])
 
   const textureSelectionKey = useMemo(() => {
     if (!materialState) {
@@ -1092,7 +1154,6 @@ function MaterialPreviewSphere({ materialId }: { materialId: string }) {
     previewMaterialRef.current = nextPreviewMaterial
     previousMaterial?.dispose()
   }, [
-    materialState,
     resolvedPreview,
     textureSelectionKey,
   ])
@@ -1176,6 +1237,8 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
   const sceneEnvironmentMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
   const previewMaterialEnvironmentId = useEditorStore((state) => state.environment.previewMaterialEnvironmentId)
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
   const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
   const removeMaterialEnvironment = useEditorStore((state) => state.removeMaterialEnvironment)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
@@ -1183,6 +1246,7 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
   const setStatus = useEditorStore((state) => state.setStatus)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const dropdownRef = useRef<HTMLDivElement | null>(null)
+  const environmentSliderGestureActiveRef = useRef(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
 
@@ -1268,6 +1332,12 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
     materialId,
     updateMaterial,
   ])
+
+  useEffect(() => {
+    return () => {
+      endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)
+    }
+  }, [endHistoryGesture])
 
   return (
     <>
@@ -1362,7 +1432,13 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
             max="10"
             step="0.01"
             value={material.envMapIntensity ?? 1}
-            onInput={(event) => updateMaterial(materialId, { envMapIntensity: Number(event.currentTarget.value) })}
+            onInput={(event) => {
+              beginInspectorGesture(environmentSliderGestureActiveRef, beginHistoryGesture)
+              updateMaterial(materialId, { envMapIntensity: Number(event.currentTarget.value) })
+            }}
+            onPointerUp={() => endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)}
+            onPointerCancel={() => endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)}
+            onBlur={() => endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)}
           />
         </label>
       </div>
@@ -1376,6 +1452,7 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
           disabled={isEnvironmentSelectorDisabled}
           value={rotationValue}
           onInput={(event) => {
+            beginInspectorGesture(environmentSliderGestureActiveRef, beginHistoryGesture)
             const nextValue = Number(event.currentTarget.value)
 
             if (usesSceneEnvironment) {
@@ -1400,22 +1477,31 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
             }
           }}
           onPointerUp={() =>
-            setEnvironment({
-              previewReflections: false,
-              previewMaterialEnvironmentId: null,
-            })
+            {
+              endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)
+              setEnvironment({
+                previewReflections: false,
+                previewMaterialEnvironmentId: null,
+              })
+            }
           }
           onPointerCancel={() =>
-            setEnvironment({
-              previewReflections: false,
-              previewMaterialEnvironmentId: null,
-            })
+            {
+              endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)
+              setEnvironment({
+                previewReflections: false,
+                previewMaterialEnvironmentId: null,
+              })
+            }
           }
           onBlur={() =>
-            setEnvironment({
-              previewReflections: false,
-              previewMaterialEnvironmentId: null,
-            })
+            {
+              endInspectorGesture(environmentSliderGestureActiveRef, endHistoryGesture)
+              setEnvironment({
+                previewReflections: false,
+                previewMaterialEnvironmentId: null,
+              })
+            }
           }
         />
         <strong>{formatDegrees(rotationValue)}</strong>
@@ -1476,12 +1562,17 @@ function MaterialBaseSection({
 }) {
   const material = useEditorStore((state) => state.materials[materialId])
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
   const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
   const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
   const setStatus = useEditorStore((state) => state.setStatus)
+  const atlasLoaded = useEditorStore((state) => Boolean(state.assets.atlas && state.runtimeTextures.atlasTexture))
   const [isLoadingBaseColorTexture, setIsLoadingBaseColorTexture] = useState(false)
   const baseColorInputRef = useRef<HTMLInputElement | null>(null)
+  const isBaseColorGestureActiveRef = useRef(false)
+  const materialSliderGestureActiveRef = useRef(false)
 
   const resolvedMaterial = useMemo(() => {
     if (!material) {
@@ -1507,6 +1598,15 @@ function MaterialBaseSection({
   const baseColorTextureState = material.textureSlots.map
   const baseColorTextureSource = getSelectedTextureSource(baseColorTextureState)
   const hasBaseColorTexture = Boolean(baseColorTextureState.originalLabel || baseColorTextureState.customLabel)
+  const isBaseColorOverriddenByFlipbook = isFlipbookTargetSlotOverridden(material.effect, atlasLoaded, 'map')
+  const baseColorTextureValue = isBaseColorOverriddenByFlipbook ? 'flipbook' : (baseColorTextureSource ?? '')
+
+  useEffect(() => {
+    return () => {
+      endInspectorGesture(isBaseColorGestureActiveRef, endHistoryGesture)
+      endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)
+    }
+  }, [endHistoryGesture])
 
   return (
     <SectionPanel title="Base Material" isCollapsed={isCollapsed} onToggle={onToggle}>
@@ -1516,14 +1616,19 @@ function MaterialBaseSection({
             <input
               type="color"
               value={resolvedBaseColor}
+              onInput={(event) => {
+                beginInspectorGesture(isBaseColorGestureActiveRef, beginHistoryGesture)
+                updateMaterial(materialId, { color: event.currentTarget.value })
+              }}
               onChange={(event) => updateMaterial(materialId, { color: event.currentTarget.value })}
+              onBlur={() => endInspectorGesture(isBaseColorGestureActiveRef, endHistoryGesture)}
             />
             <span className="material-color-swatch__chip" style={{ backgroundColor: resolvedBaseColor }} />
           </label>
           <select
             className="material-asset-control__select material-texture-row__select"
-            value={baseColorTextureSource ?? ''}
-            disabled={!hasBaseColorTexture}
+            value={baseColorTextureValue}
+            disabled={!hasBaseColorTexture || isBaseColorOverriddenByFlipbook}
             onChange={(event) => {
               const nextSource = event.currentTarget.value as 'original' | 'custom'
               updateMaterial(materialId, {
@@ -1537,6 +1642,9 @@ function MaterialBaseSection({
               })
             }}
           >
+            {isBaseColorOverriddenByFlipbook ? (
+              <option value="flipbook">{getFlipbookTextureOptionLabel('Base Color')}</option>
+            ) : null}
             {!hasBaseColorTexture ? <option value="">No texture</option> : null}
             {baseColorTextureState.originalLabel ? (
               <option value="original">Original: {baseColorTextureState.originalLabel}</option>
@@ -1548,7 +1656,7 @@ function MaterialBaseSection({
           <button
             type="button"
             className="material-asset-control__button"
-            disabled={!hasBaseColorTexture}
+            disabled={!hasBaseColorTexture || isBaseColorOverriddenByFlipbook}
             onClick={() => baseColorInputRef.current?.click()}
           >
             {isLoadingBaseColorTexture ? 'Loading' : 'Replace'}
@@ -1647,7 +1755,13 @@ function MaterialBaseSection({
           max="1"
           step="0.01"
           value={material.metalness ?? 0}
-          onInput={(event) => updateMaterial(materialId, { metalness: Number(event.currentTarget.value) })}
+          onInput={(event) => {
+            beginInspectorGesture(materialSliderGestureActiveRef, beginHistoryGesture)
+            updateMaterial(materialId, { metalness: Number(event.currentTarget.value) })
+          }}
+          onPointerUp={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
+          onPointerCancel={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
+          onBlur={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
         />
       </label>
       <label className="field">
@@ -1660,7 +1774,13 @@ function MaterialBaseSection({
           max="1"
           step="0.01"
           value={material.roughness ?? 1}
-          onInput={(event) => updateMaterial(materialId, { roughness: Number(event.currentTarget.value) })}
+          onInput={(event) => {
+            beginInspectorGesture(materialSliderGestureActiveRef, beginHistoryGesture)
+            updateMaterial(materialId, { roughness: Number(event.currentTarget.value) })
+          }}
+          onPointerUp={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
+          onPointerCancel={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
+          onBlur={() => endInspectorGesture(materialSliderGestureActiveRef, endHistoryGesture)}
         />
       </label>
       <div className="material-environment-block">
@@ -1682,12 +1802,17 @@ function EmissionSection({
 }) {
   const material = useEditorStore((state) => state.materials[materialId])
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
+  const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
+  const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
   const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
   const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
   const setStatus = useEditorStore((state) => state.setStatus)
+  const atlasLoaded = useEditorStore((state) => Boolean(state.assets.atlas && state.runtimeTextures.atlasTexture))
   const [isLoadingTexture, setIsLoadingTexture] = useState(false)
   const emissiveInputRef = useRef<HTMLInputElement | null>(null)
+  const isEmissiveGestureActiveRef = useRef(false)
+  const emissiveSliderGestureActiveRef = useRef(false)
 
   const resolvedMaterial = useMemo(() => {
     if (!material) {
@@ -1713,6 +1838,15 @@ function EmissionSection({
   const emissiveTextureState = material.textureSlots.emissiveMap
   const emissiveTextureSource = getSelectedTextureSource(emissiveTextureState)
   const hasEmissiveTexture = Boolean(emissiveTextureState.originalLabel || emissiveTextureState.customLabel)
+  const isEmissiveOverriddenByFlipbook = isFlipbookTargetSlotOverridden(material.effect, atlasLoaded, 'emissiveMap')
+  const emissiveTextureValue = isEmissiveOverriddenByFlipbook ? 'flipbook' : (emissiveTextureSource ?? '')
+
+  useEffect(() => {
+    return () => {
+      endInspectorGesture(isEmissiveGestureActiveRef, endHistoryGesture)
+      endInspectorGesture(emissiveSliderGestureActiveRef, endHistoryGesture)
+    }
+  }, [endHistoryGesture])
 
   return (
     <SectionPanel title="Emission" isCollapsed={isCollapsed} onToggle={onToggle}>
@@ -1722,14 +1856,19 @@ function EmissionSection({
             <input
               type="color"
               value={resolvedEmissiveColor}
+              onInput={(event) => {
+                beginInspectorGesture(isEmissiveGestureActiveRef, beginHistoryGesture)
+                updateMaterial(materialId, { emissive: event.currentTarget.value })
+              }}
               onChange={(event) => updateMaterial(materialId, { emissive: event.currentTarget.value })}
+              onBlur={() => endInspectorGesture(isEmissiveGestureActiveRef, endHistoryGesture)}
             />
             <span className="material-color-swatch__chip" style={{ backgroundColor: resolvedEmissiveColor }} />
           </label>
           <select
             className="material-asset-control__select material-texture-row__select"
-            value={emissiveTextureSource ?? ''}
-            disabled={!hasEmissiveTexture}
+            value={emissiveTextureValue}
+            disabled={!hasEmissiveTexture || isEmissiveOverriddenByFlipbook}
             onChange={(event) => {
               const nextSource = event.currentTarget.value as 'original' | 'custom'
               updateMaterial(materialId, {
@@ -1743,6 +1882,9 @@ function EmissionSection({
               })
             }}
           >
+            {isEmissiveOverriddenByFlipbook ? (
+              <option value="flipbook">{getFlipbookTextureOptionLabel('Emissive')}</option>
+            ) : null}
             {!hasEmissiveTexture ? <option value="">No texture</option> : null}
             {emissiveTextureState.originalLabel ? (
               <option value="original">Original: {emissiveTextureState.originalLabel}</option>
@@ -1754,7 +1896,7 @@ function EmissionSection({
           <button
             type="button"
             className="material-asset-control__button"
-            disabled={!hasEmissiveTexture}
+            disabled={!hasEmissiveTexture || isEmissiveOverriddenByFlipbook}
             onClick={() => emissiveInputRef.current?.click()}
           >
             {isLoadingTexture ? 'Loading' : 'Replace'}
@@ -1853,7 +1995,13 @@ function EmissionSection({
           max="10"
           step="0.01"
           value={material.emissiveIntensity ?? 1}
-          onInput={(event) => updateMaterial(materialId, { emissiveIntensity: Number(event.currentTarget.value) })}
+          onInput={(event) => {
+            beginInspectorGesture(emissiveSliderGestureActiveRef, beginHistoryGesture)
+            updateMaterial(materialId, { emissiveIntensity: Number(event.currentTarget.value) })
+          }}
+          onPointerUp={() => endInspectorGesture(emissiveSliderGestureActiveRef, endHistoryGesture)}
+          onPointerCancel={() => endInspectorGesture(emissiveSliderGestureActiveRef, endHistoryGesture)}
+          onBlur={() => endInspectorGesture(emissiveSliderGestureActiveRef, endHistoryGesture)}
         />
       </label>
     </SectionPanel>

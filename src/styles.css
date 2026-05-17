@@ -1017,6 +1017,11 @@ button {
   background: rgba(8, 10, 13, 0.94);
 }
 
+.outliner-panel.is-collapsed {
+  min-height: 0;
+  max-height: none;
+}
+
 .outliner-header {
   position: sticky;
   top: 0;
@@ -1037,6 +1042,51 @@ button {
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
 }
 
+.outliner-panel__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outliner-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(214, 229, 238, 0.76);
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    opacity 120ms ease;
+}
+
+.outliner-collapse:hover {
+  color: rgba(236, 243, 247, 0.94);
+}
+
+.outliner-collapse__icon {
+  width: 12px;
+  height: 12px;
+  transition: transform 120ms ease;
+}
+
+.outliner-collapse__icon path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.outliner-collapse__icon.is-collapsed {
+  transform: rotate(90deg);
+}
+
 .settings-container {
   display: none;
 }
@@ -1050,9 +1100,22 @@ button {
   flex-direction: column;
 }
 
+.settings-panel__header {
+  list-style: none;
+  padding: 7px 10px 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(227, 238, 243, 0.8);
+  border-bottom: 1px solid rgba(165, 197, 216, 0.07);
+}
+
 .settings-panel__tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4px;
   padding: 8px 8px 7px;
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
@@ -1107,12 +1170,34 @@ button {
   display: flex;
   gap: 4px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .fx-buttons-row .tool-button.is-active {
   border-color: rgba(117, 185, 220, 0.24);
   background: rgba(73, 118, 144, 0.18);
   color: rgba(239, 245, 248, 0.92);
+}
+
+.sidebar-anim-buttons-row .effect-create-button {
+  width: 83.8235294118px;
+  min-width: 83.8235294118px;
+  max-width: 83.8235294118px;
+}
+
+.sidebar-anim-axis-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.left-note {
+  margin: -2px 0 12px;
+  color: rgba(170, 187, 197, 0.7);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.material-effects-list__row.is-selected {
+  background: rgba(111, 186, 226, 0.055);
 }
 
 .light-type-grid {

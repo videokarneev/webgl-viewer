@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
-import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
+import { downloadPublishedScene } from '../features/publish/buildPublishedScene'
 import { useEditorStore } from '../store/editorStore'
 
 function createObjectUrl(file: File) {
@@ -29,6 +29,21 @@ export function TopBar() {
   const setStatus = useEditorStore((state) => state.setStatus)
   const glbInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handlePublishScene = () => {
+    try {
+      const warnings = downloadPublishedScene()
+      if (warnings.length) {
+        setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Scene JSON published.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to publish scene JSON.')
+    }
+  }
 
   const objectCount = useMemo(
     () => Object.values(sceneGraph).filter((node) => node.type !== 'material').length,
@@ -139,9 +154,9 @@ export function TopBar() {
             <span className="tool-button__glyph">LOAD</span>
             <span className="tool-button__label">config</span>
           </button>
-          <button type="button" className="tool-button" onClick={() => downloadSceneConfig()}>
-            <span className="tool-button__glyph">SAVE</span>
-            <span className="tool-button__label">Config</span>
+          <button type="button" className="tool-button" onClick={handlePublishScene}>
+            <span className="tool-button__glyph">PUB</span>
+            <span className="tool-button__label">Publish</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>

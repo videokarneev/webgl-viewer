@@ -12,6 +12,7 @@ import {
   useEditorStore,
 } from '../store/editorStore'
 import { MaterialEffectController } from './MaterialEffectController'
+import { SceneAnimationController } from './SceneAnimationController'
 import { TransformToolbar } from './TransformToolbar'
 import { ViewportHud } from './ViewportHud'
 import { FlightController } from './viewport/FlightController'
@@ -1106,6 +1107,7 @@ function ViewportScene({
         <AnchorHandles />
         <TransformGizmo onDraggingChange={onTransformDraggingChange} />
         <MaterialEffectController />
+        <SceneAnimationController />
         {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (

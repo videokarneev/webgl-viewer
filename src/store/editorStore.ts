@@ -11,6 +11,8 @@ export type MeasurementUnit = 'cm' | 'm'
 export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
 export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap' | 'aoMap' | 'emissiveMap' | 'alphaMap' | 'bumpMap' | 'displacementMap' | 'specularMap'
 export type MaterialTextureSource = 'original' | 'custom'
+export type RotateAnimationPivot = 'pivot' | 'gizmo'
+export type RotateAnimationAxis = 'x' | 'y' | 'z'
 
 export interface MaterialTextureSlotState {
   originalLabel: string | null
@@ -270,6 +272,30 @@ export interface AssetRequest {
   nonce: number
 }
 
+export interface RotateAnimationState {
+  isAdded: boolean
+  enabled: boolean
+  play: boolean
+  loop: boolean
+  progress: number
+  targetObjectId: string | null
+  pivot: RotateAnimationPivot
+  axis: RotateAnimationAxis
+  speed: number
+}
+
+export const DEFAULT_ROTATE_ANIMATION: RotateAnimationState = {
+  isAdded: false,
+  enabled: true,
+  play: false,
+  loop: true,
+  progress: 0,
+  targetObjectId: null,
+  pivot: 'pivot',
+  axis: 'y',
+  speed: 45,
+}
+
 export interface EnvironmentRequest extends AssetRequest {
   kind: 'hdri' | 'panorama' | 'image' | 'background'
 }
@@ -340,6 +366,7 @@ interface HistorySnapshot {
   backgroundColor: string
   backgroundRotation: number
   extraLights: ExtraLightState[]
+  rotateAnimation: RotateAnimationState
 }
 
 interface HistoryState {
@@ -379,6 +406,7 @@ interface EditorState {
   viewer: ViewerState
   assets: AssetSourceState
   extraLights: ExtraLightState[]
+  rotateAnimation: RotateAnimationState
   status: string
   runtimeTextures: RuntimeTextureState
   runtime: RuntimeRegistryState
@@ -437,6 +465,9 @@ interface EditorState {
   addExtraLight: (type?: ExtraLightType) => void
   removeExtraLight: (id?: string) => void
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
+  addRotateAnimation: (targetObjectId: string | null) => void
+  updateRotateAnimation: (patch: Partial<RotateAnimationState>) => void
+  removeRotateAnimation: () => void
   setStatus: (status: string) => void
   registerObjectRef: (id: string, object: THREE.Object3D | null) => void
   registerMaterialRef: (id: string, material: THREE.Material | null) => void
@@ -572,6 +603,10 @@ function cloneExtraLightsState(extraLights: ExtraLightState[]) {
   }))
 }
 
+function cloneRotateAnimationState(rotateAnimation: RotateAnimationState): RotateAnimationState {
+  return { ...rotateAnimation }
+}
+
 function cloneViewerState(viewer: ViewerState): ViewerState {
   return {
     ...viewer,
@@ -603,6 +638,7 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     backgroundColor: state.backgroundColor,
     backgroundRotation: state.backgroundRotation,
     extraLights: cloneExtraLightsState(state.extraLights),
+    rotateAnimation: cloneRotateAnimationState(state.rotateAnimation),
   }
 }
 
@@ -930,6 +966,9 @@ function buildDeletePatch(state: EditorState, id: string) {
     : state.loadedModels
   const nextPrimaryRootId = isDeletingPrimaryRoot ? nextRootNodeIds[nextRootNodeIds.length - 1] ?? null : state.rootNodeId
   const nextLoadedFileName = isDeletingPrimaryRoot ? nextLoadedModels[nextLoadedModels.length - 1]?.label ?? null : state.loadedFileName
+  const rotateAnimationTargetWasRemoved =
+    state.rotateAnimation.targetObjectId === id ||
+    (state.rotateAnimation.targetObjectId ? idsToRemove.has(state.rotateAnimation.targetObjectId) : false)
 
   return {
     sceneGraph,
@@ -956,6 +995,12 @@ function buildDeletePatch(state: EditorState, id: string) {
       selectedObjectWasRemoved || selectedMaterialWasRemoved
         ? null
         : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+    rotateAnimation: rotateAnimationTargetWasRemoved
+      ? {
+          ...DEFAULT_ROTATE_ANIMATION,
+          enabled: false,
+        }
+      : state.rotateAnimation,
   }
 }
 
@@ -1057,6 +1102,7 @@ export const useEditorStore = create<EditorState>((set) => ({
     fileSize: null,
   },
   extraLights: [],
+  rotateAnimation: DEFAULT_ROTATE_ANIMATION,
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
   runtimeTextures: {
     atlasTexture: null,
@@ -1148,6 +1194,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedObjectId: nextSelectedObjectId,
         selectedAnchorIndex: null,
         selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
+        rotateAnimation: DEFAULT_ROTATE_ANIMATION,
         history: clearHistory(),
       }
     }),
@@ -1298,13 +1345,13 @@ export const useEditorStore = create<EditorState>((set) => ({
             environmentOverrideId: null,
             environmentRotation: 0,
             useSystemMaterial: false,
-            color: '#ffffff',
-            emissive: '#000000',
-            metalness: 0,
-            roughness: 1,
-            envMapIntensity: 1,
-            emissiveIntensity: 1,
-            clearcoat: 0,
+          color: '#ffffff',
+          emissive: '#000000',
+          metalness: 0,
+          roughness: 1,
+          envMapIntensity: 1,
+          emissiveIntensity: 1,
+          clearcoat: 0,
             hasMaps: {
               baseColor: false,
               emissive: false,
@@ -1374,13 +1421,13 @@ export const useEditorStore = create<EditorState>((set) => ({
             environmentOverrideId: null,
             environmentRotation: 0,
             useSystemMaterial: false,
-            color: '#ffffff',
-            emissive: '#000000',
-            metalness: 0,
-            roughness: 1,
-            envMapIntensity: 1,
-            emissiveIntensity: 1,
-            clearcoat: 0,
+          color: '#ffffff',
+          emissive: '#000000',
+          metalness: 0,
+          roughness: 1,
+          envMapIntensity: 1,
+          emissiveIntensity: 1,
+          clearcoat: 0,
             hasMaps: {
               baseColor: false,
               emissive: false,
@@ -1670,6 +1717,13 @@ export const useEditorStore = create<EditorState>((set) => ({
           state.selectedObjectId === targetId
             ? null
             : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+        rotateAnimation:
+          state.rotateAnimation.targetObjectId === targetId
+            ? {
+                ...DEFAULT_ROTATE_ANIMATION,
+                enabled: false,
+              }
+            : state.rotateAnimation,
         history: clearHistory(),
       }
     }),
@@ -1706,6 +1760,29 @@ export const useEditorStore = create<EditorState>((set) => ({
         },
       })
     }),
+  addRotateAnimation: (targetObjectId) =>
+    set(() => ({
+      rotateAnimation: {
+        ...DEFAULT_ROTATE_ANIMATION,
+        isAdded: true,
+        enabled: true,
+        targetObjectId,
+      },
+    })),
+  updateRotateAnimation: (patch) =>
+    set((state) => ({
+      rotateAnimation: {
+        ...state.rotateAnimation,
+        ...patch,
+      },
+    })),
+  removeRotateAnimation: () =>
+    set(() => ({
+      rotateAnimation: {
+        ...DEFAULT_ROTATE_ANIMATION,
+        enabled: false,
+      },
+    })),
   setStatus: (status) => set({ status }),
   registerObjectRef: (id, object) =>
     set((state) => {
@@ -1962,6 +2039,7 @@ export const useEditorStore = create<EditorState>((set) => ({
           fileSize: null,
         },
         extraLights: [],
+        rotateAnimation: DEFAULT_ROTATE_ANIMATION,
         runtimeTextures: {
           atlasTexture: null,
           atlasFrameTexture: null,
@@ -2053,6 +2131,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundColor: previous.backgroundColor,
         backgroundRotation: previous.backgroundRotation,
         extraLights: cloneExtraLightsState(previous.extraLights),
+        rotateAnimation: cloneRotateAnimationState(previous.rotateAnimation),
         history: {
           past: state.history.past.slice(0, -1),
           future: [current, ...state.history.future].slice(0, HISTORY_LIMIT),
@@ -2086,6 +2165,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundColor: next.backgroundColor,
         backgroundRotation: next.backgroundRotation,
         extraLights: cloneExtraLightsState(next.extraLights),
+        rotateAnimation: cloneRotateAnimationState(next.rotateAnimation),
         history: {
           past: [...state.history.past, current].slice(-HISTORY_LIMIT),
           future: state.history.future.slice(1),

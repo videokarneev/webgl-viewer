@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
-import { ensureAtlasTextureOptions } from '../features/atlas/atlasMaterialPatch'
+import { ensureAtlasTextureOptions } from '../features/atlas/atlasTextureOptions'
 import { buildSceneGraph } from '../features/scene/buildSceneGraph'
 import { loadGltf, loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { useEditorStore } from '../store/editorStore'

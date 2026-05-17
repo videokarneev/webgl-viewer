@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useEditorStore } from '../../../store/editorStore'
-import { ensureAtlasTextureOptions } from '../../atlas/atlasMaterialPatch'
+import { ensureAtlasTextureOptions } from '../../atlas/atlasTextureOptions'
 import { buildSceneGraph } from '../buildSceneGraph'
 import { loadGltf, loadHdri, loadTexture } from './shared'
 

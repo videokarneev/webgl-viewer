@@ -154,6 +154,14 @@ function ModeButton({
   )
 }
 
+function CollapseIcon({ isCollapsed }: { isCollapsed: boolean }) {
+  return (
+    <svg viewBox="0 0 12 12" className={`outliner-collapse__icon${isCollapsed ? ' is-collapsed' : ''}`} aria-hidden="true">
+      <path d="M2.5 4.25 6 7.75l3.5-3.5" />
+    </svg>
+  )
+}
+
 function RowIcon({ kind }: { kind: OutlinerEntry['kind'] | 'root' }) {
   if (kind === 'root') {
     return <FileIcon />
@@ -206,6 +214,7 @@ export function Outliner({
 
   const [search, setSearch] = useState('')
   const [internalViewMode, setInternalViewMode] = useState<ViewMode>('layers')
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false)
   const [collapsedRootsByMode, setCollapsedRootsByMode] = useState<Record<RootViewMode, Record<string, boolean>>>({
     layers: {},
     meshes: {},
@@ -552,45 +561,59 @@ export function Outliner({
   }
 
   return (
-    <section className="outliner-panel">
+    <section className={`outliner-panel${isPanelCollapsed ? ' is-collapsed' : ''}`}>
       <div className="outliner-header">
         <div className="outliner-panel__header">
           <span>Outliner</span>
-          <span className="left-accordion__meta">Scene Tree</span>
-        </div>
-        <div className="search-container">
-          <div className="outliner-search">
-            <input
-              type="search"
-              placeholder="Search objects or materials"
-              value={search}
-              onChange={(event) => setSearch(event.currentTarget.value)}
-            />
-            {search ? (
-              <button type="button" className="search-clear" onClick={() => setSearch('')}>
-                <span>x</span>
-              </button>
-            ) : null}
-          </div>
-          <div className="outliner-filters" aria-label="Outliner display mode">
-            <ModeButton active={resolvedViewMode === 'layers'} title="Layers" onClick={() => setResolvedViewMode('layers')}>
-              <LayersIcon />
-            </ModeButton>
-            <ModeButton active={resolvedViewMode === 'meshes'} title="Geometry" onClick={() => setResolvedViewMode('meshes')}>
-              <CubeIcon />
-            </ModeButton>
-            <ModeButton active={resolvedViewMode === 'materials'} title="Materials" onClick={() => setResolvedViewMode('materials')}>
-              <SphereIcon />
-            </ModeButton>
-            <ModeButton active={resolvedViewMode === 'lights'} title="Lights" onClick={() => setResolvedViewMode('lights')}>
-              <LightIcon />
-            </ModeButton>
-            <ModeButton active={resolvedViewMode === 'effects'} title="Effects" onClick={() => setResolvedViewMode('effects')}>
-              <FxIcon />
-            </ModeButton>
+          <div className="outliner-panel__header-actions">
+            <span className="left-accordion__meta">Scene Tree</span>
+            <button
+              type="button"
+              className="outliner-collapse"
+              aria-label={isPanelCollapsed ? 'Expand outliner' : 'Collapse outliner'}
+              title={isPanelCollapsed ? 'Expand outliner' : 'Collapse outliner'}
+              onClick={() => setIsPanelCollapsed((current) => !current)}
+            >
+              <CollapseIcon isCollapsed={isPanelCollapsed} />
+            </button>
           </div>
         </div>
+        {!isPanelCollapsed ? (
+          <div className="search-container">
+            <div className="outliner-search">
+              <input
+                type="search"
+                placeholder="Search objects or materials"
+                value={search}
+                onChange={(event) => setSearch(event.currentTarget.value)}
+              />
+              {search ? (
+                <button type="button" className="search-clear" onClick={() => setSearch('')}>
+                  <span>x</span>
+                </button>
+              ) : null}
+            </div>
+            <div className="outliner-filters" aria-label="Outliner display mode">
+              <ModeButton active={resolvedViewMode === 'layers'} title="Layers" onClick={() => setResolvedViewMode('layers')}>
+                <LayersIcon />
+              </ModeButton>
+              <ModeButton active={resolvedViewMode === 'meshes'} title="Geometry" onClick={() => setResolvedViewMode('meshes')}>
+                <CubeIcon />
+              </ModeButton>
+              <ModeButton active={resolvedViewMode === 'materials'} title="Materials" onClick={() => setResolvedViewMode('materials')}>
+                <SphereIcon />
+              </ModeButton>
+              <ModeButton active={resolvedViewMode === 'lights'} title="Lights" onClick={() => setResolvedViewMode('lights')}>
+                <LightIcon />
+              </ModeButton>
+              <ModeButton active={resolvedViewMode === 'effects'} title="Effects" onClick={() => setResolvedViewMode('effects')}>
+                <FxIcon />
+              </ModeButton>
+            </div>
+          </div>
+        ) : null}
       </div>
+      {!isPanelCollapsed ? (
       <div className="tree-view outliner-list">
         {(resolvedViewMode === 'layers' || resolvedViewMode === 'meshes' || resolvedViewMode === 'materials')
           ? rootSections.map((section) => {
@@ -830,6 +853,7 @@ export function Outliner({
             ? <p className="panel-empty">No objects match the current mode.</p>
             : null}
       </div>
+      ) : null}
     </section>
   )
 }

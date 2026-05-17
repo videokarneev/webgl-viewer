@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEditorStore, type SceneGraphNode } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { downloadSceneConfig } from '../features/config/buildSceneConfig'
+import { downloadPublishedScene } from '../features/publish/buildPublishedScene'
 import { useViewportPresentation } from '../features/viewport/ViewportPresentationContext'
 import { TabbedSettingsPanel, type SettingsTab } from './TabbedSettingsPanel'
 
@@ -750,12 +750,12 @@ function TreeNode({
 function ProjectToolbar({
   onLoadModel,
   onLoadConfig,
-  onSaveConfig,
+  onPublishScene,
   onResetScene,
 }: {
   onLoadModel: () => void
   onLoadConfig: () => void
-  onSaveConfig: () => void
+  onPublishScene: () => void
   onResetScene: () => void
 }) {
   const [isResetConfirming, setIsResetConfirming] = useState(false)
@@ -796,9 +796,9 @@ function ProjectToolbar({
         <span className="tool-button__glyph">LOAD</span>
         <span className="tool-button__label">config</span>
       </button>
-      <button type="button" className="tool-button tool-button--secondary" onClick={onSaveConfig}>
-        <span className="tool-button__glyph">SAVE</span>
-        <span className="tool-button__label">Config</span>
+      <button type="button" className="tool-button tool-button--secondary" onClick={onPublishScene}>
+        <span className="tool-button__glyph">PUB</span>
+        <span className="tool-button__label">Publish</span>
       </button>
       <button
         type="button"
@@ -930,13 +930,18 @@ export function SceneManager() {
     setStatus('Background cleared.')
   }
 
-  const handleDownloadConfig = () => {
+  const handlePublishScene = () => {
     try {
-      downloadSceneConfig()
-      setStatus('Scene config exported.')
+      const warnings = downloadPublishedScene()
+      if (warnings.length) {
+        setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Scene JSON published.')
     } catch (error) {
       console.error(error)
-      setStatus('Failed to export config.')
+      setStatus('Failed to publish scene JSON.')
     }
   }
 
@@ -1033,7 +1038,7 @@ export function SceneManager() {
       <ProjectToolbar
         onLoadModel={() => modelInputRef.current?.click()}
         onLoadConfig={() => configInputRef.current?.click()}
-        onSaveConfig={handleDownloadConfig}
+        onPublishScene={handlePublishScene}
         onResetScene={requestSceneReset}
       />
 

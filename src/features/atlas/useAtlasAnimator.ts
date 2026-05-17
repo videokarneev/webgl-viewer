@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useEditorStore } from '../../store/editorStore'
-import { ensureFrameTextureOptions } from './atlasMaterialPatch'
+import { ensureFrameTextureOptions } from './atlasTextureOptions'
 
 function getFrameCoordinates(index: number, gridX: number, gridY: number, order: 'row' | 'column') {
   const columns = Math.max(1, gridX)
@@ -63,6 +63,7 @@ export function useAtlasAnimator(materialId: string | null) {
       const sourceY = row * frameHeight
       const nextSourceX = nextColumn * frameWidth
       const nextSourceY = nextRow * frameHeight
+      const effectOpacity = Math.min(Math.max(effect.opacity, 0), 1)
 
       if (!canvasRef.current) {
         canvasRef.current = document.createElement('canvas')
@@ -87,6 +88,18 @@ export function useAtlasAnimator(materialId: string | null) {
         ctx.restore()
       }
 
+      if (effectOpacity < 0.999) {
+        const imageData = ctx.getImageData(0, 0, frameWidth, frameHeight)
+        const { data } = imageData
+        for (let index = 0; index < data.length; index += 4) {
+          data[index] = Math.round(data[index] * effectOpacity)
+          data[index + 1] = Math.round(data[index + 1] * effectOpacity)
+          data[index + 2] = Math.round(data[index + 2] * effectOpacity)
+          data[index + 3] = Math.round(data[index + 3] * effectOpacity)
+        }
+        ctx.putImageData(imageData, 0, 0)
+      }
+
       if (!frameTextureRef.current) {
         frameTextureRef.current = new THREE.CanvasTexture(canvas)
       }
@@ -107,7 +120,7 @@ export function useAtlasAnimator(materialId: string | null) {
     }
   }, [refresh, setAtlasFrameTexture])
 
-  useFrame((frameState, delta) => {
+  useFrame((_, delta) => {
     if (!materialId) {
       return
     }

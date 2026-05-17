@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
-import { downloadSceneConfig } from '../features/config/buildSceneConfig'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { useEditorStore, type ExtraLightState } from '../store/editorStore'
+import { downloadPublishedScene } from '../features/publish/buildPublishedScene'
+import {
+  useEditorStore,
+  type ExtraLightState,
+  type RotateAnimationAxis,
+  type RotateAnimationPivot,
+  type SceneGraphNode,
+} from '../store/editorStore'
 
-type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx'
+type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx' | 'anim'
 type OutlinerViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
 
 const TAB_LABELS: Record<SidebarTab, string> = {
@@ -12,6 +18,15 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   cam: 'CAM',
   lgt: 'LGT',
   fx: 'FX',
+  anim: 'ANIM',
+}
+
+const TAB_TITLES: Record<SidebarTab, string> = {
+  scn: 'Scene Settings',
+  cam: 'Camera Settings',
+  lgt: 'Lighting Settings',
+  fx: 'Effects Settings',
+  anim: 'Animation Settings',
 }
 
 const ambientSystemLightNodeId = 'light:ambient:system'
@@ -80,6 +95,51 @@ function LightColorIntensityControl({
       <strong className="light-intensity-row__value">{formatNumber(intensity)}</strong>
     </label>
   )
+}
+
+function EyeIcon({ isOpen }: { isOpen: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      <path
+        d="M1.25 8s2.35-3.75 6.75-3.75S14.75 8 14.75 8s-2.35 3.75-6.75 3.75S1.25 8 1.25 8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <circle cx="8" cy="8" r="2.05" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      {!isOpen ? <path d="M2.2 13.3 13.8 2.7" fill="none" stroke="currentColor" strokeWidth="1.2" /> : null}
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      <path d="M5.25 2.75h5.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M3 4.5h10" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 4.5v8h6v-8" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M6.6 6.4v4.2M9.4 6.4v4.2" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  )
+}
+
+function PlayIcon({ isPlaying }: { isPlaying: boolean }) {
+  return (
+    <svg viewBox="0 0 16 16" className="effect-row__icon" aria-hidden="true">
+      {isPlaying ? (
+        <>
+          <path d="M4.5 3.25h2.25v9.5H4.5z" fill="currentColor" />
+          <path d="M9.25 3.25h2.25v9.5H9.25z" fill="currentColor" />
+        </>
+      ) : (
+        <path d="M4.75 3.25 12 8l-7.25 4.75V3.25Z" fill="currentColor" />
+      )}
+    </svg>
+  )
+}
+
+function isAnimatableNode(node: SceneGraphNode | null | undefined) {
+  return Boolean(node && (node.type === 'scene' || node.type === 'group' || node.type === 'mesh'))
 }
 
 function ExtraLightSettings({
@@ -598,6 +658,222 @@ function FxTabContent() {
   )
 }
 
+function AnimTabContent() {
+  const rotateAnimation = useEditorStore((state) => state.rotateAnimation)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const sceneGraph = useEditorStore((state) => state.sceneGraph)
+  const addRotateAnimation = useEditorStore((state) => state.addRotateAnimation)
+  const updateRotateAnimation = useEditorStore((state) => state.updateRotateAnimation)
+  const removeRotateAnimation = useEditorStore((state) => state.removeRotateAnimation)
+  const selectedNode = selectedObjectId ? sceneGraph[selectedObjectId] ?? null : null
+  const selectedNodeIsAnimatable = isAnimatableNode(selectedNode)
+  const rotateTargetNode = rotateAnimation.targetObjectId ? sceneGraph[rotateAnimation.targetObjectId] ?? null : null
+  const rotateTargetLabel = rotateTargetNode?.label || rotateAnimation.targetObjectId || 'No target'
+  const axisOptions: RotateAnimationAxis[] = ['x', 'y', 'z']
+
+  const handleCreateRotate = () => {
+    if (!selectedObjectId || !selectedNodeIsAnimatable) {
+      return
+    }
+
+    addRotateAnimation(selectedObjectId)
+  }
+
+  const animationButtons = [
+    {
+      id: 'rotate',
+      label: 'ROTATE',
+      status: rotateAnimation.isAdded ? 'Added' : 'Create',
+      disabled: !selectedNodeIsAnimatable,
+      active: rotateAnimation.isAdded,
+      onClick: handleCreateRotate,
+      title: selectedNodeIsAnimatable ? 'Add rotate animation to selected object' : 'Select a model object first',
+    },
+    {
+      id: 'float',
+      label: 'FLOAT',
+      status: 'Soon',
+      disabled: true,
+      active: false,
+      onClick: () => {},
+      title: 'Float animation will be added later',
+    },
+    {
+      id: 'pulse',
+      label: 'PULSE',
+      status: 'Soon',
+      disabled: true,
+      active: false,
+      onClick: () => {},
+      title: 'Pulse animation will be added later',
+    },
+  ]
+
+  return (
+    <div className="settings-tab">
+      <div className="left-controls__group">
+        <span className="left-controls__label">Add Animation</span>
+        <div className="fx-buttons-row sidebar-anim-buttons-row">
+          {animationButtons.map((button) => (
+            <button
+              key={button.id}
+              type="button"
+              className={`tool-button effect-create-button${button.active ? ' is-active' : ''}`}
+              disabled={button.disabled}
+              title={button.title}
+              onClick={button.onClick}
+            >
+              <span className="tool-button__glyph">{button.label}</span>
+              <span className="tool-button__label">{button.status}</span>
+            </button>
+          ))}
+        </div>
+        {!selectedNodeIsAnimatable ? <p className="left-note">Select a mesh, group, or scene object to add rotation.</p> : null}
+
+        <div className="material-effects-list" aria-label="Animation list">
+          {rotateAnimation.isAdded ? (
+            <div className="material-effects-list__row is-selected" role="button" tabIndex={0}>
+              <span className="material-effects-list__label">Rotate Animation</span>
+              <div className="material-effects-list__actions">
+                <button
+                  type="button"
+                  className={`material-effects-list__icon-button${rotateAnimation.enabled ? ' is-active' : ''}`}
+                  aria-label={rotateAnimation.enabled ? 'Hide Rotate Animation' : 'Show Rotate Animation'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    updateRotateAnimation({
+                      enabled: !rotateAnimation.enabled,
+                      play: rotateAnimation.enabled ? false : rotateAnimation.play,
+                    })
+                  }}
+                >
+                  <EyeIcon isOpen={rotateAnimation.enabled} />
+                </button>
+                <button
+                  type="button"
+                  className="material-effects-list__icon-button"
+                  aria-label="Remove Rotate Animation"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeRotateAnimation()
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="material-effects-list__row material-effects-list__row--empty" aria-hidden="true" />
+          )}
+        </div>
+
+        {rotateAnimation.isAdded ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">Rotate Animation</p>
+            <div className="readout-row">
+              <span>Target</span>
+              <strong>{rotateTargetLabel}</strong>
+            </div>
+            <label className="left-select">
+              <span>Rotation Point</span>
+              <select
+                value={rotateAnimation.pivot}
+                onChange={(event) =>
+                  updateRotateAnimation({
+                    pivot: event.currentTarget.value as RotateAnimationPivot,
+                    play: false,
+                  })
+                }
+              >
+                <option value="pivot">PIVOT</option>
+                <option value="gizmo">GIZMO</option>
+              </select>
+            </label>
+            <div className="left-controls__stack">
+              <span className="left-controls__label">Axis</span>
+              <div className="segmented sidebar-anim-axis-row">
+                {axisOptions.map((axis) => (
+                  <button
+                    key={axis}
+                    type="button"
+                    className={`tool-button mode-button${rotateAnimation.axis === axis ? ' is-active' : ''}`}
+                    onClick={() =>
+                      updateRotateAnimation({
+                        axis,
+                        play: false,
+                      })
+                    }
+                  >
+                    {axis.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <label className="left-slider">
+              <span>Speed</span>
+              <input
+                type="range"
+                min="5"
+                max="360"
+                step="1"
+                value={rotateAnimation.speed}
+                onInput={(event) => updateRotateAnimation({ speed: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatDegrees(rotateAnimation.speed)}/s</strong>
+            </label>
+            <label className="field field--inline-range material-effect-current-frame">
+              <span>
+                Cycle <output>{Math.round(rotateAnimation.progress)}%</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={rotateAnimation.progress}
+                onInput={(event) =>
+                  updateRotateAnimation({
+                    progress: Number(event.currentTarget.value),
+                    play: false,
+                  })
+                }
+              />
+            </label>
+            <div className="material-effect-playback-row">
+              <button
+                type="button"
+                className={`tool-button material-effect-play-button${rotateAnimation.play ? ' is-active' : ''}`}
+                aria-label={rotateAnimation.play ? 'Pause rotation' : 'Play rotation'}
+                title={rotateAnimation.play ? 'Pause rotation' : 'Play rotation'}
+                disabled={!rotateAnimation.enabled || !rotateAnimation.targetObjectId}
+                onClick={() =>
+                  updateRotateAnimation({
+                    play: !rotateAnimation.play,
+                    progress:
+                      !rotateAnimation.play && !rotateAnimation.loop && rotateAnimation.progress >= 100
+                        ? 0
+                        : rotateAnimation.progress,
+                  })
+                }
+              >
+                <PlayIcon isPlaying={rotateAnimation.play} />
+              </button>
+              <label className="checkbox checkbox--bare material-effect-toggle material-effect-loop">
+                <input
+                  type="checkbox"
+                  checked={rotateAnimation.loop}
+                  onChange={(event) => updateRotateAnimation({ loop: event.currentTarget.checked })}
+                />
+                <span>Loop</span>
+              </label>
+            </div>
+          </>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export function Sidebar() {
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const materials = useEditorStore((state) => state.materials)
@@ -617,6 +893,7 @@ export function Sidebar() {
     }
     if (tab === 'fx') {
       setOutlinerViewMode('effects')
+      return
     }
   }
 
@@ -668,6 +945,21 @@ export function Sidebar() {
 
   const glbInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handlePublishScene = () => {
+    try {
+      const warnings = downloadPublishedScene()
+      if (warnings.length) {
+        setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Scene JSON published.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to publish scene JSON.')
+    }
+  }
 
   return (
     <aside className="left-panel">
@@ -725,9 +1017,9 @@ export function Sidebar() {
             <span className="tool-button__glyph">LOAD</span>
             <span className="tool-button__label">config</span>
           </button>
-          <button type="button" className="tool-button" onClick={() => downloadSceneConfig()}>
-            <span className="tool-button__glyph">SAVE</span>
-            <span className="tool-button__label">Config</span>
+          <button type="button" className="tool-button" onClick={handlePublishScene}>
+            <span className="tool-button__glyph">PUB</span>
+            <span className="tool-button__label">Publish</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>
@@ -737,6 +1029,10 @@ export function Sidebar() {
         <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">
+          <div className="settings-panel__header">
+            <span>Settings</span>
+            <span className="left-accordion__meta">{TAB_TITLES[activeTab]}</span>
+          </div>
           <div className="settings-panel__tabs">
             {(Object.keys(TAB_LABELS) as SidebarTab[]).map((tab) => (
               <button
@@ -754,6 +1050,7 @@ export function Sidebar() {
             {activeTab === 'cam' ? <CameraTabContent /> : null}
             {activeTab === 'lgt' ? <LightTabContent /> : null}
             {activeTab === 'fx' ? <FxTabContent /> : null}
+            {activeTab === 'anim' ? <AnimTabContent /> : null}
           </div>
         </section>
       </div>
