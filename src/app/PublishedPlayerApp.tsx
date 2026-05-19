@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
 import { TransparentCanvasDiagnostic } from '../components/TransparentCanvasDiagnostic'
+import { TransparentDomDiagnostic } from '../components/TransparentDomDiagnostic'
 import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
 import { TransparentRawThreeDiagnostic } from '../components/TransparentRawThreeDiagnostic'
 import { TransparentRawWebGlDiagnostic } from '../components/TransparentRawWebGlDiagnostic'
@@ -18,6 +19,10 @@ function isTransparentPublishedPlayer() {
 
 function isTransparentCanvasDiagnostic() {
   return new URL(window.location.href).searchParams.get('diag') === 'canvas'
+}
+
+function isTransparentDomDiagnostic() {
+  return new URL(window.location.href).searchParams.get('diag') === 'dom'
 }
 
 function isTransparentRawThreeDiagnostic() {
@@ -541,12 +546,13 @@ export function PublishedPlayerApp() {
   const [error, setError] = useState<string | null>(null)
   const transparentBackground = isTransparentPublishedPlayer()
   const transparentCanvasDiagnostic = isTransparentCanvasDiagnostic()
+  const transparentDomDiagnostic = isTransparentDomDiagnostic()
   const transparentRawThreeDiagnostic = isTransparentRawThreeDiagnostic()
   const transparentRawWebGlDiagnostic = isTransparentRawWebGlDiagnostic()
   const backgroundOverride = getPublishedPlayerBackgroundOverride()
 
   useEffect(() => {
-    if (transparentCanvasDiagnostic || transparentRawThreeDiagnostic || transparentRawWebGlDiagnostic) {
+    if (transparentCanvasDiagnostic || transparentDomDiagnostic || transparentRawThreeDiagnostic || transparentRawWebGlDiagnostic) {
       requestSceneReset()
       return
     }
@@ -560,7 +566,7 @@ export function PublishedPlayerApp() {
         console.error(loadError)
         setError(loadError instanceof Error ? loadError.message : 'Failed to load published scene.')
       })
-  }, [requestSceneReset, transparentCanvasDiagnostic, transparentRawThreeDiagnostic, transparentRawWebGlDiagnostic])
+  }, [requestSceneReset, transparentCanvasDiagnostic, transparentDomDiagnostic, transparentRawThreeDiagnostic, transparentRawWebGlDiagnostic])
 
   useEffect(() => {
     const rootElement = document.documentElement
@@ -603,6 +609,10 @@ export function PublishedPlayerApp() {
         <TransparentCanvasDiagnostic />
       </main>
     )
+  }
+
+  if (transparentDomDiagnostic) {
+    return <TransparentDomDiagnostic />
   }
 
   if (transparentRawThreeDiagnostic) {
