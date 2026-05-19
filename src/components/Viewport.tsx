@@ -536,7 +536,7 @@ function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitContr
   return <ViewerSync controlsRef={controlsRef} />
 }
 
-function RendererBridge() {
+function RendererBridge({ transparentBackground = false }: { transparentBackground?: boolean }) {
   const { gl } = useThree()
   const exposure = useEditorStore((state) => state.viewer.exposure)
 
@@ -544,7 +544,8 @@ function RendererBridge() {
     gl.outputColorSpace = THREE.SRGBColorSpace
     gl.toneMapping = THREE.ACESFilmicToneMapping
     gl.toneMappingExposure = exposure
-  }, [exposure, gl])
+    gl.setClearColor(0x000000, transparentBackground ? 0 : 1)
+  }, [exposure, gl, transparentBackground])
 
   return null
 }
@@ -1059,6 +1060,7 @@ function ViewportScene({
   transformDragging,
   allowSelection,
   autoFrameOnLoad,
+  transparentBackground,
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
@@ -1066,6 +1068,7 @@ function ViewportScene({
   transformDragging: boolean
   allowSelection: boolean
   autoFrameOnLoad: boolean
+  transparentBackground: boolean
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const { camera, size } = useThree()
@@ -1147,7 +1150,7 @@ function ViewportScene({
 
   return (
     <>
-      <RendererBridge />
+      <RendererBridge transparentBackground={transparentBackground} />
       <CameraBridge controlsRef={controlsRef} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
@@ -1487,6 +1490,7 @@ export function Viewport({
               autoFrameOnLoad={autoFrameOnLoad}
               onStats={setViewportMetrics}
               onTransformDraggingChange={setIsTransformDragging}
+              transparentBackground={transparentBackground}
               transformDragging={isTransformDragging}
               registerResetCamera={(handler) => {
                 resetCameraRef.current = handler
@@ -1518,6 +1522,7 @@ export function Viewport({
             autoFrameOnLoad={autoFrameOnLoad}
             onStats={setViewportMetrics}
             onTransformDraggingChange={setIsTransformDragging}
+            transparentBackground={transparentBackground}
             transformDragging={isTransformDragging}
             registerResetCamera={(handler) => {
               resetCameraRef.current = handler
