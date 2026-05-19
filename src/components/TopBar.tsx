@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
 import { downloadPublishedScene, openPublishedScenePreview } from '../features/publish/buildPublishedScene'
+import { exportWebPackage } from '../features/publish/exportWebPackage'
 import { useEditorStore } from '../store/editorStore'
 
 function createObjectUrl(file: File) {
@@ -57,6 +58,21 @@ export function TopBar() {
     } catch (error) {
       console.error(error)
       setStatus('Failed to open published preview.')
+    }
+  }
+
+  const handleExportWebPackage = async () => {
+    try {
+      const { warnings } = await exportWebPackage()
+      if (warnings.length) {
+        setStatus(`Web package exported with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Web package exported.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to export web package.')
     }
   }
 
@@ -176,6 +192,10 @@ export function TopBar() {
           <button type="button" className="tool-button" onClick={handleRunPublishedScene}>
             <span className="tool-button__glyph">RUN</span>
             <span className="tool-button__label">Local</span>
+          </button>
+          <button type="button" className="tool-button" onClick={() => void handleExportWebPackage()}>
+            <span className="tool-button__glyph">WEB</span>
+            <span className="tool-button__label">Package</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>

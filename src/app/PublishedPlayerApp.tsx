@@ -104,7 +104,6 @@ function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const materials = useEditorStore((state) => state.materials)
-  const modelRequestNonce = useEditorStore((state) => state.modelRequest?.nonce ?? null)
   const loadedModelCount = useEditorStore((state) => state.loadedModels.length)
   const requestedRef = useRef(false)
   const appliedRef = useRef(false)
@@ -214,7 +213,7 @@ function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
     requestedRef.current = true
     setStatus('Loading published scene...')
 
-    const primaryModel = scene.models[0]
+    const primaryModel = scene.model
     if (primaryModel?.assetUrl) {
       requestModelLoad({
         url: primaryModel.assetUrl,
@@ -262,7 +261,7 @@ function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
       return
     }
 
-    if (scene.models.length && loadedModelCount === 0) {
+    if (scene.model?.assetUrl && loadedModelCount === 0) {
       return
     }
 

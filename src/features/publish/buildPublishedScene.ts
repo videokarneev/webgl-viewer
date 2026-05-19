@@ -4,7 +4,7 @@ import { getPublishNodeId } from './publishNodeIds'
 type PublishedTextureSource = 'none' | 'original' | 'custom' | 'flipbook'
 
 export interface PublishedSceneV2 {
-  version: 2
+  version: 3
   scene: {
     background: {
       mode: string
@@ -84,7 +84,7 @@ export interface PublishedSceneV2 {
       targetPosition: [number, number, number]
     }>
   }
-  models: Array<{
+  model: {
     id: string
     assetLabel: string | null
     assetUrl: string | null
@@ -94,10 +94,9 @@ export interface PublishedSceneV2 {
       rotation: [number, number, number]
       scale: [number, number, number]
     }
-  }>
+  } | null
   objects: Array<{
     id: string
-    nodeId: string
     parentId: string | null
     type: SceneGraphNode['type']
     label: string
@@ -110,7 +109,6 @@ export interface PublishedSceneV2 {
   }>
   materials: Array<{
     id: string
-    nodeId: string
     name: string
     type: string
     useSystemMaterial: boolean
@@ -150,7 +148,6 @@ export interface PublishedSceneV2 {
         currentFrame: number
         opacity: number
         frameBlend: boolean
-        playOnLoad: boolean
         loop: boolean
         uvChannel: string
         wrapMode: string
@@ -167,7 +164,6 @@ export interface PublishedSceneV2 {
     type: 'rotate'
     targetObjectId: string
     enabled: boolean
-    playOnLoad: boolean
     loop: boolean
     pivot: string
     axis: string
@@ -191,26 +187,22 @@ function buildPublishedSceneInternal() {
   const warnings: string[] = []
   const nodeIdCache = new Map<string, string>()
 
-  const models = state.loadedModels
-    .map((entry) => {
-      const objectState = state.objects[entry.rootNodeId]
-      if (!objectState) {
-        return null
-      }
-
-      return {
-        id: getPublishNodeId(entry.rootNodeId, state.sceneGraph, nodeIdCache),
-        assetLabel: entry.label ?? null,
-        assetUrl: state.assets.modelUrl ?? null,
-        visible: objectState.visible,
-        transform: {
-          position: [...objectState.position] as [number, number, number],
-          rotation: [...objectState.rotation] as [number, number, number],
-          scale: [...objectState.scale] as [number, number, number],
-        },
-      }
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+  const primaryLoadedModel = state.loadedModels[0] ?? null
+  const primaryModelObjectState = primaryLoadedModel ? state.objects[primaryLoadedModel.rootNodeId] : null
+  const model =
+    primaryLoadedModel && primaryModelObjectState
+      ? {
+          id: getPublishNodeId(primaryLoadedModel.rootNodeId, state.sceneGraph, nodeIdCache),
+          assetLabel: primaryLoadedModel.label ?? null,
+          assetUrl: state.assets.modelUrl ?? null,
+          visible: primaryModelObjectState.visible,
+          transform: {
+            position: [...primaryModelObjectState.position] as [number, number, number],
+            rotation: [...primaryModelObjectState.rotation] as [number, number, number],
+            scale: [...primaryModelObjectState.scale] as [number, number, number],
+          },
+        }
+      : null
 
   const objects = Object.entries(state.sceneGraph)
     .filter(([, node]) => node.type !== 'material')
@@ -218,7 +210,6 @@ function buildPublishedSceneInternal() {
       const objectState = state.objects[nodeId] ?? null
       return {
         id: getPublishNodeId(nodeId, state.sceneGraph, nodeIdCache),
-        nodeId,
         parentId: node.parentId ? getPublishNodeId(node.parentId, state.sceneGraph, nodeIdCache) : null,
         type: node.type,
         label: node.label,
@@ -283,7 +274,6 @@ function buildPublishedSceneInternal() {
 
     return {
       id: getPublishNodeId(material.id, state.sceneGraph, nodeIdCache),
-      nodeId: material.id,
       name: material.name,
       type: material.type,
       useSystemMaterial: Boolean(material.useSystemMaterial),
@@ -311,7 +301,6 @@ function buildPublishedSceneInternal() {
               currentFrame: material.effect.currentFrame,
               opacity: material.effect.opacity,
               frameBlend: material.effect.frameBlend,
-              playOnLoad: material.effect.play,
               loop: material.effect.loop,
               uvChannel: material.effect.uvChannel,
               wrapMode: material.effect.wrapMode,
@@ -333,7 +322,6 @@ function buildPublishedSceneInternal() {
       type: 'rotate',
       targetObjectId: getPublishNodeId(state.rotateAnimation.targetObjectId, state.sceneGraph, nodeIdCache),
       enabled: state.rotateAnimation.enabled,
-      playOnLoad: state.rotateAnimation.play,
       loop: state.rotateAnimation.loop,
       pivot: state.rotateAnimation.pivot,
       axis: state.rotateAnimation.axis,
@@ -343,7 +331,7 @@ function buildPublishedSceneInternal() {
   }
 
   const scene: PublishedSceneV2 = {
-    version: 2,
+    version: 3,
     scene: {
       background: {
         mode: state.backgroundMode,
@@ -423,7 +411,7 @@ function buildPublishedSceneInternal() {
         targetPosition: [...light.targetPosition] as [number, number, number],
       })),
     },
-    models,
+    model,
     objects,
     materials,
     animations,
@@ -444,6 +432,12 @@ export function downloadPublishedScene(filename = 'scene.json') {
 
 export function openPublishedScenePreview() {
   const { scene, warnings } = buildPublishedSceneInternal()
+  const previewPrefix = 'published-scene:'
+  Object.keys(localStorage)
+    .filter((key) => key.startsWith(previewPrefix))
+    .forEach((key) => {
+      localStorage.removeItem(key)
+    })
   const previewKey = `published-scene:${Date.now()}`
   localStorage.setItem(previewKey, JSON.stringify(scene))
   const playerUrl = new URL(window.location.href)
