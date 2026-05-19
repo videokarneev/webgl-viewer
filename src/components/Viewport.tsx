@@ -550,6 +550,28 @@ function RendererBridge({ transparentBackground = false }: { transparentBackgrou
   return null
 }
 
+function TransparentEnvironmentBridge() {
+  const { scene } = useThree()
+  const environment = useEditorStore((state) => state.environment)
+  const currentEnvMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
+
+  useEffect(() => {
+    scene.background = null
+    scene.environment = environment.isEnvironmentEnabled ? currentEnvMap : null
+    scene.environmentIntensity = environment.intensity
+    scene.environmentRotation.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
+  }, [currentEnvMap, environment.intensity, environment.isEnvironmentEnabled, environment.rotation, scene])
+
+  useFrame(() => {
+    scene.background = null
+    scene.environment = environment.isEnvironmentEnabled ? currentEnvMap : null
+    scene.environmentIntensity = environment.intensity
+    scene.environmentRotation.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
+  })
+
+  return null
+}
+
 function SceneBridge({ allowSelection }: { allowSelection: boolean }) {
   const loadedModels = useEditorStore((state) => state.loadedModels)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
@@ -1154,7 +1176,7 @@ function ViewportScene({
       <CameraBridge controlsRef={controlsRef} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
-        <EnvironmentManager />
+        {transparentBackground ? <TransparentEnvironmentBridge /> : <EnvironmentManager />}
         <LightRig />
         <SceneBridge allowSelection={allowSelection} />
         {allowSelection ? <SelectionHighlight /> : null}
