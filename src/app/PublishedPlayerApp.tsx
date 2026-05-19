@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
+import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
 import { Viewport } from '../components/Viewport'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { buildPublishIdMap } from '../features/publish/publishNodeIds'
@@ -570,13 +571,17 @@ export function PublishedPlayerApp() {
       <AssetController />
       <BackgroundAudioController autoplay />
       <PublishedSceneController scene={scene} transparentBackground={transparentBackground} />
-      <Viewport
-        showChrome={false}
-        allowSelection={false}
-        enforceFrameAspect
-        autoFrameOnLoad={false}
-        transparentBackground={transparentBackground}
-      />
+      {transparentBackground ? (
+        <TransparentPublishedViewport />
+      ) : (
+        <Viewport
+          showChrome={false}
+          allowSelection={false}
+          enforceFrameAspect
+          autoFrameOnLoad={false}
+          transparentBackground={transparentBackground}
+        />
+      )}
     </main>
   )
 }

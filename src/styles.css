@@ -41,6 +41,13 @@ html.player-transparent #app {
   background: transparent;
 }
 
+.transparent-published-viewport,
+.transparent-published-viewport__canvas {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
 .published-player-error {
   display: flex;
   align-items: center;
