@@ -4,7 +4,6 @@ import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
 import { TransparentCanvasDiagnostic } from '../components/TransparentCanvasDiagnostic'
 import { TransparentDomDiagnostic } from '../components/TransparentDomDiagnostic'
-import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
 import { TransparentRawThreeDiagnostic } from '../components/TransparentRawThreeDiagnostic'
 import { TransparentRawWebGlDiagnostic } from '../components/TransparentRawWebGlDiagnostic'
 import { Viewport } from '../components/Viewport'
@@ -649,17 +648,13 @@ export function PublishedPlayerApp() {
       <AssetController />
       <BackgroundAudioController autoplay />
       <PublishedSceneController scene={scene} transparentBackground={transparentBackground} />
-      {transparentBackground ? (
-        <TransparentPublishedViewport />
-      ) : (
-        <Viewport
-          showChrome={false}
-          allowSelection={false}
-          enforceFrameAspect
-          autoFrameOnLoad={false}
-          transparentBackground={transparentBackground}
-        />
-      )}
+      <Viewport
+        showChrome={false}
+        allowSelection={false}
+        enforceFrameAspect
+        autoFrameOnLoad={false}
+        transparentBackground={transparentBackground}
+      />
     </main>
   )
 }
