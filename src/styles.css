@@ -96,6 +96,18 @@ html.player-transparent .transparent-dom-diagnostic {
   position: relative;
 }
 
+.transparent-published-viewport__stage {
+  position: absolute;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+.transparent-published-viewport__stage,
+.transparent-published-viewport__stage .transparent-published-viewport__canvas,
+.transparent-published-viewport__stage canvas {
+  background: transparent !important;
+}
+
 .transparent-webgl-diagnostic {
   position: absolute;
   left: 10px;
