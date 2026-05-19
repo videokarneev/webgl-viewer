@@ -3,6 +3,16 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
 
+function getBackgroundOverrideColor() {
+  const value = new URL(window.location.href).searchParams.get('bg')
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.startsWith('#') ? value : `#${value}`
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null
+}
+
 function DiagnosticTorus() {
   const meshRef = useRef<THREE.Mesh>(null)
 
@@ -24,6 +34,8 @@ function DiagnosticTorus() {
 }
 
 export function TransparentCanvasDiagnostic() {
+  const backgroundOverride = getBackgroundOverrideColor()
+
   return (
     <div className="transparent-published-viewport">
       <Canvas
@@ -41,8 +53,8 @@ export function TransparentCanvasDiagnostic() {
         camera={{ position: [0, 0, 4.5], fov: 40, near: 0.1, far: 100 }}
         onCreated={({ gl, scene }) => {
           gl.domElement.style.background = 'transparent'
-          gl.setClearColor(0x000000, 0)
-          gl.setClearAlpha(0)
+          gl.setClearColor(new THREE.Color(backgroundOverride ?? '#000000'), backgroundOverride ? 1 : 0)
+          gl.setClearAlpha(backgroundOverride ? 1 : 0)
           scene.background = null
         }}
       >

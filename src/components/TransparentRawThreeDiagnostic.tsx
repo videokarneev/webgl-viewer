@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 
+function getBackgroundOverrideColor() {
+  const value = new URL(window.location.href).searchParams.get('bg')
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.startsWith('#') ? value : `#${value}`
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null
+}
+
 export function TransparentRawThreeDiagnostic() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -17,8 +27,9 @@ export function TransparentRawThreeDiagnostic() {
       premultipliedAlpha: true,
     })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-    renderer.setClearColor(0x000000, 0)
-    renderer.setClearAlpha(0)
+    const backgroundOverride = getBackgroundOverrideColor()
+    renderer.setClearColor(new THREE.Color(backgroundOverride ?? '#000000'), backgroundOverride ? 1 : 0)
+    renderer.setClearAlpha(backgroundOverride ? 1 : 0)
 
     const scene = new THREE.Scene()
     scene.background = null

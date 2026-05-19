@@ -5,6 +5,7 @@ import { BackgroundAudioController } from '../components/BackgroundAudioControll
 import { TransparentCanvasDiagnostic } from '../components/TransparentCanvasDiagnostic'
 import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
 import { TransparentRawThreeDiagnostic } from '../components/TransparentRawThreeDiagnostic'
+import { TransparentRawWebGlDiagnostic } from '../components/TransparentRawWebGlDiagnostic'
 import { Viewport } from '../components/Viewport'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { buildPublishIdMap } from '../features/publish/publishNodeIds'
@@ -21,6 +22,20 @@ function isTransparentCanvasDiagnostic() {
 
 function isTransparentRawThreeDiagnostic() {
   return new URL(window.location.href).searchParams.get('diag') === 'rawthree'
+}
+
+function isTransparentRawWebGlDiagnostic() {
+  return new URL(window.location.href).searchParams.get('diag') === 'webgl'
+}
+
+function getPublishedPlayerBackgroundOverride() {
+  const value = new URL(window.location.href).searchParams.get('bg')
+  if (!value) {
+    return null
+  }
+
+  const normalized = value.startsWith('#') ? value : `#${value}`
+  return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null
 }
 
 type RuntimePublishedMaterial = THREE.Material & {
@@ -527,9 +542,11 @@ export function PublishedPlayerApp() {
   const transparentBackground = isTransparentPublishedPlayer()
   const transparentCanvasDiagnostic = isTransparentCanvasDiagnostic()
   const transparentRawThreeDiagnostic = isTransparentRawThreeDiagnostic()
+  const transparentRawWebGlDiagnostic = isTransparentRawWebGlDiagnostic()
+  const backgroundOverride = getPublishedPlayerBackgroundOverride()
 
   useEffect(() => {
-    if (transparentCanvasDiagnostic || transparentRawThreeDiagnostic) {
+    if (transparentCanvasDiagnostic || transparentRawThreeDiagnostic || transparentRawWebGlDiagnostic) {
       requestSceneReset()
       return
     }
@@ -543,7 +560,7 @@ export function PublishedPlayerApp() {
         console.error(loadError)
         setError(loadError instanceof Error ? loadError.message : 'Failed to load published scene.')
       })
-  }, [requestSceneReset, transparentCanvasDiagnostic, transparentRawThreeDiagnostic])
+  }, [requestSceneReset, transparentCanvasDiagnostic, transparentRawThreeDiagnostic, transparentRawWebGlDiagnostic])
 
   useEffect(() => {
     const rootElement = document.documentElement
@@ -552,15 +569,16 @@ export function PublishedPlayerApp() {
     const previousRootBackground = rootElement.style.background
     const previousBodyBackground = bodyElement.style.background
     const previousAppBackground = appElement?.style.background ?? ''
+    const nextBackground = backgroundOverride ?? 'transparent'
 
     document.documentElement.classList.toggle('player-transparent', transparentBackground)
     document.body.classList.toggle('player-transparent', transparentBackground)
 
     if (transparentBackground) {
-      rootElement.style.background = 'transparent'
-      bodyElement.style.background = 'transparent'
+      rootElement.style.background = nextBackground
+      bodyElement.style.background = nextBackground
       if (appElement) {
-        appElement.style.background = 'transparent'
+        appElement.style.background = nextBackground
       }
     }
 
@@ -573,7 +591,7 @@ export function PublishedPlayerApp() {
         appElement.style.background = previousAppBackground
       }
     }
-  }, [transparentBackground])
+  }, [backgroundOverride, transparentBackground])
 
   if (error) {
     return <main className="published-player-error">{error}</main>
@@ -589,8 +607,22 @@ export function PublishedPlayerApp() {
 
   if (transparentRawThreeDiagnostic) {
     return (
-      <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+      <main
+        className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
+        style={backgroundOverride ? { background: backgroundOverride } : undefined}
+      >
         <TransparentRawThreeDiagnostic />
+      </main>
+    )
+  }
+
+  if (transparentRawWebGlDiagnostic) {
+    return (
+      <main
+        className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
+        style={backgroundOverride ? { background: backgroundOverride } : undefined}
+      >
+        <TransparentRawWebGlDiagnostic />
       </main>
     )
   }
@@ -600,7 +632,10 @@ export function PublishedPlayerApp() {
   }
 
   return (
-    <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+    <main
+      className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
+      style={backgroundOverride ? { background: backgroundOverride } : undefined}
+    >
       <AssetController />
       <BackgroundAudioController autoplay />
       <PublishedSceneController scene={scene} transparentBackground={transparentBackground} />
