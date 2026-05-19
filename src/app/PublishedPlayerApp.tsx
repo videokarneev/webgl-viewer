@@ -528,12 +528,32 @@ export function PublishedPlayerApp() {
   }, [requestSceneReset])
 
   useEffect(() => {
+    const rootElement = document.documentElement
+    const bodyElement = document.body
+    const appElement = document.getElementById('app')
+    const previousRootBackground = rootElement.style.background
+    const previousBodyBackground = bodyElement.style.background
+    const previousAppBackground = appElement?.style.background ?? ''
+
     document.documentElement.classList.toggle('player-transparent', transparentBackground)
     document.body.classList.toggle('player-transparent', transparentBackground)
+
+    if (transparentBackground) {
+      rootElement.style.background = 'transparent'
+      bodyElement.style.background = 'transparent'
+      if (appElement) {
+        appElement.style.background = 'transparent'
+      }
+    }
 
     return () => {
       document.documentElement.classList.remove('player-transparent')
       document.body.classList.remove('player-transparent')
+      rootElement.style.background = previousRootBackground
+      bodyElement.style.background = previousBodyBackground
+      if (appElement) {
+        appElement.style.background = previousAppBackground
+      }
     }
   }, [transparentBackground])
 

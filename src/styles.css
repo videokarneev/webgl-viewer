@@ -25,7 +25,9 @@ body {
 }
 
 html.player-transparent,
-body.player-transparent {
+html.player-transparent body,
+body.player-transparent,
+html.player-transparent #app {
   background: transparent;
 }
 
