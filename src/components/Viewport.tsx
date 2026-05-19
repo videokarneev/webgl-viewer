@@ -550,25 +550,6 @@ function RendererBridge({ transparentBackground = false }: { transparentBackgrou
   return null
 }
 
-function TransparentCanvasController() {
-  const { gl, scene } = useThree()
-
-  useEffect(() => {
-    gl.domElement.style.background = 'transparent'
-    scene.background = null
-    gl.setClearColor(0x000000, 0)
-  }, [gl, scene])
-
-  useFrame(() => {
-    scene.background = null
-    scene.backgroundBlurriness = 0
-    scene.backgroundIntensity = 1
-    gl.setClearColor(0x000000, 0)
-  }, 1000)
-
-  return null
-}
-
 function SceneBridge({ allowSelection }: { allowSelection: boolean }) {
   const loadedModels = useEditorStore((state) => state.loadedModels)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
@@ -1170,7 +1151,6 @@ function ViewportScene({
   return (
     <>
       <RendererBridge transparentBackground={transparentBackground} />
-      {transparentBackground ? <TransparentCanvasController /> : null}
       <CameraBridge controlsRef={controlsRef} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
@@ -1336,6 +1316,10 @@ export function Viewport({
       }) as CSSProperties & Record<string, string>,
     [metricTextPalette],
   )
+  const canvasStyle = useMemo(
+    () => (transparentBackground ? ({ background: 'transparent' } as CSSProperties) : undefined),
+    [transparentBackground],
+  )
 
   useEffect(() => {
     setIsTransformDragging(false)
@@ -1486,16 +1470,28 @@ export function Viewport({
       style={viewportStyle}
     >
       {enforceFrameAspect ? (
-        <div className="viewport-stage" style={frameStyle}>
+        <div
+          className={`viewport-stage${transparentBackground ? ' viewport-stage--transparent' : ''}`}
+          style={frameStyle}
+        >
           <Canvas
             className="viewport-canvas"
             dpr={[1, 2]}
-            gl={{ alpha: true, antialias: true }}
+            style={canvasStyle}
+            gl={{ alpha: true, antialias: true, premultipliedAlpha: !transparentBackground }}
             camera={{
               position: viewer.cameraPosition,
               fov: DEFAULT_VIEWER_CAMERA_FOV,
               near: 0.1,
               far: 2000,
+            }}
+            onCreated={({ gl, scene }) => {
+              if (!transparentBackground) {
+                return
+              }
+              gl.domElement.style.background = 'transparent'
+              gl.setClearColor(0x000000, 0)
+              scene.background = null
             }}
             onPointerMissed={() => {
               if (!allowSelection) {
@@ -1522,12 +1518,21 @@ export function Viewport({
         <Canvas
           className="viewport-canvas"
           dpr={[1, 2]}
-          gl={{ alpha: true, antialias: true }}
+          style={canvasStyle}
+          gl={{ alpha: true, antialias: true, premultipliedAlpha: !transparentBackground }}
           camera={{
             position: viewer.cameraPosition,
             fov: DEFAULT_VIEWER_CAMERA_FOV,
             near: 0.1,
             far: 2000,
+          }}
+          onCreated={({ gl, scene }) => {
+            if (!transparentBackground) {
+              return
+            }
+            gl.domElement.style.background = 'transparent'
+            gl.setClearColor(0x000000, 0)
+            scene.background = null
           }}
           onPointerMissed={() => {
             if (!allowSelection) {

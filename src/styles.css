@@ -196,6 +196,12 @@ input[type='range']:disabled {
   overflow: hidden;
 }
 
+.viewport-stage--transparent,
+.viewport-stage--transparent .viewport-canvas,
+.viewport-stage--transparent canvas {
+  background: transparent !important;
+}
+
 .viewport-frame-guide {
   position: absolute;
   z-index: 18;
