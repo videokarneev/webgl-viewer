@@ -15,10 +15,14 @@ export function BackgroundAudioController({ autoplay = false }: { autoplay?: boo
   const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playbackBlockedRef = useRef(false)
+  const lastSourceRef = useRef<string | null>(null)
 
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
+    audio.autoplay = autoplay
+    audio.crossOrigin = 'anonymous'
+    audio.setAttribute('playsinline', 'true')
     audioRef.current = audio
 
     return () => {
@@ -42,6 +46,7 @@ export function BackgroundAudioController({ autoplay = false }: { autoplay?: boo
     if (!shouldPlay || !backgroundAudio.previewEnabled || !backgroundAudio.assetUrl) {
       playbackBlockedRef.current = false
       audio.pause()
+      lastSourceRef.current = null
       if (!backgroundAudio.assetUrl) {
         audio.removeAttribute('src')
         audio.load()
@@ -49,7 +54,9 @@ export function BackgroundAudioController({ autoplay = false }: { autoplay?: boo
       return
     }
 
-    if (audio.src !== backgroundAudio.assetUrl) {
+    if (lastSourceRef.current !== backgroundAudio.assetUrl) {
+      lastSourceRef.current = backgroundAudio.assetUrl
+      playbackBlockedRef.current = false
       audio.src = backgroundAudio.assetUrl
       audio.load()
       setBackgroundAudio({
@@ -84,6 +91,40 @@ export function BackgroundAudioController({ autoplay = false }: { autoplay?: boo
   ])
 
   useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) {
+      return
+    }
+
+    const shouldPlay = () => (autoplay ? backgroundAudio.enabled : backgroundAudio.enabled && backgroundAudio.previewPlaying)
+    const attemptPlayback = () => {
+      if (!shouldPlay() || !backgroundAudio.previewEnabled || !backgroundAudio.assetUrl) {
+        return
+      }
+
+      tryPlayAudio(audio, () => {
+        playbackBlockedRef.current = true
+      })
+    }
+
+    const handleReady = () => {
+      attemptPlayback()
+    }
+
+    audio.addEventListener('loadedmetadata', handleReady)
+    audio.addEventListener('loadeddata', handleReady)
+    audio.addEventListener('canplay', handleReady)
+    audio.addEventListener('canplaythrough', handleReady)
+
+    return () => {
+      audio.removeEventListener('loadedmetadata', handleReady)
+      audio.removeEventListener('loadeddata', handleReady)
+      audio.removeEventListener('canplay', handleReady)
+      audio.removeEventListener('canplaythrough', handleReady)
+    }
+  }, [autoplay, backgroundAudio.assetUrl, backgroundAudio.enabled, backgroundAudio.previewEnabled, backgroundAudio.previewPlaying])
+
+  useEffect(() => {
     const retryPlayback = () => {
       if (!playbackBlockedRef.current) {
         return
@@ -103,11 +144,23 @@ export function BackgroundAudioController({ autoplay = false }: { autoplay?: boo
     }
 
     window.addEventListener('pointerdown', retryPlayback)
+    window.addEventListener('touchstart', retryPlayback, { passive: true })
+    window.addEventListener('mousedown', retryPlayback)
+    window.addEventListener('wheel', retryPlayback, { passive: true })
     window.addEventListener('keydown', retryPlayback)
+    window.addEventListener('focus', retryPlayback)
+    window.addEventListener('pageshow', retryPlayback)
+    document.addEventListener('visibilitychange', retryPlayback)
 
     return () => {
       window.removeEventListener('pointerdown', retryPlayback)
+      window.removeEventListener('touchstart', retryPlayback)
+      window.removeEventListener('mousedown', retryPlayback)
+      window.removeEventListener('wheel', retryPlayback)
       window.removeEventListener('keydown', retryPlayback)
+      window.removeEventListener('focus', retryPlayback)
+      window.removeEventListener('pageshow', retryPlayback)
+      document.removeEventListener('visibilitychange', retryPlayback)
     }
   }, [autoplay, backgroundAudio.assetUrl, backgroundAudio.enabled, backgroundAudio.previewEnabled, backgroundAudio.previewPlaying])
 
