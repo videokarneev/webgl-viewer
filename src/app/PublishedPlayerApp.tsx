@@ -184,8 +184,8 @@ function PublishedSceneController({
       kind: scene.scene.environment.kind as never,
       intensity: scene.scene.environment.intensity,
       rotation: scene.scene.environment.rotation,
-      background: scene.scene.environment.backgroundMode as never,
-      backgroundVisible: scene.scene.environment.backgroundVisible,
+      background: (transparentBackground ? 'none' : scene.scene.environment.backgroundMode) as never,
+      backgroundVisible: transparentBackground ? false : scene.scene.environment.backgroundVisible,
       backgroundIntensity: scene.scene.environment.backgroundIntensity,
       backgroundBlur: scene.scene.environment.backgroundBlur,
     })
@@ -256,7 +256,7 @@ function PublishedSceneController({
       })
     }
 
-    if (scene.scene.environment.backgroundAssetUrl) {
+    if (!transparentBackground && scene.scene.environment.backgroundAssetUrl) {
       requestEnvironmentLoad({
         url: scene.scene.environment.backgroundAssetUrl,
         label: scene.scene.environment.backgroundAssetLabel ?? 'Background',
@@ -265,7 +265,7 @@ function PublishedSceneController({
         fileSize: null,
       })
     }
-  }, [requestAtlasLoad, requestEnvironmentLoad, requestModelLoad, scene, setStatus])
+  }, [requestAtlasLoad, requestEnvironmentLoad, requestModelLoad, scene, setStatus, transparentBackground])
 
   useEffect(() => {
     if (appliedRef.current) {
