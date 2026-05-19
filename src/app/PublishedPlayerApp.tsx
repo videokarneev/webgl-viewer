@@ -4,6 +4,7 @@ import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
 import { TransparentCanvasDiagnostic } from '../components/TransparentCanvasDiagnostic'
 import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
+import { TransparentRawThreeDiagnostic } from '../components/TransparentRawThreeDiagnostic'
 import { Viewport } from '../components/Viewport'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { buildPublishIdMap } from '../features/publish/publishNodeIds'
@@ -16,6 +17,10 @@ function isTransparentPublishedPlayer() {
 
 function isTransparentCanvasDiagnostic() {
   return new URL(window.location.href).searchParams.get('diag') === 'canvas'
+}
+
+function isTransparentRawThreeDiagnostic() {
+  return new URL(window.location.href).searchParams.get('diag') === 'rawthree'
 }
 
 type RuntimePublishedMaterial = THREE.Material & {
@@ -521,9 +526,10 @@ export function PublishedPlayerApp() {
   const [error, setError] = useState<string | null>(null)
   const transparentBackground = isTransparentPublishedPlayer()
   const transparentCanvasDiagnostic = isTransparentCanvasDiagnostic()
+  const transparentRawThreeDiagnostic = isTransparentRawThreeDiagnostic()
 
   useEffect(() => {
-    if (transparentCanvasDiagnostic) {
+    if (transparentCanvasDiagnostic || transparentRawThreeDiagnostic) {
       requestSceneReset()
       return
     }
@@ -537,7 +543,7 @@ export function PublishedPlayerApp() {
         console.error(loadError)
         setError(loadError instanceof Error ? loadError.message : 'Failed to load published scene.')
       })
-  }, [requestSceneReset, transparentCanvasDiagnostic])
+  }, [requestSceneReset, transparentCanvasDiagnostic, transparentRawThreeDiagnostic])
 
   useEffect(() => {
     const rootElement = document.documentElement
@@ -577,6 +583,14 @@ export function PublishedPlayerApp() {
     return (
       <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
         <TransparentCanvasDiagnostic />
+      </main>
+    )
+  }
+
+  if (transparentRawThreeDiagnostic) {
+    return (
+      <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+        <TransparentRawThreeDiagnostic />
       </main>
     )
   }

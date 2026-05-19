@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 ## Project
 
@@ -21,329 +21,266 @@ Main entrypoints:
 - editor: `src/main.tsx` -> `src/app/App.tsx`
 - published player: `src/main.tsx` -> `src/app/PublishedPlayerApp.tsx`
 
-## What We Actually Did
+## Current Git State
 
-This branch is now focused on 5 things:
+Working tree was clean at the time of this handoff.
 
-1. local published-scene preview in a clean player mode
-2. publish JSON carrying asset URLs, not just labels
-3. frame aspect presets + viewport frame guides
-4. standard HDRI presets + cleaner material environment override flow
-5. background scene audio with editor preview + published autoplay support
+Recent commits relevant to current debugging:
 
-Recent base commits before current dirty worktree:
+- `a555ac6` Update demo-01 scene audio
+- `93dec8d` Add dedicated transparent published viewport
+- `8c642c0` Add transparent canvas diagnostic mode
+- `04fd7fa` Force alpha renderer for transparent canvases
 
-- `a0b1d63` Refine scene animation, publish JSON, and material effect runtime
-- `35e928a` Refine material effects workflow and outliner sync
-- `f1ec98c` Refine material inspector layout and scene editing workflows
-- `83b77a4` Add multi-model scene editing and anchor transform tools
+## What Is Working
 
-## Current Dirty Worktree
+### 1. Published player mode exists
 
-There are active uncommitted changes in:
-
-- `src/app/App.tsx`
-- `src/app/PublishedPlayerApp.tsx`
-- `src/main.tsx`
-- `src/store/editorStore.ts`
-- `src/components/BackgroundAudioController.tsx`
-- `src/components/Viewport.tsx`
-- `src/components/Sidebar.tsx`
-- `src/components/TopBar.tsx`
-- `src/components/Inspector.tsx`
-- `src/components/AssetController.tsx`
-- `src/components/AssetDock.tsx`
-- `src/components/Outliner.tsx`
-- `src/components/MaterialEffectController.tsx`
-- `src/features/publish/buildPublishedScene.ts`
-- `src/features/publish/publishNodeIds.ts`
-- `src/features/scene/buildSceneGraph.ts`
-- `src/features/scene/runtime/AssetController.tsx`
-- `src/features/scene/runtime/ConfigController.tsx`
-- `src/features/scene/runtime/LoadedSceneRoot.tsx`
-- `src/features/environment/standardEnvironmentPresets.ts`
-- `src/styles.css`
-- `public/textures/City_Night_Lights.hdr`
-
-## Main Features Now
-
-### 1. Published player mode exists again
-
-The app can now boot into a clean player mode from the same Vite app:
+The app can boot into a clean player mode from the same Vite app:
 
 - `src/main.tsx` checks `?player=1`
 - editor mounts `App`
 - player mounts `PublishedPlayerApp`
 
-The player route:
-
-- resets editor state
-- loads published scene JSON from `localStorage` preview key or `?scene=...`
-- loads model / atlas / environment assets from published URLs
-- applies transforms, material settings, material overrides, flipbook effect, rotate animation, lights, camera, viewer, and scene audio
-- renders without editor chrome
-- disables selection and gizmo interaction
-- enforces exported frame aspect
-
-Main files:
+Main file:
 
 - `src/app/PublishedPlayerApp.tsx`
-- `src/components/Viewport.tsx`
-- `src/features/publish/publishNodeIds.ts`
 
-### 2. `RUN Local` preview works
+### 2. Local publish preview works
 
-There is now a local preview path for published scenes:
+There is a local preview path:
 
-- `openPublishedScenePreview()` builds publish JSON
-- saves it into `localStorage`
+- `RUN Local` builds publish JSON
+- saves it to `localStorage`
 - opens a clean tab with `?player=1&preview=...`
 
-Buttons were wired in:
+### 3. Web package export exists
 
-- `src/components/Sidebar.tsx`
-- `src/components/TopBar.tsx`
+There is now a web package export flow:
 
-This is the best current verification path for publish/player behavior.
+- `WEB Package` builds a zip
+- writes `scene.json`
+- copies referenced assets into `assets/...`
+- rewrites asset URLs in `scene.json` to relative package paths
 
-### 3. Publish JSON is richer now
+Main file:
 
-`buildPublishedScene.ts` now exports actual URLs alongside labels for:
+- `src/features/publish/exportWebPackage.ts`
 
-- model
-- environment
-- background
-- material environment override
-- material custom textures
-- flipbook atlas
-- background audio
+### 4. Vercel deploy is live
 
-It also exports:
+Current deployed viewer domain:
 
-- `camera.frameAspectPreset`
-- `viewer.postEffectsEnabled` without coupling it to editor HUD visibility
-- scene audio block
+- `https://webgl-viewer-jet.vercel.app`
 
-Important file:
+Current published demo scene URL:
 
-- `src/features/publish/buildPublishedScene.ts`
+- `https://webgl-viewer-jet.vercel.app/scenes/demo-01/scene.json`
 
-### 4. Viewport framing/composition is much better
+Current player URL format:
 
-Viewer state now includes:
+- `https://webgl-viewer-jet.vercel.app/?player=1&scene=...`
+- transparent embed attempts use `transparent=1`
 
-- `frameAspectPreset`
-- `frameGuidesEnabled`
+### 5. Manual web scene update flow works
 
-Supported aspect presets:
+User now updates published web scene by replacing files in:
 
-- `1:1`
-- `3:2`
-- `2:3`
-- `16:9`
-- `9:16`
+- `public/scenes/demo-01/scene.json`
+- `public/scenes/demo-01/assets/...`
 
-Current behavior:
+Then:
 
-- editor viewport can show frame guides/masks
-- published player can hard-enforce the frame window
-- player disables auto-framing on load so it respects exported camera state
+- `git add public/scenes/demo-01`
+- `git commit -m "..."`
+- `git push origin main`
 
-Main files:
+Vercel autodeploys from `main`.
 
-- `src/store/editorStore.ts`
-- `src/components/Viewport.tsx`
-- `src/components/Sidebar.tsx`
-- `src/features/scene/runtime/ConfigController.tsx`
+### 6. Scene package / content updates work
 
-### 5. Standard HDRI presets are now formalized
+Confirmed working recently:
 
-Built-in environment presets:
+- replacing scene package in `public/scenes/demo-01`
+- republishing atlas/audio
+- player pulling updated files from Vercel
 
-- `Studio`
-- `City Night Lights`
+### 7. Previous material/runtime issues already fixed
 
-Source:
+Fixed in earlier work:
 
-- `src/features/environment/standardEnvironmentPresets.ts`
+- relative asset URLs in published `scene.json` are resolved relative to the JSON URL
+- original material textures such as `normalMap` are preserved during flipbook overrides
+- scene audio updates and playback work in published player
 
-Assets:
+## Important Current URLs
 
-- `public/textures/Studio.exr`
-- `public/textures/City_Night_Lights.hdr`
+### Live player
 
-The default environment URL now comes from the preset list instead of a hardcoded string.
+- `https://webgl-viewer-jet.vercel.app/?player=1&scene=https%3A%2F%2Fwebgl-viewer-jet.vercel.app%2Fscenes%2Fdemo-01%2Fscene.json`
 
-### 6. Material environment override flow was cleaned up
+### Live transparent player attempt
 
-The material HDRI override UI was reworked:
+- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&scene=https%3A%2F%2Fwebgl-viewer-jet.vercel.app%2Fscenes%2Fdemo-01%2Fscene.json`
 
-- native `select` instead of the older custom dropdown behavior
-- built-in HDRI presets are shown as standard options
-- scene environment label is normalized better
-- standard HDRI detection works by URL too, not only label
-- only active custom material HDRI can be deleted
-- built-in presets and scene HDRI are not deletable
+### iframe transparency diagnostic HTML
 
-Runtime side:
+- `https://webgl-viewer-jet.vercel.app/iframe-transparency-test.html`
 
-- equirectangular material env textures are PMREM-converted in runtime asset controller
-- published player can recreate material env overrides from exported asset URLs
+### R3F/WebGL transparent canvas diagnostic
 
-Main files:
+- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=canvas`
 
-- `src/components/Inspector.tsx`
-- `src/features/scene/runtime/AssetController.tsx`
-- `src/features/scene/runtime/LoadedSceneRoot.tsx`
+## The Big Unresolved Problem
 
-### 7. Background scene audio exists
+### Transparent iframe player still shows an opaque dark square
 
-A new `backgroundAudio` state block was added to the store.
+The user wants:
 
-Current capabilities:
+- black site section background from the site itself
+- only the ring rendered on top
+- embed must remain an `iframe`
 
-- audio can be added/removed at scene level
-- editor has preview play/pause and scrub state
-- volume and loop are configurable
-- player can autoplay when published scene says audio is enabled
-- blocked autoplay retries on first user interaction
+What still happens:
 
-Main files:
+- inside the `iframe`, a centered dark opaque square remains
+- the ring is rendered inside that square
+- this happens even after many transparent player changes
 
-- `src/components/BackgroundAudioController.tsx`
-- `src/components/Sidebar.tsx`
-- `src/store/editorStore.ts`
-- `src/app/PublishedPlayerApp.tsx`
+## What Was Already Tested
 
-## Important Runtime/Data Changes
+### Confirmed NOT the problem
 
-### Asset state now stores URLs and file sizes
+1. The site block / iframe container itself
 
-The store now tracks URL metadata for loaded assets:
+- diagnostic plain HTML iframe page proved full iframe transparency works
+- user tested two variants and confirmed transparency was 100%
 
-- `modelUrl`
-- `atlasUrl`
-- `reflectionsUrl`
-- `backgroundUrl`
-- file sizes where available
+2. Scene export JSON by itself
 
-Material texture slot state now also tracks:
+- issue still reproduces even outside the normal scene path
 
-- `originalUrl`
-- `customUrl`
-- `customFileSize`
+3. Bloom / postprocessing in the published scene path
 
-Material environment assets now can store:
+- transparent path was already isolated from old `Viewport` post-FX
+- the issue still remained
 
-- `assetUrl`
-- `fileSize`
+4. Regular scene background setup alone
 
-### Blob URL lifetime got safer
+- we already tried:
+  - transparent CSS for `html`, `body`, `#app`
+  - skipping scene background assets
+  - forcing `backgroundMode = none`
+  - forcing environment background off
+  - bypassing environment/background manager logic
 
-`src/components/AssetController.tsx` now tracks whether a URL is owned and should be revoked later.
+5. Old `Viewport` wrapper as the only cause
 
-This avoids revoking preview/runtime asset URLs too early and is important for:
+- a dedicated transparent published viewport path was added
+- the issue still remained
 
-- `RUN Local`
-- published player
-- user-loaded atlas / HDRI / model assets
+### Very Important Diagnostic Result
 
-### Publish IDs were extracted
+The strongest finding so far:
 
-Publish node ID generation now lives in:
-
-- `src/features/publish/publishNodeIds.ts`
-
-This is used both by:
-
-- publish export
-- published player reverse mapping back into runtime/store IDs
-
-### Extra lights can be replaced wholesale
-
-Store now has:
-
-- `replaceExtraLights()`
-
-This is used by the published player to rebuild scene lights from published JSON.
-
-## Current UX State
-
-### Player mode intentionally removes editor behavior
-
-Published player currently uses:
-
-- `showChrome={false}`
-- `allowSelection={false}`
-- `enforceFrameAspect`
-- `autoFrameOnLoad={false}`
+- `iframe-transparency-test.html` is fully transparent in the same site/embed context
+- but `?player=1&transparent=1&diag=canvas` still shows the opaque dark square
 
 This means:
 
-- no inspector/sidebar
-- no transform toolbar
-- no selection highlight
-- no anchor handles
-- no transform gizmo
-- no click-to-select on meshes
+- the browser can display a transparent iframe in that context
+- the site/container can show transparency
+- the remaining problem is inside the current WebGL/R3F canvas path or how that canvas is composited
 
-### Local preview is still not a real export package
+## Current Transparency Debugging State
 
-What works:
+### Changes already made in code
 
-- open local preview in clean tab
-- hydrate scene from publish JSON
-- use live URLs / blob URLs
-
-What is still missing:
-
-- packaging/copying assets into standalone export output
-- producing a portable self-contained published bundle
-- cleanup policy for preview `localStorage` entries
-
-## Best Files To Start From Next Time
-
-If next task is publish/player:
+Published player transparency work touched:
 
 - `src/app/PublishedPlayerApp.tsx`
-- `src/features/publish/buildPublishedScene.ts`
-- `src/features/publish/publishNodeIds.ts`
+- `src/components/TransparentPublishedViewport.tsx`
+- `src/components/TransparentCanvasDiagnostic.tsx`
+- `src/styles.css`
+
+Important things now in repo:
+
+1. `TransparentPublishedViewport`
+
+- dedicated transparent published canvas path for `transparent=1`
+- intended to bypass old `Viewport` editor/runtime scaffolding
+
+2. `TransparentCanvasDiagnostic`
+
+- minimal R3F torus render
+- no published scene loading
+- no export scene JSON dependency
+- no material runtime/state hydration complexity
+
+3. `iframe-transparency-test.html`
+
+- plain HTML/CSS diagnostic page
+- confirmed transparent in iframe
+
+### Current conclusion from diagnostics
+
+Because even `diag=canvas` still shows the dark square:
+
+- this is likely not caused by exported scene data
+- not caused by environment background wiring
+- not caused by bloom
+- not caused by the outer iframe itself
+
+The likely remaining source is one of:
+
+1. browser/WebGL canvas alpha compositing behavior in this exact R3F setup
+2. how R3F/Canvas is creating or owning the renderer/canvas
+3. some remaining opaque render target / canvas clear path despite the explicit alpha config
+
+## Files Most Relevant To Continue Transparency Debugging
+
+- `src/app/PublishedPlayerApp.tsx`
+- `src/components/TransparentPublishedViewport.tsx`
+- `src/components/TransparentCanvasDiagnostic.tsx`
+- `src/styles.css`
+
+Secondary but still relevant:
+
 - `src/components/Viewport.tsx`
-- `src/store/editorStore.ts`
-
-If next task is material HDRI:
-
-- `src/components/Inspector.tsx`
-- `src/features/environment/standardEnvironmentPresets.ts`
-- `src/features/scene/runtime/AssetController.tsx`
+- `src/components/SceneCanvas.tsx`
 - `src/features/scene/runtime/LoadedSceneRoot.tsx`
+- `src/components/viewport/EnvironmentManager.tsx`
+- `src/components/viewport/PostEffects.tsx`
 
-If next task is scene audio:
+## Good Next Steps
 
-- `src/components/BackgroundAudioController.tsx`
-- `src/components/Sidebar.tsx`
-- `src/store/editorStore.ts`
-- `src/app/PublishedPlayerApp.tsx`
+The next debugging pass should start from this exact conclusion:
 
-If next task is frame/composition UI:
+1. Do not keep blaming iframe/container/CSS alone.
+2. Do not keep blaming bloom alone.
+3. Treat this as a WebGL/R3F transparency/compositing issue because `diag=canvas` reproduces it.
 
-- `src/components/Viewport.tsx`
-- `src/components/Sidebar.tsx`
-- `src/store/editorStore.ts`
-- `src/features/scene/runtime/ConfigController.tsx`
+Most promising next moves:
 
-## Risks / Sensitive Areas
+1. inspect whether the actual canvas produced by `@react-three/fiber` is composited opaque despite `alpha: true`
+2. compare with a raw manual `THREE.WebGLRenderer` mount outside `Canvas`
+3. if needed, create a no-R3F pure Three.js transparent diagnostic route
+4. if raw Three.js is transparent but R3F is not, the problem is in the current `Canvas` stack/config
 
-The most fragile parts right now are:
+## User Workflow / Collaboration Notes
 
-1. publish/player still depend on live asset URLs rather than packaged assets
-2. material environment override logic is much cleaner, but still concentrated in `src/components/Inspector.tsx`
-3. background audio behavior depends on browser autoplay policy
-4. published player currently assumes the first published model is the primary runtime load path
-5. preview data in `localStorage` is not automatically cleaned up
+The user is now comfortable with this manual publish flow:
+
+- replace files in `public/scenes/demo-01`
+- commit/push
+- wait for Vercel
+- test on site
+
+The user specifically asked that this handoff be updated before continuing further transparency work.
 
 ## Validation
 
-Passing on current dirty worktree:
+Passing before this handoff:
 
 - `npx tsc --noEmit`
+- `npx vite build`
