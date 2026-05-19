@@ -28,6 +28,16 @@ type RuntimeMaterial = THREE.Material & {
   }
 }
 
+function ensureMaterialTextureBackup(material: RuntimeMaterial) {
+  if (!material.userData.originalTextureSlots) {
+    material.userData.originalTextureSlots = Object.fromEntries(
+      MATERIAL_TEXTURE_SLOTS.map((slot) => [slot, material[slot] ?? null]),
+    ) as Partial<Record<MaterialTextureSlot, THREE.Texture | null>>
+  }
+
+  material.userData.customTextureSlots ??= {}
+}
+
 function getSelectedTexture(
   material: RuntimeMaterial,
   textureState: {
@@ -60,6 +70,8 @@ function restoreMaterialTextureSelections(
     >
   },
 ) {
+  ensureMaterialTextureBackup(material)
+
   MATERIAL_TEXTURE_SLOTS.forEach((slot) => {
     material[slot] = getSelectedTexture(material, materialState.textureSlots[slot], slot)
   })
