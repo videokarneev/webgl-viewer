@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 function getBackgroundOverrideColor() {
   const value = new URL(window.location.href).searchParams.get('bg')
@@ -39,6 +39,7 @@ function compileShader(gl: WebGLRenderingContext, type: number, source: string) 
 
 export function TransparentRawWebGlDiagnostic() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [info, setInfo] = useState('Checking WebGL alpha...')
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -53,8 +54,11 @@ export function TransparentRawWebGlDiagnostic() {
     })
 
     if (!gl) {
+      setInfo('WebGL context unavailable.')
       return
     }
+
+    const contextAttributes = gl.getContextAttributes()
 
     const backgroundOverride = getBackgroundOverrideColor()
     const clearColor = backgroundOverride ? hexToRgb(backgroundOverride) : { r: 0, g: 0, b: 0 }
@@ -124,11 +128,27 @@ export function TransparentRawWebGlDiagnostic() {
     resizeObserver.observe(canvas)
 
     let frameId = 0
+    let didSample = false
     const tick = () => {
       gl.clearColor(clearColor.r, clearColor.g, clearColor.b, clearAlpha)
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.uniform1f(timeLocation, performance.now() * 0.001)
       gl.drawArrays(gl.TRIANGLES, 0, 3)
+
+      if (!didSample) {
+        didSample = true
+        const pixel = new Uint8Array(4)
+        gl.readPixels(2, 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+        setInfo(
+          [
+            `context alpha: ${String(contextAttributes?.alpha)}`,
+            `premultiplied: ${String(contextAttributes?.premultipliedAlpha)}`,
+            `clear alpha: ${clearAlpha}`,
+            `corner pixel rgba: ${pixel[0]},${pixel[1]},${pixel[2]},${pixel[3]}`,
+          ].join(' | '),
+        )
+      }
+
       frameId = window.requestAnimationFrame(tick)
     }
 
@@ -147,6 +167,7 @@ export function TransparentRawWebGlDiagnostic() {
   return (
     <div className="transparent-published-viewport">
       <canvas ref={canvasRef} className="transparent-published-viewport__canvas" />
+      <div className="transparent-webgl-diagnostic">{info}</div>
     </div>
   )
 }

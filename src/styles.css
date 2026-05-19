@@ -48,6 +48,23 @@ html.player-transparent #app {
   background: transparent;
 }
 
+.transparent-published-viewport {
+  position: relative;
+}
+
+.transparent-webgl-diagnostic {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font: 11px/1.4 "Consolas", monospace;
+  pointer-events: none;
+}
+
 .published-player-error {
   display: flex;
   align-items: center;
