@@ -11,7 +11,7 @@
       "kind": "hdri",
       "assetLabel": "City Night Lights",
       "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
-      "intensity": 2.4,
+      "intensity": 2,
       "rotation": 0,
       "backgroundMode": "color",
       "backgroundVisible": true,
@@ -24,14 +24,14 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -0.37912170935029854,
-      -0.5853942963156286,
-      -0.26657804279570574
+      -0.4400707437148347,
+      -0.45918020209948934,
+      -0.1014970752869199
     ],
     "target": [
-      0.01834464869083606,
-      -0.014375104465344797,
-      0.00601341967502185
+      0.0046476371663550144,
+      -0.010225676871914694,
+      0.0038730890645377685
     ],
     "focalLength": 85,
     "frameAspectPreset": "1:1",
@@ -39,9 +39,9 @@
   },
   "viewer": {
     "postEffectsEnabled": true,
-    "bloomIntensity": 0.29,
-    "bloomRadius": 0.23,
-    "bloomThreshold": 0.17,
+    "bloomIntensity": 0.95,
+    "bloomRadius": 0.32,
+    "bloomThreshold": 0.18,
     "toneMappingWhitePoint": 4,
     "toneMappingAdaptation": 1,
     "dofEnabled": false,
@@ -52,8 +52,8 @@
   "audio": {
     "isAdded": true,
     "enabled": true,
-    "assetLabel": "Howard Schore — The Theme Of The Ring.mp3",
-    "assetUrl": "assets/audio/scene-audio-howard-schore-the-theme-of-the-ring.mp3",
+    "assetLabel": "The Theme Of The Ring (short).mp3",
+    "assetUrl": "assets/audio/scene-audio-the-theme-of-the-ring-short.mp3",
     "volume": 0.03,
     "loop": true
   },
@@ -73,7 +73,7 @@
     "extra": []
   },
   "model": {
-    "id": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9",
+    "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
     "assetLabel": "ring.glb",
     "assetUrl": "assets/model/scene-model-ring.glb",
     "visible": true,
@@ -97,7 +97,7 @@
   },
   "objects": [
     {
-      "id": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9",
+      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -121,8 +121,8 @@
       }
     },
     {
-      "id": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9/node:0",
-      "parentId": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9",
+      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0",
+      "parentId": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
       "type": "mesh",
       "label": "Box001",
       "visible": true,
@@ -147,16 +147,16 @@
   ],
   "materials": [
     {
-      "id": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9/node:0/material:0",
+      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0/material:0",
       "name": "Material #43",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
       "color": "#ead659",
       "emissive": "#000000",
       "metalness": 1,
-      "roughness": 0.17,
+      "roughness": 0,
       "envMapIntensity": 1,
-      "emissiveIntensity": 3.73,
+      "emissiveIntensity": 3.35,
       "clearcoat": null,
       "environmentOverride": null,
       "textureSlots": {
@@ -167,23 +167,23 @@
         },
         "emissiveMap": {
           "source": "flipbook",
-          "label": "fire.jpg",
-          "assetUrl": "assets/atlas/1-material-43-emissivemap-fire.jpg"
+          "label": "fire2.jpg",
+          "assetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg"
         }
       },
       "effects": {
         "flipbook": {
           "enabled": true,
-          "atlasAssetLabel": "fire.jpg",
-          "atlasAssetUrl": "assets/atlas/1-material-43-emissivemap-fire.jpg",
+          "atlasAssetLabel": "fire2.jpg",
+          "atlasAssetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg",
           "targetSlot": "emissive",
           "frameOrder": "column",
           "gridX": 2,
           "gridY": 25,
           "fps": 12,
           "frameCount": 50,
-          "currentFrame": 6,
-          "opacity": 0.58,
+          "currentFrame": 3,
+          "opacity": 0.47,
           "frameBlend": true,
           "loop": true,
           "uvChannel": "auto",
@@ -201,13 +201,13 @@
   "animations": [
     {
       "type": "rotate",
-      "targetObjectId": "root:7d8d4940-9be1-4f6d-8715-5ec9d57643f9",
+      "targetObjectId": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0",
       "enabled": true,
       "loop": true,
       "pivot": "gizmo",
-      "axis": "y",
+      "axis": "z",
       "speed": 5,
-      "progress": 40.25997222233427
+      "progress": 21.708888888775377
     }
   ]
 }
