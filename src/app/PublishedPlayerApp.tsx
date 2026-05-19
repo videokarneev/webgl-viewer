@@ -457,7 +457,45 @@ async function loadPublishedSceneFromLocation() {
     throw new Error(`Failed to load published scene: ${response.status}`)
   }
 
-  return (await response.json()) as PublishedSceneV2
+  const scene = (await response.json()) as PublishedSceneV2
+  const sceneBaseUrl = new URL(sceneUrl, window.location.href)
+  const resolveAssetUrl = (value: string | null | undefined) => {
+    if (!value) {
+      return value ?? null
+    }
+
+    try {
+      return new URL(value, sceneBaseUrl).toString()
+    } catch {
+      return value
+    }
+  }
+
+  if (scene.model?.assetUrl) {
+    scene.model.assetUrl = resolveAssetUrl(scene.model.assetUrl)
+  }
+
+  scene.scene.environment.assetUrl = resolveAssetUrl(scene.scene.environment.assetUrl)
+  scene.scene.environment.backgroundAssetUrl = resolveAssetUrl(scene.scene.environment.backgroundAssetUrl)
+  scene.audio.assetUrl = resolveAssetUrl(scene.audio.assetUrl)
+
+  scene.materials.forEach((material) => {
+    if (material.environmentOverride?.assetUrl) {
+      material.environmentOverride.assetUrl = resolveAssetUrl(material.environmentOverride.assetUrl)
+    }
+
+    Object.values(material.textureSlots).forEach((slotEntry) => {
+      if (slotEntry?.assetUrl) {
+        slotEntry.assetUrl = resolveAssetUrl(slotEntry.assetUrl)
+      }
+    })
+
+    if (material.effects.flipbook?.atlasAssetUrl) {
+      material.effects.flipbook.atlasAssetUrl = resolveAssetUrl(material.effects.flipbook.atlasAssetUrl)
+    }
+  })
+
+  return scene
 }
 
 export function PublishedPlayerApp() {
