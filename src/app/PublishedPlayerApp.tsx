@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
+import { TransparentCanvasDiagnostic } from '../components/TransparentCanvasDiagnostic'
 import { TransparentPublishedViewport } from '../components/TransparentPublishedViewport'
 import { Viewport } from '../components/Viewport'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
@@ -11,6 +12,10 @@ import type { PublishedSceneV2 } from '../features/publish/buildPublishedScene'
 
 function isTransparentPublishedPlayer() {
   return new URL(window.location.href).searchParams.get('transparent') === '1'
+}
+
+function isTransparentCanvasDiagnostic() {
+  return new URL(window.location.href).searchParams.get('diag') === 'canvas'
 }
 
 type RuntimePublishedMaterial = THREE.Material & {
@@ -515,8 +520,14 @@ export function PublishedPlayerApp() {
   const [scene, setScene] = useState<PublishedSceneV2 | null>(null)
   const [error, setError] = useState<string | null>(null)
   const transparentBackground = isTransparentPublishedPlayer()
+  const transparentCanvasDiagnostic = isTransparentCanvasDiagnostic()
 
   useEffect(() => {
+    if (transparentCanvasDiagnostic) {
+      requestSceneReset()
+      return
+    }
+
     requestSceneReset()
     void loadPublishedSceneFromLocation()
       .then((loadedScene) => {
@@ -526,7 +537,7 @@ export function PublishedPlayerApp() {
         console.error(loadError)
         setError(loadError instanceof Error ? loadError.message : 'Failed to load published scene.')
       })
-  }, [requestSceneReset])
+  }, [requestSceneReset, transparentCanvasDiagnostic])
 
   useEffect(() => {
     const rootElement = document.documentElement
@@ -560,6 +571,14 @@ export function PublishedPlayerApp() {
 
   if (error) {
     return <main className="published-player-error">{error}</main>
+  }
+
+  if (transparentCanvasDiagnostic) {
+    return (
+      <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+        <TransparentCanvasDiagnostic />
+      </main>
+    )
   }
 
   if (!scene) {
