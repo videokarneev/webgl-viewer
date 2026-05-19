@@ -153,7 +153,7 @@ function applyMaterialTextureSelections(
   })
 }
 
-export function LoadedSceneRoot({ root }: { root: THREE.Object3D }) {
+export function LoadedSceneRoot({ root, selectable = true }: { root: THREE.Object3D; selectable?: boolean }) {
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const registerObjectRef = useEditorStore((state) => state.registerObjectRef)
   const registerMaterialRef = useEditorStore((state) => state.registerMaterialRef)
@@ -239,6 +239,10 @@ export function LoadedSceneRoot({ root }: { root: THREE.Object3D }) {
   }, [environment, materialEnvironmentMaps, materials, sceneEnvironmentMap])
 
   const handleClick = (event: ThreeEvent<MouseEvent>) => {
+    if (!selectable) {
+      return
+    }
+
     if (event.delta > 2) {
       return
     }
@@ -259,8 +263,8 @@ export function LoadedSceneRoot({ root }: { root: THREE.Object3D }) {
   return (
     <primitive
       object={root}
-      onClick={handleClick}
-      onPointerDown={(event: ThreeEvent<PointerEvent>) => event.stopPropagation()}
+      onClick={selectable ? handleClick : undefined}
+      onPointerDown={selectable ? (event: ThreeEvent<PointerEvent>) => event.stopPropagation() : undefined}
     />
   )
 }

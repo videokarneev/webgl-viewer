@@ -122,12 +122,21 @@ export function AssetController() {
   const previousModelUrlRef = useRef<string | null>(null)
   const previousAtlasUrlRef = useRef<string | null>(null)
   const previousEnvironmentUrlRef = useRef<string | null>(null)
+  const previousModelOwnedRef = useRef(false)
+  const previousAtlasOwnedRef = useRef(false)
+  const previousEnvironmentOwnedRef = useRef(false)
 
   useEffect(() => {
     return () => {
-      revokeIfBlob(previousModelUrlRef.current)
-      revokeIfBlob(previousAtlasUrlRef.current)
-      revokeIfBlob(previousEnvironmentUrlRef.current)
+      if (previousModelOwnedRef.current) {
+        revokeIfBlob(previousModelUrlRef.current)
+      }
+      if (previousAtlasOwnedRef.current) {
+        revokeIfBlob(previousAtlasUrlRef.current)
+      }
+      if (previousEnvironmentOwnedRef.current) {
+        revokeIfBlob(previousEnvironmentUrlRef.current)
+      }
       loadedRootsRef.current.forEach(({ root, registeredIds }) => {
         clearRegisteredRuntimeRefs(registeredIds, registerObjectRef, registerMaterialRef)
         disposeObjectTree(root)
@@ -179,8 +188,11 @@ export function AssetController() {
     handledModelNonceRef.current = modelRequest.nonce
     let isCancelled = false
 
-    revokeIfBlob(previousModelUrlRef.current)
+    if (previousModelOwnedRef.current) {
+      revokeIfBlob(previousModelUrlRef.current)
+    }
     previousModelUrlRef.current = modelRequest.url
+    previousModelOwnedRef.current = modelRequest.revokeAfter
     setStatus(`Loading model: ${modelRequest.label}`)
 
     void (async () => {
@@ -221,16 +233,12 @@ export function AssetController() {
           modelRequest.label,
           nextGraph.rootNodeId,
         )
-        setAssets({ model: modelRequest.label, fileSize: modelRequest.fileSize })
+        setAssets({ model: modelRequest.label, modelUrl: modelRequest.url, fileSize: modelRequest.fileSize })
         setStatus(`Model ready: ${modelRequest.label}`)
         setViewer({ cameraMode: 'orbit' })
       } catch (error) {
         console.error(error)
         setStatus(`Failed to load model: ${modelRequest.label}`)
-      } finally {
-        if (modelRequest.revokeAfter) {
-          revokeIfBlob(modelRequest.url)
-        }
       }
     })()
 
@@ -255,8 +263,11 @@ export function AssetController() {
     handledAtlasNonceRef.current = atlasRequest.nonce
     let isCancelled = false
 
-    revokeIfBlob(previousAtlasUrlRef.current)
+    if (previousAtlasOwnedRef.current) {
+      revokeIfBlob(previousAtlasUrlRef.current)
+    }
     previousAtlasUrlRef.current = atlasRequest.url
+    previousAtlasOwnedRef.current = atlasRequest.revokeAfter
     setStatus(`Loading atlas: ${atlasRequest.label}`)
 
     void (async () => {
@@ -278,15 +289,11 @@ export function AssetController() {
 
         ensureAtlasTextureOptions(texture, getActiveWrapMode())
         setAtlasTexture(texture)
-        setAssets({ atlas: atlasRequest.label })
+        setAssets({ atlas: atlasRequest.label, atlasUrl: atlasRequest.url, atlasFileSize: atlasRequest.fileSize })
         setStatus(`Atlas loaded: ${atlasRequest.label}`)
       } catch (error) {
         console.error(error)
         setStatus(`Failed to load atlas: ${atlasRequest.label}`)
-      } finally {
-        if (atlasRequest.revokeAfter) {
-          revokeIfBlob(atlasRequest.url)
-        }
       }
     })()
 
@@ -303,8 +310,11 @@ export function AssetController() {
     handledEnvironmentNonceRef.current = environmentRequest.nonce
     let isCancelled = false
 
-    revokeIfBlob(previousEnvironmentUrlRef.current)
+    if (previousEnvironmentOwnedRef.current) {
+      revokeIfBlob(previousEnvironmentUrlRef.current)
+    }
     previousEnvironmentUrlRef.current = environmentRequest.url
+    previousEnvironmentOwnedRef.current = environmentRequest.revokeAfter
     setStatus(`Loading environment: ${environmentRequest.label}`)
 
     void (async () => {
@@ -340,7 +350,11 @@ export function AssetController() {
           setEnvironmentTextures({ environmentBackground: texture })
           useEditorStore.getState().setBackgroundPanoramaUrl(environmentRequest.url)
           useEditorStore.getState().setBackgroundMode('background')
-          setAssets({ background: environmentRequest.label })
+          setAssets({
+            background: environmentRequest.label,
+            backgroundUrl: environmentRequest.url,
+            backgroundFileSize: environmentRequest.fileSize,
+          })
           setStatus(`Background loaded: ${environmentRequest.label}`)
           return
         }
@@ -356,15 +370,15 @@ export function AssetController() {
           kind: environmentRequest.kind === 'image' ? 'panorama' : 'hdri',
           isEnvironmentEnabled: true,
         })
-        setAssets({ reflections: environmentRequest.label })
+        setAssets({
+          reflections: environmentRequest.label,
+          reflectionsUrl: environmentRequest.url,
+          reflectionsFileSize: environmentRequest.fileSize,
+        })
         setStatus(`Environment loaded: ${environmentRequest.label}`)
       } catch (error) {
         console.error(error)
         setStatus(`Failed to load environment: ${environmentRequest.label}`)
-      } finally {
-        if (environmentRequest.revokeAfter) {
-          revokeIfBlob(environmentRequest.url)
-        }
       }
     })()
 

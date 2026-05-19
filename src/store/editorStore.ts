@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import * as THREE from 'three'
+import { DEFAULT_STANDARD_ENVIRONMENT_PRESET } from '../features/environment/standardEnvironmentPresets'
 
 export type SceneNodeType = 'scene' | 'group' | 'mesh' | 'light' | 'camera' | 'material'
 export type AtlasTargetSlot = 'emissive' | 'baseColor'
@@ -13,10 +14,14 @@ export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metaln
 export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
+export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '9:16'
 
 export interface MaterialTextureSlotState {
   originalLabel: string | null
+  originalUrl?: string | null
   customLabel: string | null
+  customUrl?: string | null
+  customFileSize?: number | null
   selectedSource: MaterialTextureSource | null
 }
 
@@ -37,6 +42,7 @@ export const DEFAULT_VIEWER_FOCAL_LENGTH = 20
 export const DEFAULT_VIEWER_CAMERA_FOV = 63.5
 export const DEFAULT_VIEWER_CAMERA_POSITION: [number, number, number] = [4, 3, 5]
 export const DEFAULT_VIEWER_ORBIT_TARGET: [number, number, number] = [0, 0, 0]
+export const DEFAULT_FRAME_ASPECT_PRESET: FrameAspectPreset = '1:1'
 
 export interface AtlasEffectState {
   isAdded: boolean
@@ -140,6 +146,8 @@ export interface MaterialEnvironmentAssetState {
   id: string
   label: string
   kind: 'hdri' | 'panorama'
+  assetUrl?: string | null
+  fileSize?: number | null
 }
 
 export interface EnvironmentState {
@@ -186,6 +194,8 @@ export interface ViewerState {
   cameraMode: 'orbit' | 'firstPerson'
   flightSpeed: number
   focalLength: number
+  frameAspectPreset: FrameAspectPreset
+  frameGuidesEnabled: boolean
   exposure: number
   bloomIntensity: number
   bloomRadius: number
@@ -258,9 +268,16 @@ export interface ViewportMetricsState {
 
 export interface AssetSourceState {
   model: string | null
+  modelUrl?: string | null
   atlas: string | null
+  atlasUrl?: string | null
+  atlasFileSize?: number | null
   reflections: string | null
+  reflectionsUrl?: string | null
+  reflectionsFileSize?: number | null
   background: string | null
+  backgroundUrl?: string | null
+  backgroundFileSize?: number | null
   fileSize: number | null
 }
 
@@ -296,6 +313,34 @@ export const DEFAULT_ROTATE_ANIMATION: RotateAnimationState = {
   speed: 45,
 }
 
+export interface BackgroundAudioState {
+  isAdded: boolean
+  enabled: boolean
+  previewEnabled: boolean
+  previewPlaying: boolean
+  previewCurrentTime: number
+  previewDuration: number
+  assetLabel: string | null
+  assetUrl: string | null
+  fileSize: number | null
+  volume: number
+  loop: boolean
+}
+
+export const DEFAULT_BACKGROUND_AUDIO: BackgroundAudioState = {
+  isAdded: false,
+  enabled: false,
+  previewEnabled: true,
+  previewPlaying: true,
+  previewCurrentTime: 0,
+  previewDuration: 0,
+  assetLabel: null,
+  assetUrl: null,
+  fileSize: null,
+  volume: 0.16,
+  loop: true,
+}
+
 export interface EnvironmentRequest extends AssetRequest {
   kind: 'hdri' | 'panorama' | 'image' | 'background'
 }
@@ -311,6 +356,8 @@ export interface SceneConfig {
   viewer?: {
     cameraMode?: string | null
     focalLength?: number | null
+    frameAspectPreset?: FrameAspectPreset | null
+    frameGuidesEnabled?: boolean | null
     exposure?: number | null
     bloomIntensity?: number | null
     bloomRadius?: number | null
@@ -367,6 +414,7 @@ interface HistorySnapshot {
   backgroundRotation: number
   extraLights: ExtraLightState[]
   rotateAnimation: RotateAnimationState
+  backgroundAudio: BackgroundAudioState
 }
 
 interface HistoryState {
@@ -407,6 +455,7 @@ interface EditorState {
   assets: AssetSourceState
   extraLights: ExtraLightState[]
   rotateAnimation: RotateAnimationState
+  backgroundAudio: BackgroundAudioState
   status: string
   runtimeTextures: RuntimeTextureState
   runtime: RuntimeRegistryState
@@ -465,9 +514,11 @@ interface EditorState {
   addExtraLight: (type?: ExtraLightType) => void
   removeExtraLight: (id?: string) => void
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
+  replaceExtraLights: (lights: ExtraLightState[]) => void
   addRotateAnimation: (targetObjectId: string | null) => void
   updateRotateAnimation: (patch: Partial<RotateAnimationState>) => void
   removeRotateAnimation: () => void
+  setBackgroundAudio: (patch: Partial<BackgroundAudioState>) => void
   setStatus: (status: string) => void
   registerObjectRef: (id: string, object: THREE.Object3D | null) => void
   registerMaterialRef: (id: string, material: THREE.Material | null) => void
@@ -515,7 +566,10 @@ function createEmptyMaterialTextureSlots() {
       slot,
       {
         originalLabel: null,
+        originalUrl: null,
         customLabel: null,
+        customUrl: null,
+        customFileSize: null,
         selectedSource: null,
       },
     ]),
@@ -607,6 +661,10 @@ function cloneRotateAnimationState(rotateAnimation: RotateAnimationState): Rotat
   return { ...rotateAnimation }
 }
 
+function cloneBackgroundAudioState(backgroundAudio: BackgroundAudioState): BackgroundAudioState {
+  return { ...backgroundAudio }
+}
+
 function cloneViewerState(viewer: ViewerState): ViewerState {
   return {
     ...viewer,
@@ -639,6 +697,7 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     backgroundRotation: state.backgroundRotation,
     extraLights: cloneExtraLightsState(state.extraLights),
     rotateAnimation: cloneRotateAnimationState(state.rotateAnimation),
+    backgroundAudio: cloneBackgroundAudioState(state.backgroundAudio),
   }
 }
 
@@ -1011,7 +1070,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   loadedModels: [],
   loadedFileName: null,
   isZenMode: false,
-  defaultEnvUrl: '/textures/studio.exr',
+  defaultEnvUrl: DEFAULT_STANDARD_ENVIRONMENT_PRESET.url,
   backgroundEnabled: false,
   backgroundMode: 'none',
   backgroundColor: '#808080',
@@ -1078,6 +1137,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     cameraMode: 'orbit',
     flightSpeed: 5,
     focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
+    frameAspectPreset: DEFAULT_FRAME_ASPECT_PRESET,
+    frameGuidesEnabled: false,
     exposure: 1,
     bloomIntensity: 0.95,
     bloomRadius: 0.32,
@@ -1096,13 +1157,21 @@ export const useEditorStore = create<EditorState>((set) => ({
   },
   assets: {
     model: null,
+    modelUrl: null,
     atlas: null,
+    atlasUrl: null,
+    atlasFileSize: null,
     reflections: null,
+    reflectionsUrl: null,
+    reflectionsFileSize: null,
     background: null,
+    backgroundUrl: null,
+    backgroundFileSize: null,
     fileSize: null,
   },
   extraLights: [],
   rotateAnimation: DEFAULT_ROTATE_ANIMATION,
+  backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
   runtimeTextures: {
     atlasTexture: null,
@@ -1760,6 +1829,46 @@ export const useEditorStore = create<EditorState>((set) => ({
         },
       })
     }),
+  replaceExtraLights: (lights) =>
+    set((state) => {
+      const nextSceneGraph = { ...state.sceneGraph }
+      const nextObjects = { ...state.objects }
+      const existingLightIds = new Set(state.extraLights.map((light) => light.id))
+      const nextLightIds = new Set(lights.map((light) => light.id))
+
+      existingLightIds.forEach((lightId) => {
+        if (nextLightIds.has(lightId)) {
+          return
+        }
+
+        delete nextSceneGraph[lightId]
+        delete nextObjects[lightId]
+      })
+
+      lights.forEach((light) => {
+        nextSceneGraph[light.id] = {
+          id: light.id,
+          parentId: null,
+          children: [],
+          type: 'light',
+          label: light.label,
+          objectUuid: light.id,
+          visible: light.visible,
+        }
+        nextObjects[light.id] = {
+          position: light.position,
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          visible: light.visible,
+        }
+      })
+
+      return {
+        extraLights: lights,
+        sceneGraph: nextSceneGraph,
+        objects: nextObjects,
+      }
+    }),
   addRotateAnimation: (targetObjectId) =>
     set(() => ({
       rotateAnimation: {
@@ -1783,6 +1892,21 @@ export const useEditorStore = create<EditorState>((set) => ({
         enabled: false,
       },
     })),
+  setBackgroundAudio: (patch) =>
+    set((state) =>
+      withHistory(
+        state,
+        {
+          backgroundAudio: {
+            ...state.backgroundAudio,
+            ...patch,
+          },
+        },
+        Object.keys(patch).some(
+          (key) => !['previewEnabled', 'previewPlaying', 'previewCurrentTime', 'previewDuration'].includes(key),
+        ),
+      ),
+    ),
   setStatus: (status) => set({ status }),
   registerObjectRef: (id, object) =>
     set((state) => {
@@ -1995,6 +2119,8 @@ export const useEditorStore = create<EditorState>((set) => ({
           cameraMode: 'orbit',
           flightSpeed: 5,
           focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
+          frameAspectPreset: DEFAULT_FRAME_ASPECT_PRESET,
+          frameGuidesEnabled: false,
           exposure: 1,
           bloomIntensity: 0.95,
           bloomRadius: 0.32,
@@ -2033,13 +2159,21 @@ export const useEditorStore = create<EditorState>((set) => ({
         },
         assets: {
           model: null,
+          modelUrl: null,
           atlas: null,
+          atlasUrl: null,
+          atlasFileSize: null,
           reflections: null,
+          reflectionsUrl: null,
+          reflectionsFileSize: null,
           background: null,
+          backgroundUrl: null,
+          backgroundFileSize: null,
           fileSize: null,
         },
         extraLights: [],
         rotateAnimation: DEFAULT_ROTATE_ANIMATION,
+        backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
         runtimeTextures: {
           atlasTexture: null,
           atlasFrameTexture: null,
@@ -2132,6 +2266,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundRotation: previous.backgroundRotation,
         extraLights: cloneExtraLightsState(previous.extraLights),
         rotateAnimation: cloneRotateAnimationState(previous.rotateAnimation),
+        backgroundAudio: cloneBackgroundAudioState(previous.backgroundAudio),
         history: {
           past: state.history.past.slice(0, -1),
           future: [current, ...state.history.future].slice(0, HISTORY_LIMIT),
@@ -2166,6 +2301,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundRotation: next.backgroundRotation,
         extraLights: cloneExtraLightsState(next.extraLights),
         rotateAnimation: cloneRotateAnimationState(next.rotateAnimation),
+        backgroundAudio: cloneBackgroundAudioState(next.backgroundAudio),
         history: {
           past: [...state.history.past, current].slice(-HISTORY_LIMIT),
           future: state.history.future.slice(1),

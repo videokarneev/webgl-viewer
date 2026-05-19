@@ -1,4 +1,5 @@
 import { useEditorStore, type MaterialTextureSlot, type SceneGraphNode } from '../../store/editorStore'
+import { getPublishNodeId } from './publishNodeIds'
 
 type PublishedTextureSource = 'none' | 'original' | 'custom' | 'flipbook'
 
@@ -14,11 +15,13 @@ export interface PublishedSceneV2 {
       enabled: boolean
       kind: string
       assetLabel: string | null
+      assetUrl: string | null
       intensity: number
       rotation: number
       backgroundMode: string
       backgroundVisible: boolean
       backgroundAssetLabel: string | null
+      backgroundAssetUrl: string | null
       backgroundIntensity: number
       backgroundBlur: number
     }
@@ -28,6 +31,7 @@ export interface PublishedSceneV2 {
     position: [number, number, number]
     target: [number, number, number]
     focalLength: number
+    frameAspectPreset: string
     exposure: number
   }
   viewer: {
@@ -41,6 +45,14 @@ export interface PublishedSceneV2 {
     dofFocusDistance: number
     dofAperture: number
     dofManualBlur: number
+  }
+  audio: {
+    isAdded: boolean
+    enabled: boolean
+    assetLabel: string | null
+    assetUrl: string | null
+    volume: number
+    loop: boolean
   }
   lights: {
     ambient: {
@@ -75,6 +87,7 @@ export interface PublishedSceneV2 {
   models: Array<{
     id: string
     assetLabel: string | null
+    assetUrl: string | null
     visible: boolean
     transform: {
       position: [number, number, number]
@@ -110,6 +123,7 @@ export interface PublishedSceneV2 {
     clearcoat: number | null
     environmentOverride: {
       assetLabel: string | null
+      assetUrl: string | null
       rotation: number
     } | null
     textureSlots: Partial<
@@ -118,6 +132,7 @@ export interface PublishedSceneV2 {
         {
           source: PublishedTextureSource
           label: string | null
+          assetUrl: string | null
         }
       >
     >
@@ -125,6 +140,7 @@ export interface PublishedSceneV2 {
       flipbook: {
         enabled: boolean
         atlasAssetLabel: string | null
+        atlasAssetUrl: string | null
         targetSlot: string
         frameOrder: string
         gridX: number
@@ -170,33 +186,6 @@ function downloadJson(filename: string, payload: unknown) {
   URL.revokeObjectURL(url)
 }
 
-function getPublishNodeId(nodeId: string, sceneGraph: Record<string, SceneGraphNode>, cache: Map<string, string>): string {
-  const cached = cache.get(nodeId)
-  if (cached) {
-    return cached
-  }
-
-  const node = sceneGraph[nodeId]
-  if (!node) {
-    cache.set(nodeId, nodeId)
-    return nodeId
-  }
-
-  if (!node.parentId) {
-    const rootId = `root:${node.id}`
-    cache.set(nodeId, rootId)
-    return rootId
-  }
-
-  const parent = sceneGraph[node.parentId]
-  const parentId = getPublishNodeId(node.parentId, sceneGraph, cache)
-  const siblingIndex = parent?.children.indexOf(nodeId) ?? 0
-  const kind = node.type === 'material' ? 'material' : 'node'
-  const publishId = `${parentId}/${kind}:${siblingIndex}`
-  cache.set(nodeId, publishId)
-  return publishId
-}
-
 function buildPublishedSceneInternal() {
   const state = useEditorStore.getState()
   const warnings: string[] = []
@@ -212,6 +201,7 @@ function buildPublishedSceneInternal() {
       return {
         id: getPublishNodeId(entry.rootNodeId, state.sceneGraph, nodeIdCache),
         assetLabel: entry.label ?? null,
+        assetUrl: state.assets.modelUrl ?? null,
         visible: objectState.visible,
         transform: {
           position: [...objectState.position] as [number, number, number],
@@ -249,15 +239,18 @@ function buildPublishedSceneInternal() {
         .map(([slot, textureState]) => {
           let source: PublishedTextureSource = textureState.selectedSource ?? 'none'
           let label = textureState.selectedSource === 'custom' ? textureState.customLabel : textureState.originalLabel
+          let assetUrl = textureState.selectedSource === 'custom' ? textureState.customUrl : textureState.originalUrl
 
           if (material.effect.isAdded && material.effect.enabled) {
             if (material.effect.targetSlot === 'baseColor' && slot === 'map') {
               source = 'flipbook'
               label = state.assets.atlas ?? 'Flipbook texture'
+              assetUrl = state.assets.atlasUrl ?? null
             }
             if (material.effect.targetSlot === 'emissive' && slot === 'emissiveMap') {
               source = 'flipbook'
               label = state.assets.atlas ?? 'Flipbook texture'
+              assetUrl = state.assets.atlasUrl ?? null
             }
           }
 
@@ -271,15 +264,19 @@ function buildPublishedSceneInternal() {
             return null
           }
 
-          return [slot, { source, label: label ?? null }]
+          return [slot, { source, label: label ?? null, assetUrl: assetUrl ?? null }]
         })
-        .filter((entry): entry is [string, { source: PublishedTextureSource; label: string | null }] => Boolean(entry)),
+        .filter(
+          (entry): entry is [string, { source: PublishedTextureSource; label: string | null; assetUrl: string | null }] =>
+            Boolean(entry),
+        ),
     ) as PublishedSceneV2['materials'][number]['textureSlots']
 
     const environmentOverride =
       material.environmentOverrideId && state.materialEnvironments[material.environmentOverrideId]
         ? {
             assetLabel: state.materialEnvironments[material.environmentOverrideId]?.label ?? null,
+            assetUrl: state.materialEnvironments[material.environmentOverrideId]?.assetUrl ?? null,
             rotation: material.environmentRotation ?? 0,
           }
         : null
@@ -304,6 +301,7 @@ function buildPublishedSceneInternal() {
           ? {
               enabled: material.effect.enabled,
               atlasAssetLabel: state.assets.atlas ?? null,
+              atlasAssetUrl: state.assets.atlasUrl ?? null,
               targetSlot: material.effect.targetSlot,
               frameOrder: material.effect.frameOrder,
               gridX: material.effect.gridX,
@@ -356,11 +354,13 @@ function buildPublishedSceneInternal() {
         enabled: state.environment.isEnvironmentEnabled,
         kind: state.environment.kind,
         assetLabel: state.assets.reflections,
+        assetUrl: state.assets.reflectionsUrl ?? null,
         intensity: state.environment.intensity,
         rotation: state.environment.rotation,
         backgroundMode: state.environment.background,
         backgroundVisible: state.environment.backgroundVisible,
         backgroundAssetLabel: state.assets.background,
+        backgroundAssetUrl: state.assets.backgroundUrl ?? null,
         backgroundIntensity: state.environment.backgroundIntensity,
         backgroundBlur: state.environment.backgroundBlur,
       },
@@ -370,10 +370,11 @@ function buildPublishedSceneInternal() {
       position: [...state.viewer.cameraPosition],
       target: [...state.viewer.orbitTarget],
       focalLength: state.viewer.focalLength,
+      frameAspectPreset: state.viewer.frameAspectPreset,
       exposure: state.viewer.exposure,
     },
     viewer: {
-      postEffectsEnabled: state.hud.postEffectsEnabled && state.hud.postEffectsVisible,
+      postEffectsEnabled: state.hud.postEffectsEnabled,
       bloomIntensity: state.viewer.bloomIntensity,
       bloomRadius: state.viewer.bloomRadius,
       bloomThreshold: state.viewer.bloomThreshold,
@@ -383,6 +384,14 @@ function buildPublishedSceneInternal() {
       dofFocusDistance: state.viewer.dofFocusDistance,
       dofAperture: state.viewer.dofAperture,
       dofManualBlur: state.viewer.dofManualBlur,
+    },
+    audio: {
+      isAdded: state.backgroundAudio.isAdded,
+      enabled: state.backgroundAudio.enabled,
+      assetLabel: state.backgroundAudio.assetLabel,
+      assetUrl: state.backgroundAudio.assetUrl,
+      volume: state.backgroundAudio.volume,
+      loop: state.backgroundAudio.loop,
     },
     lights: {
       ambient: {
@@ -430,5 +439,16 @@ export function buildPublishedScene() {
 export function downloadPublishedScene(filename = 'scene.json') {
   const { scene, warnings } = buildPublishedSceneInternal()
   downloadJson(filename, scene)
+  return warnings
+}
+
+export function openPublishedScenePreview() {
+  const { scene, warnings } = buildPublishedSceneInternal()
+  const previewKey = `published-scene:${Date.now()}`
+  localStorage.setItem(previewKey, JSON.stringify(scene))
+  const playerUrl = new URL(window.location.href)
+  playerUrl.searchParams.set('player', '1')
+  playerUrl.searchParams.set('preview', previewKey)
+  window.open(playerUrl.toString(), '_blank')
   return warnings
 }

@@ -199,6 +199,7 @@ export function Outliner({
   const lights = useEditorStore((state) => state.lights)
   const extraLights = useEditorStore((state) => state.extraLights)
   const hud = useEditorStore((state) => state.hud)
+  const backgroundAudio = useEditorStore((state) => state.backgroundAudio)
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
@@ -209,6 +210,7 @@ export function Outliner({
   const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
   const setLights = useEditorStore((state) => state.setLights)
   const setHud = useEditorStore((state) => state.setHud)
+  const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
   const removeAmbientLight = useEditorStore((state) => state.removeAmbientLight)
   const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
 
@@ -322,12 +324,10 @@ export function Outliner({
 
   const effectEntries = useMemo<OutlinerEntry[]>(
     () => {
-      if (!hud.postEffectsEnabled) {
-        return []
-      }
+      const entries: OutlinerEntry[] = []
 
-      return [
-        {
+      if (hud.postEffectsEnabled) {
+        entries.push({
           id: 'effect:bloom',
           label: 'Bloom',
           visible: hud.postEffectsVisible,
@@ -335,10 +335,24 @@ export function Outliner({
           kind: 'effect',
           depth: 0,
           selectionId: 'effect:bloom',
-        },
-      ]
+        })
+      }
+
+      if (backgroundAudio.isAdded) {
+        entries.push({
+          id: 'effect:scene-audio',
+          label: 'Scene Audio',
+          visible: backgroundAudio.previewEnabled,
+          removable: true,
+          kind: 'effect',
+          depth: 0,
+          selectionId: 'effect:scene-audio',
+        })
+      }
+
+      return entries
     },
-    [hud.postEffectsEnabled, hud.postEffectsVisible],
+    [backgroundAudio.isAdded, backgroundAudio.previewEnabled, hud.postEffectsEnabled, hud.postEffectsVisible],
   )
 
   const rootSections = useMemo(() => {
@@ -500,6 +514,10 @@ export function Outliner({
 
   const handleToggleVisibility = (entry: OutlinerEntry) => {
     if (entry.kind === 'effect') {
+      if (entry.selectionId === 'effect:scene-audio') {
+        setBackgroundAudio({ previewEnabled: !backgroundAudio.previewEnabled && Boolean(backgroundAudio.assetUrl) })
+        return
+      }
       setHud({ postEffectsVisible: !hud.postEffectsVisible })
       return
     }
@@ -527,6 +545,23 @@ export function Outliner({
       return
     }
     if (entry.kind === 'effect') {
+      if (entry.selectionId === 'effect:scene-audio') {
+        if (selectedObjectId === entry.selectionId) {
+          setSelectedObjectId(null)
+        }
+        setBackgroundAudio({
+          isAdded: false,
+          enabled: false,
+          previewEnabled: true,
+          previewPlaying: true,
+          previewCurrentTime: 0,
+          previewDuration: 0,
+          assetLabel: null,
+          assetUrl: null,
+          fileSize: null,
+        })
+        return
+      }
       if (selectedObjectId === entry.selectionId) {
         setSelectedObjectId(null)
       }
@@ -769,13 +804,13 @@ export function Outliner({
               : true
           const isSelected =
             entry.kind === 'effect'
-              ? false
+              ? selectedObjectId === entry.selectionId
               : entry.kind === 'material'
               ? selectedMaterialId === entry.materialId || selectedObjectId === entry.parentMeshId
               : selectedObjectId === entry.selectionId
 
           const isVisibilityHidden =
-            entry.kind === 'material' ? !materialVisible : entry.kind === 'effect' ? !hud.postEffectsVisible : !entry.visible
+            entry.kind === 'material' ? !materialVisible : !entry.visible
 
           return (
             <div

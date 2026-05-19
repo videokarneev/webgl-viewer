@@ -23,6 +23,9 @@ export function AssetController({
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const setEnvironmentTextures = useEditorStore((state) => state.setEnvironmentTextures)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const materialEnvironments = useEditorStore((state) => state.materialEnvironments)
+  const materialEnvironmentMaps = useEditorStore((state) => state.runtimeTextures.materialEnvironmentMaps)
+  const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
 
   useEffect(() => {
     pmremRef.current = new THREE.PMREMGenerator(gl)
@@ -61,7 +64,7 @@ export function AssetController({
           nextGraph.rootNodeId,
           null,
         )
-        setAssets({ model: modelRequest.label, fileSize: modelRequest.fileSize })
+        setAssets({ model: modelRequest.label, modelUrl: modelRequest.url, fileSize: modelRequest.fileSize })
         setStatus(`Model loaded: ${modelRequest.label}`)
         onRootLoaded(root)
         setViewer({ cameraMode: 'orbit' })
@@ -101,7 +104,7 @@ export function AssetController({
           useEditorStore.getState().materials[useEditorStore.getState().selectedObjectId ?? '']?.effect.wrapMode ?? 'repeat',
         )
         setAtlasTexture(texture)
-        setAssets({ atlas: atlasRequest.label })
+        setAssets({ atlas: atlasRequest.label, atlasUrl: atlasRequest.url })
         setStatus(`Atlas loaded: ${atlasRequest.label}`)
       })
       .catch((error) => {
@@ -154,7 +157,7 @@ export function AssetController({
             background: 'environment',
             backgroundVisible: true,
           })
-          setAssets({ background: environmentRequest.label })
+          setAssets({ background: environmentRequest.label, backgroundUrl: environmentRequest.url })
           setStatus(`Background loaded: ${environmentRequest.label}`)
           return
         }
@@ -183,7 +186,7 @@ export function AssetController({
             kind: 'hdri',
             isEnvironmentEnabled: true,
           })
-        setAssets({ reflections: environmentRequest.label })
+        setAssets({ reflections: environmentRequest.label, reflectionsUrl: environmentRequest.url })
         setStatus(`Environment loaded: ${environmentRequest.label}`)
 
         texture.dispose()
@@ -197,7 +200,7 @@ export function AssetController({
             source: null,
             isEnvironmentEnabled: true,
           })
-          setAssets({ reflections: null })
+          setAssets({ reflections: null, reflectionsUrl: null, reflectionsFileSize: null })
         }
         setStatus(`Failed to load environment: ${environmentRequest.label}`)
       })
@@ -211,6 +214,26 @@ export function AssetController({
       isCancelled = true
     }
   }, [environmentRequest, setAssets, setEnvironment, setEnvironmentTextures, setStatus])
+
+  useEffect(() => {
+    if (!pmremRef.current) {
+      return
+    }
+
+    for (const [id, texture] of Object.entries(materialEnvironmentMaps)) {
+      const entry = materialEnvironments[id]
+      if (!entry || texture.mapping !== THREE.EquirectangularReflectionMapping) {
+        continue
+      }
+
+      if (entry.kind === 'panorama') {
+        texture.colorSpace = THREE.SRGBColorSpace
+      }
+
+      const envMap = pmremRef.current.fromEquirectangular(texture).texture
+      upsertMaterialEnvironment(entry, envMap)
+    }
+  }, [materialEnvironmentMaps, materialEnvironments, upsertMaterialEnvironment])
 
   return null
 }

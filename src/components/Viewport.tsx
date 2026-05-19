@@ -9,6 +9,7 @@ import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
   DEFAULT_VIEWER_FOCAL_LENGTH,
+  type FrameAspectPreset,
   useEditorStore,
 } from '../store/editorStore'
 import { MaterialEffectController } from './MaterialEffectController'
@@ -53,6 +54,47 @@ const ANCHOR_HANDLE_COLOR = '#cfe6f7'
 const ANCHOR_HANDLE_HOVER_COLOR = '#eef9ff'
 const ANCHOR_HANDLE_ACTIVE_COLOR = '#ffffff'
 const ANCHOR_HANDLE_ACTIVE_GLOW_COLOR = '#7fd0ff'
+const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
+  '1:1': 1,
+  '3:2': 3 / 2,
+  '2:3': 2 / 3,
+  '16:9': 16 / 9,
+  '9:16': 9 / 16,
+}
+
+type ViewportFrameRect = {
+  width: number
+  height: number
+  left: number
+  top: number
+}
+
+function getViewportFrameRect(width: number, height: number, aspect: number): ViewportFrameRect {
+  const safeWidth = Math.max(width, 1)
+  const safeHeight = Math.max(height, 1)
+  const safeAspect = Math.max(aspect, 0.0001)
+  const containerAspect = safeWidth / safeHeight
+
+  if (containerAspect > safeAspect) {
+    const frameHeight = safeHeight
+    const frameWidth = frameHeight * safeAspect
+    return {
+      width: frameWidth,
+      height: frameHeight,
+      left: (safeWidth - frameWidth) / 2,
+      top: 0,
+    }
+  }
+
+  const frameWidth = safeWidth
+  const frameHeight = frameWidth / safeAspect
+  return {
+    width: frameWidth,
+    height: frameHeight,
+    left: 0,
+    top: (safeHeight - frameHeight) / 2,
+  }
+}
 
 function writeBoundingBoxCorners(box: THREE.Box3, corners: THREE.Vector3[]) {
   const min = box.min
@@ -409,6 +451,7 @@ function collectSceneGpuStats(state: ReturnType<typeof useEditorStore.getState>)
   addTexture(state.runtimeTextures.atlasFrameTexture)
   addTexture(state.runtimeTextures.environmentMap)
   addTexture(state.runtimeTextures.environmentBackground)
+  Object.values(state.runtimeTextures.materialEnvironmentMaps).forEach(addTexture)
 
   state.rootNodeIds.forEach((rootNodeId) => {
     const root = state.runtime.objectById[rootNodeId] ?? null
@@ -506,7 +549,7 @@ function RendererBridge() {
   return null
 }
 
-function SceneBridge() {
+function SceneBridge({ allowSelection }: { allowSelection: boolean }) {
   const loadedModels = useEditorStore((state) => state.loadedModels)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
   const roots = useMemo(
@@ -527,7 +570,7 @@ function SceneBridge() {
   return (
     <>
       {roots.map((entry) =>
-        entry.root ? <LoadedSceneRoot key={entry.rootNodeId} root={entry.root} /> : null,
+        entry.root ? <LoadedSceneRoot key={entry.rootNodeId} root={entry.root} selectable={allowSelection} /> : null,
       )}
     </>
   )
@@ -1014,11 +1057,15 @@ function ViewportScene({
   registerResetCamera,
   onTransformDraggingChange,
   transformDragging,
+  allowSelection,
+  autoFrameOnLoad,
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
   onTransformDraggingChange: (value: boolean) => void
   transformDragging: boolean
+  allowSelection: boolean
+  autoFrameOnLoad: boolean
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const { camera, size } = useThree()
@@ -1043,6 +1090,10 @@ function ViewportScene({
   }, [camera, viewer.cameraMode])
 
   useEffect(() => {
+    if (!autoFrameOnLoad) {
+      return
+    }
+
     if (!rootNodeId || !root || autoFramedRootIdRef.current === rootNodeId) {
       return
     }
@@ -1073,7 +1124,7 @@ function ViewportScene({
     return () => {
       window.cancelAnimationFrame(frameId)
     }
-  }, [camera, root, rootNodeId, size.height, size.width])
+  }, [autoFrameOnLoad, camera, root, rootNodeId, size.height, size.width])
 
   useEffect(() => {
     registerResetCamera(() => {
@@ -1102,10 +1153,10 @@ function ViewportScene({
       <Suspense fallback={null}>
         <EnvironmentManager />
         <LightRig />
-        <SceneBridge />
-        <SelectionHighlight />
-        <AnchorHandles />
-        <TransformGizmo onDraggingChange={onTransformDraggingChange} />
+        <SceneBridge allowSelection={allowSelection} />
+        {allowSelection ? <SelectionHighlight /> : null}
+        {allowSelection ? <AnchorHandles /> : null}
+        {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
         <MaterialEffectController />
         <SceneAnimationController />
         {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
@@ -1206,22 +1257,49 @@ function PerformanceStats() {
   )
 }
 
-export function Viewport() {
+export function Viewport({
+  showChrome = true,
+  allowSelection = true,
+  enforceFrameAspect = false,
+  autoFrameOnLoad = true,
+}: {
+  showChrome?: boolean
+  allowSelection?: boolean
+  enforceFrameAspect?: boolean
+  autoFrameOnLoad?: boolean
+}) {
   const hud = useEditorStore((state) => state.hud)
   const isZenMode = useEditorStore((state) => state.isZenMode)
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
   const backgroundColor = useEditorStore((state) => state.backgroundColor)
   const currentEnvMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
   const currentBackgroundMap = useEditorStore((state) => state.runtimeTextures.environmentBackground)
+  const viewer = useEditorStore((state) => state.viewer)
   const setHud = useEditorStore((state) => state.setHud)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setZenMode = useEditorStore((state) => state.setZenMode)
   const setViewportMetrics = useEditorStore((state) => state.setViewportMetrics)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
-  const viewer = useEditorStore((state) => state.viewer)
+  const containerRef = useRef<HTMLElement | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
   const [metricTextPalette, setMetricTextPalette] = useState(LIGHT_METRIC_TEXT)
   const [isTransformDragging, setIsTransformDragging] = useState(false)
+  const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
+  const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
+  const frameRect = useMemo(
+    () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
+    [containerSize.height, containerSize.width, frameAspect],
+  )
+  const frameStyle = useMemo(
+    () =>
+      ({
+        left: `${frameRect.left}px`,
+        top: `${frameRect.top}px`,
+        width: `${frameRect.width}px`,
+        height: `${frameRect.height}px`,
+      }) as CSSProperties,
+    [frameRect.height, frameRect.left, frameRect.top, frameRect.width],
+  )
 
   const viewportStyle = useMemo(
     () =>
@@ -1237,6 +1315,32 @@ export function Viewport() {
   useEffect(() => {
     setIsTransformDragging(false)
   }, [selectedObjectId, viewer.cameraMode])
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) {
+      return
+    }
+
+    const updateSize = () => {
+      const bounds = container.getBoundingClientRect()
+      setContainerSize({
+        width: Math.max(Math.round(bounds.width), 1),
+        height: Math.max(Math.round(bounds.height), 1),
+      })
+    }
+
+    updateSize()
+
+    const observer = new ResizeObserver(() => {
+      updateSize()
+    })
+    observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -1351,35 +1455,100 @@ export function Viewport() {
   }, [backgroundColor, backgroundMode, currentBackgroundMap, currentEnvMap])
 
   return (
-    <main className="viewport-wrap" style={viewportStyle}>
-      <Canvas
-        className="viewport-canvas"
-        dpr={[1, 2]}
-        gl={{ alpha: true, antialias: true }}
-        camera={{
-          position: viewer.cameraPosition,
-          fov: DEFAULT_VIEWER_CAMERA_FOV,
-          near: 0.1,
-          far: 2000,
-        }}
-        onPointerMissed={() => {
-          setSelectedObjectId(null)
-          setHud({ transformMode: 'none' })
-        }}
-      >
-        <ViewportScene
-          onStats={setViewportMetrics}
-          onTransformDraggingChange={setIsTransformDragging}
-          transformDragging={isTransformDragging}
-          registerResetCamera={(handler) => {
-            resetCameraRef.current = handler
+    <main ref={containerRef} className="viewport-wrap" style={viewportStyle}>
+      {enforceFrameAspect ? (
+        <div className="viewport-stage" style={frameStyle}>
+          <Canvas
+            className="viewport-canvas"
+            dpr={[1, 2]}
+            gl={{ alpha: true, antialias: true }}
+            camera={{
+              position: viewer.cameraPosition,
+              fov: DEFAULT_VIEWER_CAMERA_FOV,
+              near: 0.1,
+              far: 2000,
+            }}
+            onPointerMissed={() => {
+              if (!allowSelection) {
+                return
+              }
+              setSelectedObjectId(null)
+              setHud({ transformMode: 'none' })
+            }}
+          >
+            <ViewportScene
+              allowSelection={allowSelection}
+              autoFrameOnLoad={autoFrameOnLoad}
+              onStats={setViewportMetrics}
+              onTransformDraggingChange={setIsTransformDragging}
+              transformDragging={isTransformDragging}
+              registerResetCamera={(handler) => {
+                resetCameraRef.current = handler
+              }}
+            />
+          </Canvas>
+        </div>
+      ) : (
+        <Canvas
+          className="viewport-canvas"
+          dpr={[1, 2]}
+          gl={{ alpha: true, antialias: true }}
+          camera={{
+            position: viewer.cameraPosition,
+            fov: DEFAULT_VIEWER_CAMERA_FOV,
+            near: 0.1,
+            far: 2000,
           }}
-        />
-      </Canvas>
-      <TransformToolbar />
-      <PerformanceStats />
-      <ViewportHud onResetCamera={() => resetCameraRef.current()} />
-      {!isZenMode ? (
+          onPointerMissed={() => {
+            if (!allowSelection) {
+              return
+            }
+            setSelectedObjectId(null)
+            setHud({ transformMode: 'none' })
+          }}
+        >
+          <ViewportScene
+            allowSelection={allowSelection}
+            autoFrameOnLoad={autoFrameOnLoad}
+            onStats={setViewportMetrics}
+            onTransformDraggingChange={setIsTransformDragging}
+            transformDragging={isTransformDragging}
+            registerResetCamera={(handler) => {
+              resetCameraRef.current = handler
+            }}
+          />
+        </Canvas>
+      )}
+      {!enforceFrameAspect && viewer.frameGuidesEnabled ? (
+        <>
+          <div className="viewport-frame-mask viewport-frame-mask--top" style={{ height: `${frameRect.top}px` }} />
+          <div
+            className="viewport-frame-mask viewport-frame-mask--bottom"
+            style={{ height: `${frameRect.top}px` }}
+          />
+          <div
+            className="viewport-frame-mask viewport-frame-mask--left"
+            style={{
+              top: `${frameRect.top}px`,
+              width: `${frameRect.left}px`,
+              height: `${frameRect.height}px`,
+            }}
+          />
+          <div
+            className="viewport-frame-mask viewport-frame-mask--right"
+            style={{
+              top: `${frameRect.top}px`,
+              width: `${frameRect.left}px`,
+              height: `${frameRect.height}px`,
+            }}
+          />
+          <div className="viewport-frame-guide" style={frameStyle} />
+        </>
+      ) : null}
+      {showChrome ? <TransformToolbar /> : null}
+      {showChrome ? <PerformanceStats /> : null}
+      {showChrome ? <ViewportHud onResetCamera={() => resetCameraRef.current()} /> : null}
+      {!isZenMode && showChrome ? (
         <div className="viewport-toggle-bar">
           {!hud.sidebarVisible ? (
             <button type="button" className="ghost small" onClick={() => setHud({ sidebarVisible: true })}>

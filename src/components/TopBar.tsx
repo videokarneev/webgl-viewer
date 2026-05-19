@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { downloadPublishedScene } from '../features/publish/buildPublishedScene'
+import { downloadPublishedScene, openPublishedScenePreview } from '../features/publish/buildPublishedScene'
 import { useEditorStore } from '../store/editorStore'
 
 function createObjectUrl(file: File) {
@@ -42,6 +42,21 @@ export function TopBar() {
     } catch (error) {
       console.error(error)
       setStatus('Failed to publish scene JSON.')
+    }
+  }
+
+  const handleRunPublishedScene = () => {
+    try {
+      const warnings = openPublishedScenePreview()
+      if (warnings.length) {
+        setStatus(`Published preview opened with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Published preview opened.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to open published preview.')
     }
   }
 
@@ -157,6 +172,10 @@ export function TopBar() {
           <button type="button" className="tool-button" onClick={handlePublishScene}>
             <span className="tool-button__glyph">PUB</span>
             <span className="tool-button__label">Publish</span>
+          </button>
+          <button type="button" className="tool-button" onClick={handleRunPublishedScene}>
+            <span className="tool-button__glyph">RUN</span>
+            <span className="tool-button__label">Local</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>

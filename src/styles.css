@@ -24,6 +24,21 @@ body {
     linear-gradient(180deg, #0d1116 0%, #080b0f 100%);
 }
 
+.published-player-shell,
+.published-player-error {
+  width: 100%;
+  height: 100%;
+}
+
+.published-player-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: rgba(236, 244, 248, 0.88);
+  text-align: center;
+}
+
 body.is-dragging::before {
   content: "Drop files to load model, environment, or config";
   position: fixed;
@@ -158,6 +173,48 @@ input[type='range']:disabled {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.viewport-stage {
+  position: absolute;
+  overflow: hidden;
+}
+
+.viewport-frame-guide {
+  position: absolute;
+  z-index: 18;
+  border: 1px solid rgba(172, 212, 236, 0.74);
+  box-shadow:
+    0 0 0 1px rgba(8, 12, 16, 0.88),
+    inset 0 0 0 1px rgba(8, 12, 16, 0.3);
+  pointer-events: none;
+}
+
+.viewport-frame-mask {
+  position: absolute;
+  z-index: 17;
+  background: rgba(5, 8, 11, 0.42);
+  pointer-events: none;
+}
+
+.viewport-frame-mask--top {
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
+.viewport-frame-mask--bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+}
+
+.viewport-frame-mask--left {
+  left: 0;
+}
+
+.viewport-frame-mask--right {
+  right: 0;
 }
 
 .hud {
@@ -1949,6 +2006,10 @@ button {
   align-items: center;
 }
 
+.material-environment-control--with-remove {
+  grid-template-columns: minmax(0, 1fr) 26px 74px;
+}
+
 .material-environment-block {
   display: grid;
   gap: 10px;
@@ -1984,6 +2045,11 @@ button {
   grid-template-columns: minmax(0, 1fr) 74px;
   gap: 8px;
   align-items: center;
+}
+
+.scene-audio-asset-control {
+  grid-template-columns: 74px minmax(0, 1fr);
+  margin-bottom: 12px;
 }
 
 .material-asset-control--with-swatch {
@@ -2407,6 +2473,15 @@ button {
   margin-bottom: 8px;
 }
 
+.material-effect-current-frame--full {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.material-effect-current-frame--full input[type='range'] {
+  width: 100%;
+}
+
 .material-effect-setup-row__fps {
   grid-column: 4;
 }
@@ -2571,6 +2646,42 @@ button {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: rgba(189, 209, 220, 0.6);
+}
+
+.frame-aspect-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.frame-aspect-grid--lens {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.frame-aspect-button {
+  min-height: 50px;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 5px;
+  padding: 7px 4px;
+}
+
+.frame-aspect-button--lens {
+  min-height: 34px;
+  gap: 0;
+}
+
+.frame-aspect-button__icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.frame-aspect-button__label {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .left-controls__value {

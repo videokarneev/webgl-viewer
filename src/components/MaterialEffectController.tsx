@@ -125,8 +125,20 @@ export function MaterialEffectController() {
   const materials = useEditorStore((state) => state.materials)
   const atlasTexture = useEditorStore((state) => state.runtimeTextures.atlasTexture)
   const atlasFrameTexture = useEditorStore((state) => state.runtimeTextures.atlasFrameTexture)
+  const activeMaterialId = (() => {
+    const selectedMaterial = selectedMaterialId ? materials[selectedMaterialId] : null
+    if (selectedMaterial?.effect.isAdded && selectedMaterial.effect.enabled) {
+      return selectedMaterialId
+    }
 
-  useAtlasAnimator(selectedMaterialId)
+    const fallbackMaterial = Object.values(materials).find(
+      (material) => material.effect.isAdded && material.effect.enabled,
+    )
+
+    return fallbackMaterial?.id ?? null
+  })()
+
+  useAtlasAnimator(activeMaterialId)
 
   useEffect(() => {
     Object.values(materials).forEach((materialState) => {
@@ -135,7 +147,7 @@ export function MaterialEffectController() {
         return
       }
 
-      if (materialState.id === selectedMaterialId) {
+      if (materialState.id === activeMaterialId) {
         applyFlipbookSlotOverride(material, materialState, atlasTexture, atlasFrameTexture)
         return
       }
@@ -143,7 +155,7 @@ export function MaterialEffectController() {
       restoreMaterialTextureSelections(material, materialState)
       material.needsUpdate = true
     })
-  }, [atlasFrameTexture, atlasTexture, materials, selectedMaterialId])
+  }, [activeMaterialId, atlasFrameTexture, atlasTexture, materials])
 
   useEffect(() => {
     return () => {
@@ -161,13 +173,13 @@ export function MaterialEffectController() {
   }, [])
 
   useFrame(() => {
-    if (!selectedMaterialId) {
+    if (!activeMaterialId) {
       return
     }
 
     const store = useEditorStore.getState()
-    const materialState = store.materials[selectedMaterialId]
-    const material = store.runtime.materialById[selectedMaterialId] as RuntimeMaterial | undefined
+    const materialState = store.materials[activeMaterialId]
+    const material = store.runtime.materialById[activeMaterialId] as RuntimeMaterial | undefined
 
     if (!materialState || !material) {
       return

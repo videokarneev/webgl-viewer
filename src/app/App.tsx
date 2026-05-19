@@ -3,6 +3,7 @@ import { Sidebar } from '../components/Sidebar'
 import { Viewport } from '../components/Viewport'
 import { Inspector } from '../components/Inspector'
 import { AssetController } from '../components/AssetController'
+import { BackgroundAudioController } from '../components/BackgroundAudioController'
 import { useEditorStore } from '../store/editorStore'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
 
@@ -169,6 +170,7 @@ export function App() {
       }}
     >
       <AssetController key={`assets:${sceneResetNonce}`} />
+      <BackgroundAudioController key={`audio:${sceneResetNonce}`} />
       {!isZenMode && sidebarVisible ? <Sidebar key={`sidebar:${sceneResetNonce}`} /> : null}
       <Viewport key={`viewport:${sceneResetNonce}`} />
       {!isZenMode && inspectorVisible ? (

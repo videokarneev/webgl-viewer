@@ -1,5 +1,10 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
+import {
+  STANDARD_ENVIRONMENT_PRESETS,
+  getStandardEnvironmentPresetById,
+  getStandardEnvironmentPresetByUrl,
+} from '../features/environment/standardEnvironmentPresets'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { type MaterialTextureSlotState, useEditorStore } from '../store/editorStore'
 
@@ -31,10 +36,10 @@ function isHdriAsset(label: string) {
 }
 
 async function loadEnvironmentTexture(url: string, label: string) {
-  const texture = isHdriAsset(label) ? await loadHdri(url) : await loadTexture(url)
+  const texture = isHdriAsset(label) || isHdriAsset(url) ? await loadHdri(url) : await loadTexture(url)
   texture.mapping = THREE.EquirectangularReflectionMapping
 
-  if (!isHdriAsset(label)) {
+  if (!isHdriAsset(label) && !isHdriAsset(url)) {
     texture.colorSpace = THREE.SRGBColorSpace
   }
 
@@ -45,6 +50,32 @@ async function loadEnvironmentTexture(url: string, label: string) {
 function createMaterialEnvironmentId(label: string) {
   const safeLabel = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return `material-environment:${safeLabel || 'hdri'}:${Date.now()}`
+}
+
+function createStandardMaterialEnvironmentId(presetId: string) {
+  return `material-environment:${presetId}`
+}
+
+function normalizeEnvironmentAssetToken(value: string | null | undefined) {
+  return (value ?? '')
+    .toLowerCase()
+    .replace(/\.(hdr|exr|jpg|jpeg|png)$/i, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
+function getStandardEnvironmentPresetByLabel(label: string | null | undefined) {
+  const normalizedLabel = normalizeEnvironmentAssetToken(label)
+  if (!normalizedLabel) {
+    return null
+  }
+
+  return (
+    STANDARD_ENVIRONMENT_PRESETS.find((preset) => {
+      const normalizedPresetLabel = normalizeEnvironmentAssetToken(preset.label)
+      const normalizedPresetAssetName = normalizeEnvironmentAssetToken(getAssetName(preset.url, preset.label))
+      return normalizedLabel === normalizedPresetLabel || normalizedLabel === normalizedPresetAssetName
+    }) ?? null
+  )
 }
 
 function resolveInspectorMaterialId({
@@ -82,8 +113,12 @@ function resolveInspectorMaterialId({
 }
 
 function getSceneEnvironmentOptionLabel(sourceLabel: string | null | undefined, fallbackUrl: string) {
-  const label = getAssetName(sourceLabel, getAssetName(fallbackUrl, 'Scene HDRI'))
-  return `Scene HDRI (${label})`
+  const matchedPreset = getStandardEnvironmentPresetByLabel(sourceLabel) ?? getStandardEnvironmentPresetByLabel(fallbackUrl)
+  if (matchedPreset) {
+    return matchedPreset.label
+  }
+
+  return getAssetName(sourceLabel, getAssetName(fallbackUrl, 'Studio')).replace(/\.(hdr|exr|jpg|jpeg|png)$/i, '')
 }
 
 type MaterialInspectorSectionKey = 'summary' | 'baseMaterial' | 'emission' | 'effects'
@@ -845,6 +880,8 @@ function MaterialTextureList({ materialId }: { materialId: string }) {
                       [entry.slot]: {
                         ...latestMaterialState.textureSlots[entry.slot],
                         customLabel: file.name,
+                        customUrl: objectUrl,
+                        customFileSize: file.size,
                         selectedSource: 'custom',
                       },
                     },
@@ -1233,6 +1270,7 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
   const environmentEnabled = useEditorStore((state) => state.environment.isEnvironmentEnabled)
   const environmentRotation = useEditorStore((state) => state.environment.rotation)
   const environmentSource = useEditorStore((state) => state.environment.source ?? state.assets.reflections)
+  const environmentSourceUrl = useEditorStore((state) => state.assets.reflectionsUrl)
   const defaultEnvUrl = useEditorStore((state) => state.defaultEnvUrl)
   const sceneEnvironmentMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
   const previewMaterialEnvironmentId = useEditorStore((state) => state.environment.previewMaterialEnvironmentId)
@@ -1242,35 +1280,60 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
   const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
   const removeMaterialEnvironment = useEditorStore((state) => state.removeMaterialEnvironment)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
-  const removeEnvironment = useEditorStore((state) => state.removeEnvironment)
   const setStatus = useEditorStore((state) => state.setStatus)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const dropdownRef = useRef<HTMLDivElement | null>(null)
   const environmentSliderGestureActiveRef = useRef(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
-
-  const environmentOptions = useMemo(
-    () => Object.values(materialEnvironments).sort((left, right) => left.label.localeCompare(right.label)),
-    [materialEnvironments],
-  )
+  const [pendingSelectValue, setPendingSelectValue] = useState<string | null>(null)
 
   if (!material) {
     return null
   }
 
+  const currentSceneStandardPreset = getStandardEnvironmentPresetByUrl(environmentSourceUrl ?? defaultEnvUrl)
+  const standardEnvironmentOptions = useMemo(
+    () =>
+      STANDARD_ENVIRONMENT_PRESETS.filter((preset) => preset.id !== currentSceneStandardPreset?.id).map((preset) => ({
+        id: createStandardMaterialEnvironmentId(preset.id),
+        presetId: preset.id,
+        label: preset.label,
+        kind: preset.kind,
+      })),
+    [currentSceneStandardPreset?.id],
+  )
+  const customEnvironmentOptions = useMemo(
+    () =>
+      Object.values(materialEnvironments)
+        .filter((entry) => !STANDARD_ENVIRONMENT_PRESETS.some((preset) => createStandardMaterialEnvironmentId(preset.id) === entry.id))
+        .filter((entry) => !getStandardEnvironmentPresetByLabel(entry.label))
+        .sort((left, right) => left.label.localeCompare(right.label)),
+    [materialEnvironments],
+  )
+
   const usesSceneEnvironment = !material.environmentOverrideId
   const hasActiveSceneEnvironment = environmentEnabled && Boolean(sceneEnvironmentMap)
   const isSceneEnvironmentUnavailable = usesSceneEnvironment && !hasActiveSceneEnvironment
-  const hasAnyEnvironmentChoice = hasActiveSceneEnvironment || environmentOptions.length > 0
+  const hasAnyEnvironmentChoice =
+    hasActiveSceneEnvironment || standardEnvironmentOptions.length > 0 || customEnvironmentOptions.length > 0
   const isEnvironmentSelectorDisabled = !hasAnyEnvironmentChoice
   const rotationValue = usesSceneEnvironment ? environmentRotation : material.environmentRotation ?? 0
+  const activeOverrideEntry = material.environmentOverrideId ? materialEnvironments[material.environmentOverrideId] ?? null : null
+  const activeStandardPreset =
+    STANDARD_ENVIRONMENT_PRESETS.find((preset) => createStandardMaterialEnvironmentId(preset.id) === material.environmentOverrideId) ??
+    getStandardEnvironmentPresetByLabel(activeOverrideEntry?.label)
   const activeLabel =
-    material.environmentOverrideId && materialEnvironments[material.environmentOverrideId]
-      ? materialEnvironments[material.environmentOverrideId].label
-      : isSceneEnvironmentUnavailable
-        ? 'Scene HDRI unavailable'
+    activeStandardPreset
+      ? activeStandardPreset.label
+      : activeOverrideEntry
+        ? activeOverrideEntry.label.replace(/\.(hdr|exr|jpg|jpeg|png)$/i, '')
         : getSceneEnvironmentOptionLabel(environmentSource, defaultEnvUrl)
+  const deletableCustomEnvironment = activeOverrideEntry && !activeStandardPreset ? activeOverrideEntry : null
+  const resolvedSelectValue = activeStandardPreset
+    ? `standard:${activeStandardPreset.id}`
+    : activeOverrideEntry
+      ? `custom:${material.environmentOverrideId}`
+      : 'scene'
+  const activeSelectValue = pendingSelectValue ?? resolvedSelectValue
 
   useEffect(() => {
     if (!previewMaterialEnvironmentId) {
@@ -1300,33 +1363,22 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
   }, [previewMaterialEnvironmentId])
 
   useEffect(() => {
-    if (!isDropdownOpen) {
-      return
+    if (pendingSelectValue && pendingSelectValue === resolvedSelectValue) {
+      setPendingSelectValue(null)
     }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!dropdownRef.current?.contains(event.target as Node)) {
-        setIsDropdownOpen(false)
-      }
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown)
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown)
-    }
-  }, [isDropdownOpen])
+  }, [pendingSelectValue, resolvedSelectValue])
 
   useEffect(() => {
-    if (!isSceneEnvironmentUnavailable || material.environmentOverrideId || !environmentOptions.length) {
+    if (!isSceneEnvironmentUnavailable || material.environmentOverrideId || !standardEnvironmentOptions.length) {
       return
     }
 
     updateMaterial(materialId, {
-      environmentOverrideId: environmentOptions[0].id,
+      environmentOverrideId: standardEnvironmentOptions[0].id,
       environmentRotation: 0,
     })
   }, [
-    environmentOptions,
+    standardEnvironmentOptions,
     isSceneEnvironmentUnavailable,
     material.environmentOverrideId,
     materialId,
@@ -1341,78 +1393,102 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
 
   return (
     <>
-      <div className="material-environment-control" ref={dropdownRef}>
-        <div
-          className={`material-environment-control__field${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}
-          title={activeLabel}
-        >
+      <div className={`material-environment-control${deletableCustomEnvironment ? ' material-environment-control--with-remove' : ''}`}>
+        <div className={`material-environment-control__field${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`} title={activeLabel}>
+          <select
+            className={`material-asset-control__select${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}
+            disabled={isEnvironmentSelectorDisabled || isLoading}
+            value={activeSelectValue}
+            onChange={(event) => {
+              const nextValue = event.currentTarget.value
+
+              if (nextValue === 'scene') {
+                setPendingSelectValue('scene')
+                updateMaterial(materialId, { environmentOverrideId: null, environmentRotation: 0 })
+                return
+              }
+
+              if (nextValue.startsWith('custom:')) {
+                setPendingSelectValue(nextValue)
+                updateMaterial(materialId, {
+                  environmentOverrideId: nextValue.slice('custom:'.length),
+                  environmentRotation: 0,
+                })
+                return
+              }
+
+              if (!nextValue.startsWith('standard:')) {
+                return
+              }
+
+              const preset = getStandardEnvironmentPresetById(nextValue.slice('standard:'.length))
+              if (!preset) {
+                return
+              }
+
+              const nextEnvironmentId = createStandardMaterialEnvironmentId(preset.id)
+              setPendingSelectValue(nextValue)
+              updateMaterial(materialId, {
+                environmentOverrideId: nextEnvironmentId,
+                environmentRotation: 0,
+              })
+
+              if (materialEnvironments[nextEnvironmentId]) {
+                return
+              }
+
+              setIsLoading(true)
+
+              void (async () => {
+                try {
+                  const texture = await loadEnvironmentTexture(preset.url, preset.label)
+                  texture.name = preset.label
+                  upsertMaterialEnvironment(
+                    {
+                      id: nextEnvironmentId,
+                      label: preset.label,
+                      kind: preset.kind,
+                      assetUrl: preset.url,
+                    },
+                    texture,
+                  )
+                } catch (error) {
+                  console.error(error)
+                  setPendingSelectValue(null)
+                  setStatus(`Failed to load material HDRI: ${preset.label}`)
+                } finally {
+                  setIsLoading(false)
+                }
+              })()
+            }}
+          >
+            <option value="scene" disabled={!hasActiveSceneEnvironment}>
+              {hasActiveSceneEnvironment ? getSceneEnvironmentOptionLabel(environmentSource, defaultEnvUrl) : 'Scene HDRI unavailable'}
+            </option>
+            {standardEnvironmentOptions.map((entry) => (
+              <option key={entry.id} value={`standard:${entry.presetId}`}>
+                {entry.label}
+              </option>
+            ))}
+            {customEnvironmentOptions.map((entry) => (
+              <option key={entry.id} value={`custom:${entry.id}`}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {deletableCustomEnvironment ? (
           <button
             type="button"
-            className={`material-asset-control__select material-asset-control__select-button${isEnvironmentSelectorDisabled ? ' is-disabled' : ''}`}
-            disabled={isEnvironmentSelectorDisabled}
-            onClick={() => setIsDropdownOpen((current) => !current)}
+            className="material-asset-control__menu-remove"
+            aria-label={`Delete ${deletableCustomEnvironment.label}`}
+            onClick={() => {
+              removeMaterialEnvironment(deletableCustomEnvironment.id)
+            }}
           >
-            <span className="material-asset-control__select-label">{activeLabel}</span>
-            <span className={`material-asset-control__chevron${isDropdownOpen ? ' is-open' : ''}`}>⌄</span>
+            ?
           </button>
-          {isDropdownOpen ? (
-            <div className="material-asset-control__menu">
-              <div className="material-asset-control__menu-row">
-                <button
-                  type="button"
-                  className={`material-asset-control__menu-option${usesSceneEnvironment ? ' is-active' : ''}${!hasActiveSceneEnvironment ? ' is-disabled' : ''}`}
-                  disabled={!hasActiveSceneEnvironment}
-                  onClick={() => {
-                    updateMaterial(materialId, { environmentOverrideId: null, environmentRotation: 0 })
-                    setIsDropdownOpen(false)
-                  }}
-                >
-                  {hasActiveSceneEnvironment
-                    ? getSceneEnvironmentOptionLabel(environmentSource, defaultEnvUrl)
-                    : 'Scene HDRI unavailable'}
-                </button>
-                {hasActiveSceneEnvironment ? (
-                  <button
-                    type="button"
-                    className="material-asset-control__menu-remove"
-                    aria-label="Delete scene HDRI"
-                    onClick={() => {
-                      removeEnvironment()
-                      setIsDropdownOpen(false)
-                    }}
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-              {environmentOptions.map((entry) => (
-                <div key={entry.id} className="material-asset-control__menu-row">
-                  <button
-                    type="button"
-                    className={`material-asset-control__menu-option${material.environmentOverrideId === entry.id ? ' is-active' : ''}`}
-                    onClick={() => {
-                      updateMaterial(materialId, { environmentOverrideId: entry.id })
-                      setIsDropdownOpen(false)
-                    }}
-                  >
-                    {entry.label}
-                  </button>
-                  <button
-                    type="button"
-                    className="material-asset-control__menu-remove"
-                    aria-label={`Delete ${entry.label}`}
-                    onClick={() => {
-                      removeMaterialEnvironment(entry.id)
-                      setIsDropdownOpen(false)
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
         <button
           type="button"
           className="material-asset-control__button material-asset-control__button--compact"
@@ -1531,13 +1607,17 @@ function MaterialEnvironmentControls({ materialId }: { materialId: string }) {
                   id,
                   label: file.name,
                   kind: isHdriAsset(file.name) ? 'hdri' : 'panorama',
+                  assetUrl: objectUrl,
+                  fileSize: file.size,
                 },
                 texture,
               )
-              updateMaterial(materialId, { environmentOverrideId: id })
+              updateMaterial(materialId, { environmentOverrideId: id, environmentRotation: 0 })
+              setPendingSelectValue(`custom:${id}`)
               setStatus(`Material HDRI loaded: ${file.name}`)
             } catch (error) {
               console.error(error)
+              setPendingSelectValue(null)
               setStatus(`Failed to load material HDRI: ${file.name}`)
             } finally {
               URL.revokeObjectURL(objectUrl)
@@ -1728,6 +1808,8 @@ function MaterialBaseSection({
                     map: {
                       ...latestMaterialState.textureSlots.map,
                       customLabel: file.name,
+                      customUrl: objectUrl,
+                      customFileSize: file.size,
                       selectedSource: 'custom',
                     },
                   },
@@ -1968,6 +2050,8 @@ function EmissionSection({
                     emissiveMap: {
                       ...latestMaterialState.textureSlots.emissiveMap,
                       customLabel: file.name,
+                      customUrl: objectUrl,
+                      customFileSize: file.size,
                       selectedSource: 'custom',
                     },
                   },
@@ -2467,7 +2551,7 @@ function AtlasEffectSection({
           if (!file) {
             return
           }
-          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: null })
+          requestAtlasLoad({ url: createObjectUrl(file), label: file.name, revokeAfter: true, fileSize: file.size })
           event.currentTarget.value = ''
         }}
       />

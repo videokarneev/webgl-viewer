@@ -118,6 +118,20 @@ export function ConfigController({
       })
     }
 
+    if (
+      config.viewer?.frameAspectPreset === '1:1' ||
+      config.viewer?.frameAspectPreset === '3:2' ||
+      config.viewer?.frameAspectPreset === '2:3' ||
+      config.viewer?.frameAspectPreset === '16:9' ||
+      config.viewer?.frameAspectPreset === '9:16'
+    ) {
+      setViewer({ frameAspectPreset: config.viewer.frameAspectPreset })
+    }
+
+    if (config.viewer?.frameGuidesEnabled != null) {
+      setViewer({ frameGuidesEnabled: Boolean(config.viewer.frameGuidesEnabled) })
+    }
+
     if (config.viewer?.exposure != null) {
       setViewer({
         exposure: sanitizeNumber(config.viewer.exposure, gl.toneMappingExposure, 0),

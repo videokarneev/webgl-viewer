@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { downloadPublishedScene } from '../features/publish/buildPublishedScene'
+import { downloadPublishedScene, openPublishedScenePreview } from '../features/publish/buildPublishedScene'
+import { STANDARD_ENVIRONMENT_PRESETS } from '../features/environment/standardEnvironmentPresets'
 import {
   useEditorStore,
   type ExtraLightState,
+  type FrameAspectPreset,
   type RotateAnimationAxis,
   type RotateAnimationPivot,
   type SceneGraphNode,
@@ -31,6 +33,45 @@ const TAB_TITLES: Record<SidebarTab, string> = {
 
 const ambientSystemLightNodeId = 'light:ambient:system'
 const environmentNodeIds = new Set(['environment:system', 'environment:hdri'])
+const FRAME_ASPECT_OPTIONS: Array<{ value: FrameAspectPreset; label: string }> = [
+  { value: '1:1', label: '1:1 Square' },
+  { value: '3:2', label: '3:2 Landscape' },
+  { value: '2:3', label: '2:3 Portrait' },
+  { value: '16:9', label: '16:9 Widescreen' },
+  { value: '9:16', label: '9:16 Portrait' },
+]
+const FOCAL_LENGTH_PRESETS = [10, 16, 20, 28, 35, 50, 85, 105]
+
+function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
+  const dimensions =
+    preset === '1:1'
+      ? { width: 16, height: 16 }
+      : preset === '3:2'
+        ? { width: 18, height: 12 }
+        : preset === '2:3'
+          ? { width: 12, height: 18 }
+        : preset === '16:9'
+          ? { width: 18, height: 10 }
+          : { width: 10, height: 18 }
+
+  const offsetX = (18 - dimensions.width) / 2
+  const offsetY = (18 - dimensions.height) / 2
+
+  return (
+    <svg className="frame-aspect-button__icon" viewBox="0 0 18 18" aria-hidden="true">
+      <rect
+        x={offsetX}
+        y={offsetY}
+        width={dimensions.width}
+        height={dimensions.height}
+        rx="1.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+    </svg>
+  )
+}
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -47,8 +88,23 @@ function getAssetName(value: string | null | undefined, fallback: string) {
   return fileName ? decodeURIComponent(fileName) : fallback
 }
 
+function getEnvironmentDisplayName(value: string | null | undefined, fallback: string) {
+  return getAssetName(value, fallback).replace(/\.(hdr|exr|jpg|jpeg|png|mp3|wav|ogg|m4a|aac)$/i, '')
+}
+
 function formatNumber(value: number, digits = 2) {
   return value.toFixed(digits)
+}
+
+function formatDuration(value: number) {
+  if (!Number.isFinite(value) || value < 0) {
+    return '0:00'
+  }
+
+  const totalSeconds = Math.floor(value)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
 }
 
 function formatDegrees(value: number) {
@@ -344,9 +400,7 @@ function SceneTabContent() {
 }
 
 function CameraTabContent() {
-  const hud = useEditorStore((state) => state.hud)
   const viewer = useEditorStore((state) => state.viewer)
-  const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
 
   return (
@@ -364,42 +418,68 @@ function CameraTabContent() {
           />
           <strong>{formatNumber(viewer.exposure)}</strong>
         </label>
+        <div className="left-controls__group">
+          <span className="left-controls__label">Lens Presets</span>
+          <div className="frame-aspect-grid frame-aspect-grid--lens">
+            {FOCAL_LENGTH_PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className={`tool-button mode-button frame-aspect-button frame-aspect-button--lens${Math.round(viewer.focalLength) === preset ? ' is-active' : ''}`}
+                aria-pressed={Math.round(viewer.focalLength) === preset}
+                onClick={() => setViewer({ focalLength: preset })}
+              >
+                <span className="frame-aspect-button__label">{preset}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="left-slider left-slider--focal">
           <span>Focal Length</span>
           <input
             type="range"
-            min="12"
+            min="8"
             max="120"
             step="1"
             value={viewer.focalLength}
             onInput={(event) => setViewer({ focalLength: Number(event.currentTarget.value) })}
           />
           <div className="left-slider__ticks">
-            {[18, 24, 35, 50, 85].map((tick) => (
+            {[10, 16, 20, 28, 35, 50, 85, 105].map((tick) => (
               <span
                 key={tick}
                 className="left-slider__tick"
-                style={{ left: `${((tick - 12) / (120 - 12)) * 100}%` }}
+                style={{ left: `${((tick - 8) / (120 - 8)) * 100}%` }}
               />
             ))}
           </div>
           <strong>{Math.round(viewer.focalLength)} mm</strong>
         </label>
+        <div className="left-controls__group">
+          <span className="left-controls__label">Frame Format</span>
+          <div className="frame-aspect-grid" role="group" aria-label="Frame format presets">
+            {FRAME_ASPECT_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`tool-button mode-button frame-aspect-button${viewer.frameAspectPreset === option.value ? ' is-active' : ''}`}
+                aria-pressed={viewer.frameAspectPreset === option.value}
+                title={option.label}
+                onClick={() => setViewer({ frameAspectPreset: option.value })}
+              >
+                <FrameAspectIcon preset={option.value} />
+                <span className="frame-aspect-button__label">{option.value}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <label className="left-toggle">
           <input
             type="checkbox"
-            checked={hud.gridVisible}
-            onChange={(event) => setHud({ gridVisible: event.currentTarget.checked })}
+            checked={viewer.frameGuidesEnabled}
+            onChange={(event) => setViewer({ frameGuidesEnabled: event.currentTarget.checked })}
           />
-          <span>Grid</span>
-        </label>
-        <label className="left-toggle">
-          <input
-            type="checkbox"
-            checked={hud.axesVisible}
-            onChange={(event) => setHud({ axesVisible: event.currentTarget.checked })}
-          />
-          <span>Axes</span>
+          <span>Show Frame Guides</span>
         </label>
       </div>
     </div>
@@ -425,10 +505,20 @@ function LightTabContent() {
     Boolean(selectedObjectId && environmentNodeIds.has(selectedObjectId)) && environment.isEnvironmentEnabled
   const hdriInputRef = useRef<HTMLInputElement | null>(null)
 
-  const defaultEnvironmentLabel = `Scene HDRI (${getAssetName(defaultEnvUrl, 'studio.exr')})`
+  const defaultEnvironmentLabel = getEnvironmentDisplayName(defaultEnvUrl, 'Studio')
   const currentEnvironmentLabel = environment.source
-    ? `Scene HDRI (${getAssetName(environment.source, environment.source)})`
+    ? getEnvironmentDisplayName(environment.source, environment.source)
     : defaultEnvironmentLabel
+
+  const applyStandardEnvironmentPreset = (preset: (typeof STANDARD_ENVIRONMENT_PRESETS)[number]) => {
+    requestEnvironmentLoad({
+      url: preset.url,
+      label: preset.label,
+      kind: preset.kind,
+      revokeAfter: false,
+      fileSize: null,
+    })
+  }
 
   return (
     <div className="settings-tab">
@@ -517,6 +607,18 @@ function LightTabContent() {
                 Load HDRI
               </button>
             </div>
+            <div className="frame-aspect-grid frame-aspect-grid--environment">
+              {STANDARD_ENVIRONMENT_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`tool-button mode-button frame-aspect-button frame-aspect-button--environment${environment.customHdriUrl === preset.url ? ' is-active' : ''}`}
+                  onClick={() => applyStandardEnvironmentPreset(preset)}
+                >
+                  <span className="frame-aspect-button__label">{preset.label}</span>
+                </button>
+              ))}
+            </div>
             <label className="left-slider">
               <span>Intensity</span>
               <input
@@ -585,11 +687,17 @@ function LightTabContent() {
 function FxTabContent() {
   const hud = useEditorStore((state) => state.hud)
   const viewer = useEditorStore((state) => state.viewer)
+  const backgroundAudio = useEditorStore((state) => state.backgroundAudio)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
   const isBloomSelected = selectedObjectId === 'effect:bloom'
+  const isSceneAudioSelected = selectedObjectId === 'effect:scene-audio'
+  const audioInputRef = useRef<HTMLInputElement | null>(null)
+  const currentAudioLabel = getEnvironmentDisplayName(backgroundAudio.assetLabel, 'No audio loaded')
+  const hasSceneAudio = backgroundAudio.isAdded
 
   return (
     <div className="settings-tab">
@@ -609,12 +717,56 @@ function FxTabContent() {
             <span className="tool-button__glyph">Bloom</span>
             <span className="tool-button__label">{!hud.postEffectsEnabled ? 'Create' : 'Select'}</span>
           </button>
+          <button
+            type="button"
+            className={`tool-button effect-create-button${hasSceneAudio ? ' is-active' : ''}`}
+            onClick={() => {
+              if (!hasSceneAudio) {
+                setBackgroundAudio({ isAdded: true })
+                setSelectedObjectId('effect:scene-audio')
+                return
+              }
+              setSelectedObjectId('effect:scene-audio')
+            }}
+          >
+            <span className="tool-button__glyph">AUDIO</span>
+            <span className="tool-button__label">Scene</span>
+          </button>
         </div>
+        <input
+          ref={audioInputRef}
+          className="hidden-input"
+          type="file"
+          accept=".mp3,.wav,.ogg,.m4a,.aac,audio/*"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              if (!file) {
+                return
+              }
+
+              setBackgroundAudio({
+                isAdded: true,
+                enabled: true,
+                previewEnabled: true,
+                previewPlaying: false,
+                previewCurrentTime: 0,
+                previewDuration: 0,
+                assetLabel: file.name,
+                assetUrl: createObjectUrl(file),
+                fileSize: file.size,
+                loop: true,
+              })
+              setSelectedObjectId('effect:scene-audio')
+              event.currentTarget.value = ''
+            }}
+        />
         {hud.postEffectsEnabled && isBloomSelected ? (
           <>
-            <p className="settings-note">
-              Bloom {hud.postEffectsVisible ? 'enabled' : 'hidden'}
-            </p>
+            <p className="left-controls__label material-effect-active-title">Bloom</p>
+            <div className="readout-row">
+              <span>Status</span>
+              <strong>{hud.postEffectsVisible ? 'Enabled' : 'Hidden'}</strong>
+            </div>
             <label className="left-slider">
               <span>Intensity</span>
               <input
@@ -651,6 +803,92 @@ function FxTabContent() {
               />
               <strong>{formatNumber(viewer.bloomThreshold)}</strong>
             </label>
+          </>
+        ) : null}
+        {hasSceneAudio && isSceneAudioSelected ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">Scene Audio</p>
+            <div className="material-asset-control scene-audio-asset-control">
+              <button
+                type="button"
+                className="material-asset-control__button material-asset-control__button--compact"
+                onClick={() => audioInputRef.current?.click()}
+              >
+                <span className="tool-button__label">Load AUDIO</span>
+              </button>
+              <div className="material-asset-control__value" title={currentAudioLabel}>
+                {currentAudioLabel}
+              </div>
+            </div>
+            <div className="material-effect-playback-row">
+              <button
+                type="button"
+                className={`tool-button material-effect-play-button${backgroundAudio.previewPlaying ? ' is-active' : ''}`}
+                aria-label={backgroundAudio.previewPlaying ? 'Pause scene audio preview' : 'Play scene audio preview'}
+                title={backgroundAudio.previewPlaying ? 'Pause scene audio preview' : 'Play scene audio preview'}
+                disabled={!backgroundAudio.assetUrl || !backgroundAudio.previewEnabled}
+                onClick={() =>
+                  setBackgroundAudio({
+                    previewPlaying: !backgroundAudio.previewPlaying,
+                  })
+                }
+              >
+                <PlayIcon isPlaying={backgroundAudio.previewPlaying} />
+              </button>
+              <label className="field field--inline-range material-effect-current-frame material-effect-current-frame--full">
+                <span>
+                  Track <output>{formatDuration(backgroundAudio.previewCurrentTime)} / {formatDuration(backgroundAudio.previewDuration)}</output>
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max={String(Math.max(backgroundAudio.previewDuration, 0.01))}
+                  step="0.01"
+                  value={Math.min(backgroundAudio.previewCurrentTime, Math.max(backgroundAudio.previewDuration, 0.01))}
+                  onInput={(event) =>
+                    setBackgroundAudio({
+                      previewCurrentTime: Number(event.currentTarget.value),
+                    })
+                  }
+                  disabled={!backgroundAudio.assetUrl}
+                />
+              </label>
+            </div>
+            <label className="left-toggle">
+              <input
+                type="checkbox"
+                checked={backgroundAudio.enabled && Boolean(backgroundAudio.assetUrl)}
+                onChange={(event) =>
+                  setBackgroundAudio({
+                    enabled: event.currentTarget.checked && Boolean(backgroundAudio.assetUrl),
+                  })
+                }
+                disabled={!backgroundAudio.assetUrl}
+              />
+              <span>Play On Load</span>
+            </label>
+            <label className="left-slider">
+              <span>Volume</span>
+              <input
+                type="range"
+                min="0"
+                max="0.4"
+                step="0.01"
+                value={backgroundAudio.volume}
+                onInput={(event) => setBackgroundAudio({ volume: Number(event.currentTarget.value) })}
+              />
+              <strong>{Math.round(backgroundAudio.volume * 100)}%</strong>
+            </label>
+            <label className="left-toggle">
+              <input
+                type="checkbox"
+                checked={backgroundAudio.loop}
+                onChange={(event) => setBackgroundAudio({ loop: event.currentTarget.checked })}
+                disabled={!backgroundAudio.assetUrl}
+              />
+              <span>Loop</span>
+            </label>
+            <p className="settings-note">Scene audio starts quietly and repeats while the scene is open.</p>
           </>
         ) : null}
       </div>
@@ -961,6 +1199,21 @@ export function Sidebar() {
     }
   }
 
+  const handleRunPublishedScene = () => {
+    try {
+      const warnings = openPublishedScenePreview()
+      if (warnings.length) {
+        setStatus(`Published preview opened with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+        return
+      }
+
+      setStatus('Published preview opened.')
+    } catch (error) {
+      console.error(error)
+      setStatus('Failed to open published preview.')
+    }
+  }
+
   return (
     <aside className="left-panel">
       <div className="left-panel__body">
@@ -1020,6 +1273,10 @@ export function Sidebar() {
           <button type="button" className="tool-button" onClick={handlePublishScene}>
             <span className="tool-button__glyph">PUB</span>
             <span className="tool-button__label">Publish</span>
+          </button>
+          <button type="button" className="tool-button" onClick={handleRunPublishedScene}>
+            <span className="tool-button__glyph">RUN</span>
+            <span className="tool-button__label">Local</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>

@@ -52,6 +52,12 @@ function getTextureDisplayName(texture: THREE.Texture, fallback: string) {
   return fallback
 }
 
+function getTextureSourceUrl(texture: THREE.Texture) {
+  const imageSource = texture.source?.data as { currentSrc?: string; src?: string } | undefined
+  const sourceUrl = imageSource?.currentSrc || imageSource?.src
+  return typeof sourceUrl === 'string' && sourceUrl ? sourceUrl : null
+}
+
 function buildMaterialTextureSlots(material: THREE.Material) {
   const runtimeLike = material as THREE.Material & Partial<Record<MaterialTextureSlot, THREE.Texture | null>>
 
@@ -63,7 +69,9 @@ function buildMaterialTextureSlots(material: THREE.Material) {
         slot,
         {
           originalLabel: hasOriginalTexture ? getTextureDisplayName(texture, `${slot} Texture`) : null,
+          originalUrl: hasOriginalTexture ? getTextureSourceUrl(texture) : null,
           customLabel: null,
+          customUrl: null,
           selectedSource: hasOriginalTexture ? 'original' : null,
         },
       ]
