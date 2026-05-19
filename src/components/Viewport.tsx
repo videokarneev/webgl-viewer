@@ -42,6 +42,7 @@ const PostEffects = lazy(() =>
 
 const VIEWPORT_GRID_CELL_COLOR = 'rgba(80, 96, 107, 0.8)'
 const VIEWPORT_GRID_SECTION_COLOR = 'rgba(35, 45, 52, 0.8)'
+const EDITOR_CLEAR_COLOR = 0x0d1116
 const LIGHT_METRIC_TEXT = {
   primary: 'rgba(240, 240, 240, 0.94)',
   muted: 'rgba(240, 240, 240, 0.82)',
@@ -536,7 +537,13 @@ function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitContr
   return <ViewerSync controlsRef={controlsRef} />
 }
 
-function RendererBridge({ transparentBackground = false }: { transparentBackground?: boolean }) {
+function RendererBridge({
+  transparentBackground = false,
+  clearColor = EDITOR_CLEAR_COLOR,
+}: {
+  transparentBackground?: boolean
+  clearColor?: number
+}) {
   const { gl } = useThree()
   const exposure = useEditorStore((state) => state.viewer.exposure)
 
@@ -544,8 +551,8 @@ function RendererBridge({ transparentBackground = false }: { transparentBackgrou
     gl.outputColorSpace = THREE.SRGBColorSpace
     gl.toneMapping = THREE.ACESFilmicToneMapping
     gl.toneMappingExposure = exposure
-    gl.setClearColor(0x000000, transparentBackground ? 0 : 1)
-  }, [exposure, gl, transparentBackground])
+    gl.setClearColor(clearColor, transparentBackground ? 0 : 1)
+  }, [clearColor, exposure, gl, transparentBackground])
 
   return null
 }
@@ -1083,6 +1090,7 @@ function ViewportScene({
   allowSelection,
   autoFrameOnLoad,
   transparentBackground,
+  clearColor,
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
@@ -1091,6 +1099,7 @@ function ViewportScene({
   allowSelection: boolean
   autoFrameOnLoad: boolean
   transparentBackground: boolean
+  clearColor: number
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const { camera, size } = useThree()
@@ -1172,7 +1181,7 @@ function ViewportScene({
 
   return (
     <>
-      <RendererBridge transparentBackground={transparentBackground} />
+      <RendererBridge transparentBackground={transparentBackground} clearColor={clearColor} />
       <CameraBridge controlsRef={controlsRef} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
@@ -1342,6 +1351,7 @@ export function Viewport({
     () => (transparentBackground ? ({ background: 'transparent' } as CSSProperties) : undefined),
     [transparentBackground],
   )
+  const clearColor = showChrome ? EDITOR_CLEAR_COLOR : 0x000000
 
   useEffect(() => {
     setIsTransformDragging(false)
@@ -1526,6 +1536,7 @@ export function Viewport({
             <ViewportScene
               allowSelection={allowSelection}
               autoFrameOnLoad={autoFrameOnLoad}
+              clearColor={clearColor}
               onStats={setViewportMetrics}
               onTransformDraggingChange={setIsTransformDragging}
               transparentBackground={transparentBackground}
@@ -1567,6 +1578,7 @@ export function Viewport({
           <ViewportScene
             allowSelection={allowSelection}
             autoFrameOnLoad={autoFrameOnLoad}
+            clearColor={clearColor}
             onStats={setViewportMetrics}
             onTransformDraggingChange={setIsTransformDragging}
             transparentBackground={transparentBackground}
