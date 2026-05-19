@@ -31,6 +31,9 @@ Recent commits relevant to current debugging:
 - `93dec8d` Add dedicated transparent published viewport
 - `8c642c0` Add transparent canvas diagnostic mode
 - `04fd7fa` Force alpha renderer for transparent canvases
+- `0a78fbb` Add WebGL transparency diagnostic and embed background fallback
+- `85e76f8` Report WebGL alpha diagnostic data
+- `9a045d0` Add Vite DOM transparency diagnostic
 
 ## What Is Working
 
@@ -127,9 +130,12 @@ Fixed in earlier work:
 
 - `https://webgl-viewer-jet.vercel.app/iframe-transparency-test.html`
 
-### R3F/WebGL transparent canvas diagnostic
+### Transparent diagnostics
 
 - `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=canvas`
+- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=rawthree`
+- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=webgl`
+- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=dom`
 
 ## The Big Unresolved Problem
 
@@ -179,28 +185,36 @@ What still happens:
 - a dedicated transparent published viewport path was added
 - the issue still remained
 
-### Very Important Diagnostic Result
+### Very Important Diagnostic Results
 
-The strongest finding so far:
+Strongest findings so far:
 
 - `iframe-transparency-test.html` is fully transparent in the same site/embed context
-- but `?player=1&transparent=1&diag=canvas` still shows the opaque dark square
+- `?player=1&transparent=1&diag=canvas` still showed the opaque dark square
+- `?player=1&transparent=1&diag=rawthree` still showed the opaque dark square
+- `?player=1&transparent=1&diag=webgl` still showed the opaque dark square, but reported `context alpha: true`, `clear alpha: 0`, and `corner pixel rgba: 0,0,0,0`
+- `?player=1&transparent=1&diag=dom` still showed the dark square even with no canvas/WebGL at all
 
 This means:
 
 - the browser can display a transparent iframe in that context
-- the site/container can show transparency
-- the remaining problem is inside the current WebGL/R3F canvas path or how that canvas is composited
+- WebGL itself is producing transparent pixels
+- the remaining dark rectangle is not caused by Three, R3F, Bloom, scene JSON, or WebGL clear alpha
+- the remaining source is either the Vite document/root DOM background or the page/container behind the iframe
 
 ## Current Transparency Debugging State
 
-### Changes already made in code
+### Changes already made in code / currently in progress
 
 Published player transparency work touched:
 
+- `src/main.tsx`
 - `src/app/PublishedPlayerApp.tsx`
 - `src/components/TransparentPublishedViewport.tsx`
 - `src/components/TransparentCanvasDiagnostic.tsx`
+- `src/components/TransparentDomDiagnostic.tsx`
+- `src/components/TransparentRawThreeDiagnostic.tsx`
+- `src/components/TransparentRawWebGlDiagnostic.tsx`
 - `src/styles.css`
 
 Important things now in repo:
@@ -224,24 +238,28 @@ Important things now in repo:
 
 ### Current conclusion from diagnostics
 
-Because even `diag=canvas` still shows the dark square:
+Because `diag=dom` still shows the dark square:
 
-- this is likely not caused by exported scene data
+- this is not caused by exported scene data
 - not caused by environment background wiring
-- not caused by bloom
-- not caused by the outer iframe itself
+- not caused by bloom/postprocessing
+- not caused by R3F/Three/WebGL renderer alpha
+- not caused by the canvas pixels themselves
 
 The likely remaining source is one of:
 
-1. browser/WebGL canvas alpha compositing behavior in this exact R3F setup
-2. how R3F/Canvas is creating or owning the renderer/canvas
-3. some remaining opaque render target / canvas clear path despite the explicit alpha config
+1. a remaining opaque root/background layer in the Vite app document
+2. the `iframe` becoming transparent correctly and revealing a black center wrapper/background on the host page
+3. browser/site CSS around the iframe setting the iframe slot/background to black
 
 ## Files Most Relevant To Continue Transparency Debugging
 
+- `src/main.tsx`
 - `src/app/PublishedPlayerApp.tsx`
 - `src/components/TransparentPublishedViewport.tsx`
 - `src/components/TransparentCanvasDiagnostic.tsx`
+- `src/components/TransparentDomDiagnostic.tsx`
+- `src/components/TransparentRawWebGlDiagnostic.tsx`
 - `src/styles.css`
 
 Secondary but still relevant:
@@ -258,14 +276,14 @@ The next debugging pass should start from this exact conclusion:
 
 1. Do not keep blaming iframe/container/CSS alone.
 2. Do not keep blaming bloom alone.
-3. Treat this as a WebGL/R3F transparency/compositing issue because `diag=canvas` reproduces it.
+3. Do not keep blaming WebGL/R3F alone because raw WebGL reports transparent pixels and `diag=dom` reproduces the dark square without canvas.
 
 Most promising next moves:
 
-1. inspect whether the actual canvas produced by `@react-three/fiber` is composited opaque despite `alpha: true`
-2. compare with a raw manual `THREE.WebGLRenderer` mount outside `Canvas`
-3. if needed, create a no-R3F pure Three.js transparent diagnostic route
-4. if raw Three.js is transparent but R3F is not, the problem is in the current `Canvas` stack/config
+1. deploy the root DOM transparent reset in `src/main.tsx` and `src/styles.css`
+2. test `?player=1&transparent=1&diag=dom` again after Vercel deploy
+3. if `diag=dom` still shows black, inspect/adjust the host page iframe wrapper because the Vite app content is transparent and the black is behind it
+4. if `diag=dom` becomes transparent but the real player does not, return to the dedicated transparent player viewport path
 
 ## User Workflow / Collaboration Notes
 

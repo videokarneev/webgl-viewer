@@ -25,11 +25,17 @@ body {
 }
 
 html.player-transparent,
+:root.player-transparent,
 html.player-transparent body,
 body.player-transparent,
-html.player-transparent #app {
+html.player-transparent #app,
+html.player-transparent main,
+html.player-transparent .published-player-shell,
+html.player-transparent .transparent-published-viewport,
+html.player-transparent .transparent-dom-diagnostic {
   background: transparent !important;
   background-color: transparent !important;
+  background-image: none !important;
 }
 
 .published-player-shell,
