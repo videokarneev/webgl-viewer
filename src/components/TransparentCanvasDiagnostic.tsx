@@ -30,11 +30,19 @@ export function TransparentCanvasDiagnostic() {
         className="transparent-published-viewport__canvas"
         dpr={[1, 2]}
         style={{ background: 'transparent' }}
-        gl={{ alpha: true, antialias: true }}
+        gl={(defaults) =>
+          new THREE.WebGLRenderer({
+            ...defaults,
+            alpha: true,
+            antialias: true,
+            premultipliedAlpha: true,
+          })
+        }
         camera={{ position: [0, 0, 4.5], fov: 40, near: 0.1, far: 100 }}
         onCreated={({ gl, scene }) => {
           gl.domElement.style.background = 'transparent'
           gl.setClearColor(0x000000, 0)
+          gl.setClearAlpha(0)
           scene.background = null
         }}
       >

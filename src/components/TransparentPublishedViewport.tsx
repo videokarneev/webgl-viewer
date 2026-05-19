@@ -115,7 +115,14 @@ export function TransparentPublishedViewport() {
         className="transparent-published-viewport__canvas"
         dpr={[1, 2]}
         style={{ background: 'transparent' }}
-        gl={{ alpha: true, antialias: true, premultipliedAlpha: false }}
+        gl={(defaults) =>
+          new THREE.WebGLRenderer({
+            ...defaults,
+            alpha: true,
+            antialias: true,
+            premultipliedAlpha: true,
+          })
+        }
         camera={{
           position: viewer.cameraPosition,
           fov: DEFAULT_VIEWER_CAMERA_FOV,
@@ -125,6 +132,7 @@ export function TransparentPublishedViewport() {
         onCreated={({ gl, scene }) => {
           gl.domElement.style.background = 'transparent'
           gl.setClearColor(0x000000, 0)
+          gl.setClearAlpha(0)
           scene.background = null
         }}
       >
