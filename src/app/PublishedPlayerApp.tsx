@@ -8,6 +8,10 @@ import { buildPublishIdMap } from '../features/publish/publishNodeIds'
 import { useEditorStore, type ExtraLightType, type MaterialTextureSlot } from '../store/editorStore'
 import type { PublishedSceneV2 } from '../features/publish/buildPublishedScene'
 
+function isTransparentPublishedPlayer() {
+  return new URL(window.location.href).searchParams.get('transparent') === '1'
+}
+
 type RuntimePublishedMaterial = THREE.Material & {
   needsUpdate: boolean
   map?: THREE.Texture | null
@@ -80,7 +84,13 @@ async function loadPublishedEnvironmentTexture(url: string, label: string | null
   return texture
 }
 
-function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
+function PublishedSceneController({
+  scene,
+  transparentBackground,
+}: {
+  scene: PublishedSceneV2
+  transparentBackground: boolean
+}) {
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
   const requestAtlasLoad = useEditorStore((state) => state.requestAtlasLoad)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
@@ -130,7 +140,7 @@ function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
       postEffectsEnabled: scene.viewer.postEffectsEnabled,
       postEffectsVisible: scene.viewer.postEffectsEnabled,
     })
-    setBackgroundMode(scene.scene.background.mode as never)
+    setBackgroundMode((transparentBackground ? 'none' : scene.scene.background.mode) as never)
     setBackgroundColor(scene.scene.background.color)
     setBackgroundRotation(scene.scene.background.rotation)
     setViewer({
@@ -203,6 +213,7 @@ function PublishedSceneController({ scene }: { scene: PublishedSceneV2 }) {
     setHud,
     setLights,
     setViewer,
+    transparentBackground,
   ])
 
   useEffect(() => {
@@ -502,6 +513,7 @@ export function PublishedPlayerApp() {
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const [scene, setScene] = useState<PublishedSceneV2 | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const transparentBackground = isTransparentPublishedPlayer()
 
   useEffect(() => {
     requestSceneReset()
@@ -515,6 +527,16 @@ export function PublishedPlayerApp() {
       })
   }, [requestSceneReset])
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('player-transparent', transparentBackground)
+    document.body.classList.toggle('player-transparent', transparentBackground)
+
+    return () => {
+      document.documentElement.classList.remove('player-transparent')
+      document.body.classList.remove('player-transparent')
+    }
+  }, [transparentBackground])
+
   if (error) {
     return <main className="published-player-error">{error}</main>
   }
@@ -524,11 +546,17 @@ export function PublishedPlayerApp() {
   }
 
   return (
-    <main className="published-player-shell">
+    <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
       <AssetController />
       <BackgroundAudioController autoplay />
-      <PublishedSceneController scene={scene} />
-      <Viewport showChrome={false} allowSelection={false} enforceFrameAspect autoFrameOnLoad={false} />
+      <PublishedSceneController scene={scene} transparentBackground={transparentBackground} />
+      <Viewport
+        showChrome={false}
+        allowSelection={false}
+        enforceFrameAspect
+        autoFrameOnLoad={false}
+        transparentBackground={transparentBackground}
+      />
     </main>
   )
 }

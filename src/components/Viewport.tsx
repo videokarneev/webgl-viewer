@@ -1262,11 +1262,13 @@ export function Viewport({
   allowSelection = true,
   enforceFrameAspect = false,
   autoFrameOnLoad = true,
+  transparentBackground = false,
 }: {
   showChrome?: boolean
   allowSelection?: boolean
   enforceFrameAspect?: boolean
   autoFrameOnLoad?: boolean
+  transparentBackground?: boolean
 }) {
   const hud = useEditorStore((state) => state.hud)
   const isZenMode = useEditorStore((state) => state.isZenMode)
@@ -1455,7 +1457,11 @@ export function Viewport({
   }, [backgroundColor, backgroundMode, currentBackgroundMap, currentEnvMap])
 
   return (
-    <main ref={containerRef} className="viewport-wrap" style={viewportStyle}>
+    <main
+      ref={containerRef}
+      className={`viewport-wrap${transparentBackground ? ' viewport-wrap--transparent' : ''}`}
+      style={viewportStyle}
+    >
       {enforceFrameAspect ? (
         <div className="viewport-stage" style={frameStyle}>
           <Canvas
