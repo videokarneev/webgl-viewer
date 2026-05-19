@@ -550,6 +550,25 @@ function RendererBridge({ transparentBackground = false }: { transparentBackgrou
   return null
 }
 
+function TransparentCanvasController() {
+  const { gl, scene } = useThree()
+
+  useEffect(() => {
+    gl.domElement.style.background = 'transparent'
+    scene.background = null
+    gl.setClearColor(0x000000, 0)
+  }, [gl, scene])
+
+  useFrame(() => {
+    scene.background = null
+    scene.backgroundBlurriness = 0
+    scene.backgroundIntensity = 1
+    gl.setClearColor(0x000000, 0)
+  }, 1000)
+
+  return null
+}
+
 function SceneBridge({ allowSelection }: { allowSelection: boolean }) {
   const loadedModels = useEditorStore((state) => state.loadedModels)
   const runtimeObjectById = useEditorStore((state) => state.runtime.objectById)
@@ -1151,6 +1170,7 @@ function ViewportScene({
   return (
     <>
       <RendererBridge transparentBackground={transparentBackground} />
+      {transparentBackground ? <TransparentCanvasController /> : null}
       <CameraBridge controlsRef={controlsRef} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
