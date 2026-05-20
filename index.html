@@ -6,6 +6,42 @@
     <title>GLB Viewer</title>
     <script>
       (function () {
+        var searchParams = new URL(window.location.href).searchParams;
+        var isTransparentPlayer = searchParams.get('player') === '1' && searchParams.get('transparent') === '1';
+        var backgroundOverride = (function () {
+          var value = searchParams.get('bg');
+          if (!value) {
+            return null;
+          }
+
+          var normalized = value.charAt(0) === '#' ? value : '#' + value;
+          return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null;
+        })();
+
+        if (isTransparentPlayer) {
+          var nextBackground = backgroundOverride || 'transparent';
+          document.documentElement.classList.add('player-transparent');
+          document.documentElement.style.background = nextBackground;
+
+          var earlyStyle = document.createElement('style');
+          earlyStyle.textContent =
+            'html.player-transparent, html.player-transparent body, html.player-transparent #app {' +
+            'background: ' + nextBackground + ' !important;' +
+            'background-color: ' + nextBackground + ' !important;' +
+            'background-image: none !important;' +
+            '}';
+          document.head.appendChild(earlyStyle);
+
+          document.addEventListener('DOMContentLoaded', function () {
+            document.body.classList.add('player-transparent');
+            document.body.style.background = nextBackground;
+            var app = document.getElementById('app');
+            if (app) {
+              app.style.background = nextBackground;
+            }
+          });
+        }
+
         function showRuntimeError(message) {
           var existing = document.getElementById('runtime-error');
           if (existing) {
