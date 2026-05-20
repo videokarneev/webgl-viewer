@@ -1193,7 +1193,7 @@ function ViewportScene({
         {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
         <MaterialEffectController />
         <SceneAnimationController />
-        {!transparentBackground && hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
+        {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (
         <Grid

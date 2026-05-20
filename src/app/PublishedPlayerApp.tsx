@@ -167,8 +167,8 @@ function PublishedSceneController({
       gridVisible: false,
       axesVisible: false,
       transformMode: 'none',
-      postEffectsEnabled: transparentBackground ? false : scene.viewer.postEffectsEnabled,
-      postEffectsVisible: transparentBackground ? false : scene.viewer.postEffectsEnabled,
+      postEffectsEnabled: scene.viewer.postEffectsEnabled,
+      postEffectsVisible: scene.viewer.postEffectsEnabled,
     })
     setBackgroundMode((transparentBackground ? 'none' : scene.scene.background.mode) as never)
     setBackgroundColor(scene.scene.background.color)
