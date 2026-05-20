@@ -11,7 +11,7 @@
       "kind": "hdri",
       "assetLabel": "City Night Lights",
       "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
-      "intensity": 2,
+      "intensity": 1.8,
       "rotation": 0,
       "backgroundMode": "color",
       "backgroundVisible": true,
@@ -24,18 +24,18 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -0.4400707437148347,
-      -0.45918020209948934,
-      -0.1014970752869199
+      0.5157965649863802,
+      -0.4233992274459879,
+      0.6444436316207092
     ],
     "target": [
-      0.0046476371663550144,
-      -0.010225676871914694,
-      0.0038730890645377685
+      0.0035514644000000026,
+      -0.00523629625475959,
+      0.008546106549390198
     ],
     "focalLength": 85,
     "frameAspectPreset": "1:1",
-    "exposure": 1
+    "exposure": 0.77
   },
   "viewer": {
     "postEffectsEnabled": true,
@@ -54,7 +54,7 @@
     "enabled": true,
     "assetLabel": "The Theme Of The Ring (short).mp3",
     "assetUrl": "assets/audio/scene-audio-the-theme-of-the-ring-short.mp3",
-    "volume": 0.03,
+    "volume": 0.02,
     "loop": true
   },
   "lights": {
@@ -73,7 +73,7 @@
     "extra": []
   },
   "model": {
-    "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
+    "id": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d",
     "assetLabel": "ring.glb",
     "assetUrl": "assets/model/scene-model-ring.glb",
     "visible": true,
@@ -97,7 +97,7 @@
   },
   "objects": [
     {
-      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
+      "id": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -121,8 +121,8 @@
       }
     },
     {
-      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0",
-      "parentId": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c",
+      "id": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d/node:0",
+      "parentId": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d",
       "type": "mesh",
       "label": "Box001",
       "visible": true,
@@ -147,16 +147,16 @@
   ],
   "materials": [
     {
-      "id": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0/material:0",
+      "id": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d/node:0/material:0",
       "name": "Material #43",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
       "color": "#ead659",
       "emissive": "#000000",
       "metalness": 1,
-      "roughness": 0,
+      "roughness": 0.19,
       "envMapIntensity": 1,
-      "emissiveIntensity": 3.35,
+      "emissiveIntensity": 1.49,
       "clearcoat": null,
       "environmentOverride": null,
       "textureSlots": {
@@ -182,8 +182,8 @@
           "gridY": 25,
           "fps": 12,
           "frameCount": 50,
-          "currentFrame": 3,
-          "opacity": 0.47,
+          "currentFrame": 10,
+          "opacity": 0.61,
           "frameBlend": true,
           "loop": true,
           "uvChannel": "auto",
@@ -201,13 +201,13 @@
   "animations": [
     {
       "type": "rotate",
-      "targetObjectId": "root:dbc68d4a-cc9e-4433-b092-897fbfdd156c/node:0",
+      "targetObjectId": "root:f6867af7-6c38-421b-bd5d-a7c252d2404d/node:0",
       "enabled": true,
       "loop": true,
       "pivot": "gizmo",
       "axis": "z",
       "speed": 5,
-      "progress": 21.708888888775377
+      "progress": 13.320555555572748
     }
   ]
 }
