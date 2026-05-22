@@ -21,6 +21,13 @@ function getFrameCoordinates(index: number, gridX: number, gridY: number, order:
   }
 }
 
+function getFrameCellSize(imageWidth: number, imageHeight: number, columns: number, rows: number) {
+  return {
+    width: imageWidth / Math.max(columns, 1),
+    height: imageHeight / Math.max(rows, 1),
+  }
+}
+
 export function useAtlasAnimator(materialId: string | null) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameTextureRef = useRef<THREE.CanvasTexture | null>(null)
@@ -48,7 +55,7 @@ export function useAtlasAnimator(materialId: string | null) {
       const effect = materialState.effect
       const columns = Math.max(1, effect.gridX)
       const rows = Math.max(1, effect.gridY)
-      const maxFrames = columns * rows
+      const maxFrames = Math.max(1, columns * rows)
       const sourceFrame = requestedFrame ?? effect.currentFrame
       const clampedFrame = Math.min(Math.max(0, sourceFrame), Math.max(0, maxFrames - 1))
       const baseFrame = Math.floor(clampedFrame)
@@ -57,12 +64,13 @@ export function useAtlasAnimator(materialId: string | null) {
       const nextFrame = effect.loop ? (baseFrame + 1) % maxFrames : Math.min(baseFrame + 1, maxFrames - 1)
       const { column, row } = getFrameCoordinates(baseFrame, columns, rows, effect.frameOrder)
       const { column: nextColumn, row: nextRow } = getFrameCoordinates(nextFrame, columns, rows, effect.frameOrder)
-      const frameWidth = Math.max(1, Math.floor(image.width / columns))
-      const frameHeight = Math.max(1, Math.floor(image.height / rows))
-      const sourceX = column * frameWidth
-      const sourceY = row * frameHeight
-      const nextSourceX = nextColumn * frameWidth
-      const nextSourceY = nextRow * frameHeight
+      const frameSize = getFrameCellSize(image.width, image.height, columns, rows)
+      const sourceX = column * frameSize.width
+      const sourceY = row * frameSize.height
+      const nextSourceX = nextColumn * frameSize.width
+      const nextSourceY = nextRow * frameSize.height
+      const outputWidth = Math.max(1, Math.round(frameSize.width))
+      const outputHeight = Math.max(1, Math.round(frameSize.height))
       const effectOpacity = Math.min(Math.max(effect.opacity, 0), 1)
 
       if (!canvasRef.current) {
@@ -70,26 +78,36 @@ export function useAtlasAnimator(materialId: string | null) {
       }
 
       const canvas = canvasRef.current
-      canvas.width = frameWidth
-      canvas.height = frameHeight
+      canvas.width = outputWidth
+      canvas.height = outputHeight
 
       const ctx = canvas.getContext('2d')
       if (!ctx) {
         return atlasTexture
       }
 
-      ctx.clearRect(0, 0, frameWidth, frameHeight)
-      ctx.drawImage(image, sourceX, sourceY, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight)
+      ctx.clearRect(0, 0, outputWidth, outputHeight)
+      ctx.drawImage(image, sourceX, sourceY, frameSize.width, frameSize.height, 0, 0, outputWidth, outputHeight)
 
       if (blendWeight > 0.001) {
         ctx.save()
         ctx.globalAlpha = blendWeight
-        ctx.drawImage(image, nextSourceX, nextSourceY, frameWidth, frameHeight, 0, 0, frameWidth, frameHeight)
+        ctx.drawImage(
+          image,
+          nextSourceX,
+          nextSourceY,
+          frameSize.width,
+          frameSize.height,
+          0,
+          0,
+          outputWidth,
+          outputHeight,
+        )
         ctx.restore()
       }
 
       if (effectOpacity < 0.999) {
-        const imageData = ctx.getImageData(0, 0, frameWidth, frameHeight)
+        const imageData = ctx.getImageData(0, 0, outputWidth, outputHeight)
         const { data } = imageData
         for (let index = 0; index < data.length; index += 4) {
           data[index] = Math.round(data[index] * effectOpacity)
@@ -105,6 +123,7 @@ export function useAtlasAnimator(materialId: string | null) {
       }
 
       ensureFrameTextureOptions(frameTextureRef.current, effect.wrapMode)
+      frameTextureRef.current.needsUpdate = true
       setAtlasFrameTexture(frameTextureRef.current)
       return frameTextureRef.current
     },

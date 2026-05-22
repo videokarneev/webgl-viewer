@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-05-20
+Last updated: 2026-05-21
 
 ## Project
 
@@ -23,7 +23,7 @@ Main entrypoints:
 
 ## Current Status
 
-The core publish / embed workflow is now working.
+The core publish / embed workflow is still working, and the latest change was focused on `Flipbook Animation`.
 
 Confirmed working:
 
@@ -35,6 +35,7 @@ Confirmed working:
 - transparent `iframe` embedding for published scenes
 - manual scene replacement in `public/scenes/demo-01`
 - bloom support in transparent published player
+- flipbook animation with arbitrary atlas grid sizes
 
 Still intentionally left as-is:
 
@@ -67,15 +68,15 @@ Useful diagnostics:
 - `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=webgl`
 - `https://webgl-viewer-jet.vercel.app/iframe-transparency-test.html`
 
-## What Was Solved Today
+## What Was Solved Recently
 
-### 1. Transparent iframe player now really works
+### 1. Transparent iframe player really works
 
-This was the main long-running issue.
+This remains the main published-player milestone from the previous session.
 
-Final result:
+Current result:
 
-- published scenes can now be embedded through `iframe`
+- published scenes can be embedded through `iframe`
 - the internal opaque rectangle problem is gone
 - the site background can show through transparent player mode
 
@@ -83,7 +84,7 @@ Important implementation pieces:
 
 - transparent published player uses the main shared `Viewport` path instead of a divergent special renderer
 - DOM/root background reset is applied for transparent published player
-- an early pre-React transparent reset now runs in `index.html` to prevent startup flashing
+- an early pre-React transparent reset runs in `index.html` to prevent startup flashing
 
 Most relevant files:
 
@@ -94,26 +95,24 @@ Most relevant files:
 
 ### 2. Startup flash was reduced/fixed
 
-The user noticed a very brief dark-blue / editor-like flash at scene startup.
-
-This was addressed by adding an early transparent bootstrap in `index.html` before React mounts:
+The brief dark-blue / editor-like flash at scene startup was addressed with an early transparent bootstrap in `index.html` before React mounts:
 
 - if `?player=1&transparent=1` is present
 - `html/body/#app` are immediately forced to transparent or to `bg=...` override
 - editor gradient / blue startup background is suppressed for transparent published mode
 
-### 3. Bloom was not being applied in transparent published player
+### 3. Bloom works in transparent published player
 
-This was a real bug.
+This remains fixed.
 
-Cause:
+Cause that was found previously:
 
-- transparent published mode was explicitly disabling post effects in code
+- transparent published mode had been explicitly disabling post effects in code
 
-Fixed by:
+Fix that remains in place:
 
-- allowing `scene.viewer.postEffectsEnabled` to pass through in transparent mode
-- allowing `Viewport` to render `PostEffects` even when `transparentBackground` is true
+- `scene.viewer.postEffectsEnabled` is allowed to pass through in transparent mode
+- `Viewport` can render `PostEffects` even when `transparentBackground` is true
 
 Relevant files:
 
@@ -122,20 +121,49 @@ Relevant files:
 
 ### 4. Editor dark-blue viewport background was restored
 
-After transparency work, the local editor viewport looked too black.
-
-Now:
+Current intended split:
 
 - the editor / GLB Viewer keeps its dark-blue editor clear color
 - published transparent player stays transparent
 
 This separation is intentional and working.
 
+### 5. Flipbook Animation defaults and arbitrary grid sizes were fixed
+
+This was the latest change on 2026-05-21.
+
+User-reported issue:
+
+- `Flipbook Animation` appeared to work only with the old default atlas settings of `2` columns and `25` rows
+- those defaults were inherited from a ring asset and were wrong for most other models / atlases
+
+What changed:
+
+- the default flipbook grid is now `1` column and `1` row
+- default `frameCount` now starts at `1`
+- users are expected to set the real atlas grid manually for each asset
+
+Why the animation could fail before:
+
+- frame extraction used integer-truncated cell sizes via `Math.floor(image.width / columns)` and `Math.floor(image.height / rows)`
+- that could break sampling on atlas textures whose dimensions were not evenly divisible by the configured grid
+
+What was fixed in runtime:
+
+- frame extraction now uses fractional source cell sizes instead of truncating them early
+- the extracted canvas frame is sized from the computed cell dimensions and marked with `needsUpdate`
+- runtime playback still clamps safely to the active grid and works for arbitrary `gridX/gridY` values
+
+Relevant files:
+
+- `src/store/editorStore.ts`
+- `src/features/atlas/useAtlasAnimator.ts`
+
 ## Audio State
 
-Audio autoplay was tightened, but not fully “solved” because browser policy is the real limiter.
+Audio autoplay was tightened, but not fully "solved" because browser policy is the real limiter.
 
-What was improved:
+What was improved earlier:
 
 - more aggressive retry points for autoplay
 - better retry timing when media becomes ready
@@ -150,7 +178,7 @@ What remains true:
 User decision:
 
 - leave audio behavior as-is
-- do not add any “Enable sound” button
+- do not add any "Enable sound" button
 
 Relevant file:
 
@@ -184,6 +212,8 @@ That includes:
 - transparent-mode bloom support
 - editor dark-blue viewport background separation
 - improved audio autoplay retry behavior
+- flipbook animation defaulting to neutral `1x1`
+- flipbook playback working across arbitrary atlas grid sizes
 
 What remains scene-specific:
 
@@ -191,6 +221,7 @@ What remains scene-specific:
 - whether bloom is enabled in the exported `scene.json`
 - environment/background settings
 - audio asset itself
+- the correct flipbook `gridX/gridY` values for a particular atlas
 
 ## Most Relevant Recent Commits
 
@@ -208,17 +239,20 @@ Other important older commits from the same debugging arc:
 
 ## Files Most Relevant If Work Continues
 
+- `CODEX_HANDOFF.md`
 - `index.html`
 - `src/app/PublishedPlayerApp.tsx`
 - `src/components/Viewport.tsx`
 - `src/components/BackgroundAudioController.tsx`
 - `src/components/viewport/PostEffects.tsx`
 - `src/styles.css`
+- `src/store/editorStore.ts`
+- `src/features/atlas/useAtlasAnimator.ts`
 - `public/scenes/demo-01/scene.json`
 
 ## Current Git State
 
-Working tree was clean at the time of this handoff update.
+Working tree included the latest flipbook-default and atlas-grid runtime fix at the time of this handoff update.
 
 ## Validation
 
