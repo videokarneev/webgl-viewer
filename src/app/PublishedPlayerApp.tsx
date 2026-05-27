@@ -9,7 +9,14 @@ import { TransparentRawWebGlDiagnostic } from '../components/TransparentRawWebGl
 import { Viewport } from '../components/Viewport'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { buildPublishIdMap } from '../features/publish/publishNodeIds'
-import { useEditorStore, type ExtraLightType, type MaterialTextureSlot } from '../store/editorStore'
+import {
+  DEFAULT_GOD_RAYS_GLOBAL_DIRECTION,
+  DEFAULT_GOD_RAYS_GLOBAL_NOISE,
+  getGodRaysDustStrengthValue,
+  useEditorStore,
+  type ExtraLightType,
+  type MaterialTextureSlot,
+} from '../store/editorStore'
 import type { PublishedSceneV2 } from '../features/publish/buildPublishedScene'
 
 function isTransparentPublishedPlayer() {
@@ -130,6 +137,10 @@ function PublishedSceneController({
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const setLights = useEditorStore((state) => state.setLights)
   const replaceExtraLights = useEditorStore((state) => state.replaceExtraLights)
+  const replaceGodRaysBoxes = useEditorStore((state) => state.replaceGodRaysBoxes)
+  const replaceStencilVolumes = useEditorStore((state) => state.replaceStencilVolumes)
+  const setGodRaysGlobalNoise = useEditorStore((state) => state.setGodRaysGlobalNoise)
+  const setGodRaysGlobalDirection = useEditorStore((state) => state.setGodRaysGlobalDirection)
   const setViewer = useEditorStore((state) => state.setViewer)
   const setHud = useEditorStore((state) => state.setHud)
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
@@ -158,6 +169,9 @@ function PublishedSceneController({
   }, [sceneGraph])
 
   useEffect(() => {
+    const publishedGlobalNoise = scene.godRaysGlobals?.noise
+    const publishedGlobalDirection = scene.godRaysGlobals?.direction?.vector
+
     setHud({
       orbitEnabled: scene.camera.mode !== 'firstPerson',
       sidebarVisible: false,
@@ -170,6 +184,15 @@ function PublishedSceneController({
       postEffectsEnabled: scene.viewer.postEffectsEnabled,
       postEffectsVisible: scene.viewer.postEffectsEnabled,
     })
+    setGodRaysGlobalNoise({
+      rayNoiseAmount: publishedGlobalNoise?.amount ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayNoiseAmount,
+      rayNoiseScale: publishedGlobalNoise?.scale ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayNoiseScale,
+      rayGrain: publishedGlobalNoise?.grain ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayGrain,
+      rayNoiseMotionMode: publishedGlobalNoise?.motionMode ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayNoiseMotionMode,
+      rayNoiseMotionSpeed: publishedGlobalNoise?.motionSpeed ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayNoiseMotionSpeed,
+      rayQuality: publishedGlobalNoise?.quality ?? DEFAULT_GOD_RAYS_GLOBAL_NOISE.rayQuality,
+    })
+    setGodRaysGlobalDirection(publishedGlobalDirection ?? DEFAULT_GOD_RAYS_GLOBAL_DIRECTION)
     setBackgroundMode((transparentBackground ? 'none' : scene.scene.background.mode) as never)
     setBackgroundColor(scene.scene.background.color)
     setBackgroundRotation(scene.scene.background.rotation)
@@ -209,6 +232,110 @@ function PublishedSceneController({
         id: `published:${light.id}`,
       })),
     )
+    replaceGodRaysBoxes(
+      (scene.godRaysBoxes ?? []).map((entry, index) => ({
+        id: `published:${entry.id}`,
+        label: entry.label || `God Rays ${index + 1}`,
+        visible: entry.visible,
+        sideCount: entry.sideCount ?? 4,
+        bottomRadius: entry.bottomRadius ?? 0.7071067811865476,
+        topRadius: entry.topRadius ?? entry.bottomRadius ?? 0.7071067811865476,
+        linkTopRadius: entry.linkTopRadius ?? true,
+        helperVisible: entry.helperVisible ?? true,
+        topDome: entry.topDome ?? 10,
+        transform: {
+          position: [...entry.transform.position] as [number, number, number],
+          rotation: [...entry.transform.rotation] as [number, number, number],
+          scale: [...entry.transform.scale] as [number, number, number],
+          visible: entry.visible,
+        },
+        sourceFace: '-y' as never,
+        raysEnabled: entry.rays.enabled,
+        rayColor: entry.rays.color,
+        rayIntensity: entry.rays.intensity,
+        rayFalloff: entry.rays.falloff,
+        rayEdgeFade: entry.rays.edgeFade,
+        rayUseGlobalNoiseSettings: entry.rays.useGlobalSettings ?? true,
+        rayNoiseAmount: entry.rays.noiseAmount,
+        rayNoiseScale: entry.rays.noiseScale,
+        rayGrain: entry.rays.grain ?? 0.18,
+        rayNoiseMotionMode: (entry.rays.noiseMotionMode ?? 'off') as never,
+        rayNoiseMotionSpeed: entry.rays.noiseMotionSpeed ?? 1.6,
+        rayQuality: (entry.rays.quality ?? 'low') as never,
+        dustEnabled: entry.dust.enabled,
+        dustCount: entry.dust.count,
+        dustSizeMin: entry.dust.sizeMin,
+        dustSizeMax: entry.dust.sizeMax,
+        dustSpeed: entry.dust.speed ?? 0.01,
+        dustColorLinked: entry.dust.colorLinked ?? true,
+        dustColor: entry.dust.color ?? entry.rays.color,
+        dustStrength: getGodRaysDustStrengthValue(entry.dust.strength),
+        dustDirectionMode: entry.dust.directionMode ?? 'local',
+        dustDirectionLocal: [...(entry.dust.directionLocal ?? [0, 1, 0])] as [number, number, number],
+        dustDrift: entry.dust.drift,
+        dustEdgeFade: entry.dust.edgeFade,
+      })),
+    )
+    replaceStencilVolumes(
+      (scene.stencilVolumes ?? []).map((entry, index) => ({
+        id: `published:${entry.id}`,
+        label: entry.label || (index === 0 ? 'Stencil Volume' : `Stencil Volume ${index + 1}`),
+        visible: entry.visible,
+        sourceWidth: entry.source.width,
+        sourceHeight: entry.source.height,
+        maskAssetLabel: null,
+        maskAssetUrl: null,
+        bakedContourShapes: entry.source.bakedContourShapes,
+        bakedPrimitiveShapeGroups: entry.source.bakedPrimitiveShapeGroups,
+        bakedPreparedPrimitives: entry.source.bakedPreparedPrimitives,
+        projectionVisible: false,
+        maskInvert: false,
+        contourDetail: 0.5,
+        contourSimplify: 0.18,
+        contourSmooth: 0.35,
+        contourMinArea: 0.02,
+        contourMode: 'silhouette',
+        contourShowInnerLoops: true,
+        contourDebugVisible: false,
+        extrudeEnd: [...entry.extrude.end] as [number, number, number],
+        endRotationX: entry.extrude.endRotationX,
+        endRotationY: entry.extrude.endRotationY,
+        endScaleX: entry.extrude.endScaleX,
+        endScaleY: entry.extrude.endScaleY,
+        volumeColor: entry.rays.color,
+        volumeIntensity: entry.rays.intensity,
+        volumeFalloff: entry.rays.falloff,
+        rayEdgeFade: entry.rays.edgeFade,
+        rayFillQuality: entry.rays.fillQuality ?? 0,
+        rayNoiseAmount: entry.rays.noiseAmount,
+        rayNoiseScale: entry.rays.noiseScale,
+        rayGrain: entry.rays.grain ?? 0.18,
+        rayNoiseMotionMode: (entry.rays.noiseMotionMode ?? 'off') as never,
+        rayNoiseMotionSpeed: entry.rays.noiseMotionSpeed ?? 1.6,
+        rayQuality: (entry.rays.quality ?? 'low') as never,
+        rayUseGlobalNoiseSettings: entry.rays.useGlobalSettings ?? true,
+        roundedTop: 6,
+        dustEnabled: entry.dust.enabled,
+        dustCount: entry.dust.count,
+        dustSizeMin: entry.dust.sizeMin,
+        dustSizeMax: entry.dust.sizeMax,
+        dustSpeed: entry.dust.speed ?? 0.01,
+        dustColorLinked: entry.dust.colorLinked ?? true,
+        dustColor: entry.dust.color ?? entry.rays.color,
+        dustDirectionMode: entry.dust.directionMode ?? 'global',
+        dustDirectionLocal: [...(entry.dust.directionLocal ?? [0, 1, 0])] as [number, number, number],
+        dustDrift: entry.dust.drift,
+        dustStrength: getGodRaysDustStrengthValue(entry.dust.strength),
+        dustEdgeFade: entry.dust.edgeFade,
+        helperVisible: false,
+        transform: {
+          position: [...entry.transform.position] as [number, number, number],
+          rotation: [...entry.transform.rotation] as [number, number, number],
+          scale: [...entry.transform.scale] as [number, number, number],
+          visible: entry.visible,
+        },
+      })),
+    )
     setEnvironment({
       isEnvironmentEnabled: scene.scene.environment.enabled,
       kind: scene.scene.environment.kind as never,
@@ -234,12 +361,16 @@ function PublishedSceneController({
     })
   }, [
     replaceExtraLights,
+    replaceGodRaysBoxes,
+    replaceStencilVolumes,
     scene,
     setBackgroundAudio,
     setBackgroundColor,
     setBackgroundMode,
     setBackgroundRotation,
     setEnvironment,
+    setGodRaysGlobalDirection,
+    setGodRaysGlobalNoise,
     setHud,
     setLights,
     setViewer,

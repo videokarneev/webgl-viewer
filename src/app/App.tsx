@@ -88,6 +88,73 @@ export function App() {
       }
 
       if (!event.ctrlKey && !event.metaKey) {
+        if (event.key === 'Delete') {
+          const state = useEditorStore.getState()
+          const selectedObjectId = state.selectedObjectId
+
+          if (!selectedObjectId) {
+            return
+          }
+
+          event.preventDefault()
+
+          if (selectedObjectId === 'effect:bloom') {
+            state.setHud({ postEffectsEnabled: false, postEffectsVisible: false, transformMode: 'none' })
+            state.setSelectedObjectId(null)
+            return
+          }
+
+          if (selectedObjectId === 'effect:scene-audio') {
+            state.setBackgroundAudio({
+              isAdded: false,
+              enabled: false,
+              previewEnabled: true,
+              previewPlaying: true,
+              previewCurrentTime: 0,
+              previewDuration: 0,
+              assetLabel: null,
+              assetUrl: null,
+              fileSize: null,
+            })
+            state.setSelectedObjectId(null)
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          if (selectedObjectId === 'environment:system' || selectedObjectId === 'environment:hdri') {
+            state.removeEnvironment()
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          if (selectedObjectId === 'light:ambient:system') {
+            state.removeAmbientLight()
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          const selectedNode = state.sceneGraph[selectedObjectId] ?? null
+          if (!selectedNode && selectedObjectId.startsWith('effect:god-rays:')) {
+            state.removeGodRaysBox(selectedObjectId)
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          if (selectedNode?.type === 'effect' && selectedObjectId.startsWith('effect:god-rays:')) {
+            state.removeGodRaysBox(selectedObjectId)
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          if (selectedNode?.type === 'light') {
+            state.removeExtraLight(selectedObjectId)
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          state.deleteObject(selectedObjectId)
+          state.setHud({ transformMode: 'none' })
+        }
         return
       }
 

@@ -930,9 +930,9 @@ export function SceneManager() {
     setStatus('Background cleared.')
   }
 
-  const handlePublishScene = () => {
+  const handlePublishScene = async () => {
     try {
-      const warnings = downloadPublishedScene()
+      const warnings = await downloadPublishedScene()
       if (warnings.length) {
         setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
         return

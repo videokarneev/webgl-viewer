@@ -31,9 +31,9 @@ export function TopBar() {
   const glbInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
 
-  const handlePublishScene = () => {
+  const handlePublishScene = async () => {
     try {
-      const warnings = downloadPublishedScene()
+      const warnings = await downloadPublishedScene()
       if (warnings.length) {
         setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
         return
@@ -46,9 +46,9 @@ export function TopBar() {
     }
   }
 
-  const handleRunPublishedScene = () => {
+  const handleRunPublishedScene = async () => {
     try {
-      const warnings = openPublishedScenePreview()
+      const warnings = await openPublishedScenePreview()
       if (warnings.length) {
         setStatus(`Published preview opened with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
         return

@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-05-21
+Last updated: 2026-05-28
 
 ## Project
 
@@ -12,7 +12,7 @@ React + TypeScript + Vite scene editor / GLB viewer built on:
 - `@react-three/fiber`
 - `@react-three/drei`
 
-Primary store / source of truth:
+Primary source of truth:
 
 - `src/store/editorStore.ts`
 
@@ -21,242 +21,319 @@ Main entrypoints:
 - editor: `src/main.tsx` -> `src/app/App.tsx`
 - published player: `src/main.tsx` -> `src/app/PublishedPlayerApp.tsx`
 
-## Current Status
-
-The core publish / embed workflow is still working, and the latest change was focused on `Flipbook Animation`.
-
-Confirmed working:
-
-- local scene editing in the GLB Viewer
-- `RUN Local` preview flow
-- `Publish` flow
-- `WEB Package` export flow
-- deployed published player on Vercel
-- transparent `iframe` embedding for published scenes
-- manual scene replacement in `public/scenes/demo-01`
-- bloom support in transparent published player
-- flipbook animation with arbitrary atlas grid sizes
-
-Still intentionally left as-is:
-
-- audio autoplay in iframe is improved but still limited by browser autoplay policy
-- there is no forced click-to-enable audio UI because the user explicitly does not want buttons
-
-## Current Live URLs
-
-Viewer domain:
-
-- `https://webgl-viewer-jet.vercel.app`
-
-Current demo scene JSON:
-
-- `https://webgl-viewer-jet.vercel.app/scenes/demo-01/scene.json`
-
-Current published player:
-
-- `https://webgl-viewer-jet.vercel.app/?player=1&scene=https%3A%2F%2Fwebgl-viewer-jet.vercel.app%2Fscenes%2Fdemo-01%2Fscene.json`
-
-Transparent published player:
-
-- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&scene=https%3A%2F%2Fwebgl-viewer-jet.vercel.app%2Fscenes%2Fdemo-01%2Fscene.json`
-
-Useful diagnostics:
-
-- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=dom`
-- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=canvas`
-- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=rawthree`
-- `https://webgl-viewer-jet.vercel.app/?player=1&transparent=1&diag=webgl`
-- `https://webgl-viewer-jet.vercel.app/iframe-transparency-test.html`
-
-## What Was Solved Recently
-
-### 1. Transparent iframe player really works
-
-This remains the main published-player milestone from the previous session.
-
-Current result:
-
-- published scenes can be embedded through `iframe`
-- the internal opaque rectangle problem is gone
-- the site background can show through transparent player mode
-
-Important implementation pieces:
-
-- transparent published player uses the main shared `Viewport` path instead of a divergent special renderer
-- DOM/root background reset is applied for transparent published player
-- an early pre-React transparent reset runs in `index.html` to prevent startup flashing
-
-Most relevant files:
-
-- `index.html`
-- `src/app/PublishedPlayerApp.tsx`
-- `src/components/Viewport.tsx`
-- `src/styles.css`
-
-### 2. Startup flash was reduced/fixed
-
-The brief dark-blue / editor-like flash at scene startup was addressed with an early transparent bootstrap in `index.html` before React mounts:
-
-- if `?player=1&transparent=1` is present
-- `html/body/#app` are immediately forced to transparent or to `bg=...` override
-- editor gradient / blue startup background is suppressed for transparent published mode
-
-### 3. Bloom works in transparent published player
-
-This remains fixed.
-
-Cause that was found previously:
-
-- transparent published mode had been explicitly disabling post effects in code
-
-Fix that remains in place:
-
-- `scene.viewer.postEffectsEnabled` is allowed to pass through in transparent mode
-- `Viewport` can render `PostEffects` even when `transparentBackground` is true
-
-Relevant files:
-
-- `src/app/PublishedPlayerApp.tsx`
-- `src/components/Viewport.tsx`
-
-### 4. Editor dark-blue viewport background was restored
-
-Current intended split:
-
-- the editor / GLB Viewer keeps its dark-blue editor clear color
-- published transparent player stays transparent
-
-This separation is intentional and working.
-
-### 5. Flipbook Animation defaults and arbitrary grid sizes were fixed
-
-This was the latest change on 2026-05-21.
-
-User-reported issue:
-
-- `Flipbook Animation` appeared to work only with the old default atlas settings of `2` columns and `25` rows
-- those defaults were inherited from a ring asset and were wrong for most other models / atlases
-
-What changed:
-
-- the default flipbook grid is now `1` column and `1` row
-- default `frameCount` now starts at `1`
-- users are expected to set the real atlas grid manually for each asset
-
-Why the animation could fail before:
-
-- frame extraction used integer-truncated cell sizes via `Math.floor(image.width / columns)` and `Math.floor(image.height / rows)`
-- that could break sampling on atlas textures whose dimensions were not evenly divisible by the configured grid
-
-What was fixed in runtime:
-
-- frame extraction now uses fractional source cell sizes instead of truncating them early
-- the extracted canvas frame is sized from the computed cell dimensions and marked with `needsUpdate`
-- runtime playback still clamps safely to the active grid and works for arbitrary `gridX/gridY` values
-
-Relevant files:
-
-- `src/store/editorStore.ts`
-- `src/features/atlas/useAtlasAnimator.ts`
-
-## Audio State
-
-Audio autoplay was tightened, but not fully "solved" because browser policy is the real limiter.
-
-What was improved earlier:
-
-- more aggressive retry points for autoplay
-- better retry timing when media becomes ready
-- better chances to start playback earlier in published mode
-
-What remains true:
-
-- in iframe embeds, autoplay may still begin 5-15 seconds late depending on browser policy and user interaction
-- this is not primarily caused by MP3 size
-- this is not something we can guarantee away without a user gesture
-
-User decision:
-
-- leave audio behavior as-is
-- do not add any "Enable sound" button
-
-Relevant file:
-
-- `src/components/BackgroundAudioController.tsx`
-
-## Manual Web Scene Update Flow
-
-This is the user's current working flow for replacing a published web scene:
-
-1. Replace files in:
-   - `public/scenes/demo-01/scene.json`
-   - `public/scenes/demo-01/assets/...`
-2. Run:
-   - `git add public/scenes/demo-01`
-   - `git commit -m "Update demo-01 scene"`
-   - `git push origin main`
-3. Wait for Vercel auto-deploy
-4. Test live player / site embed
-
-This flow is confirmed working.
-
-## Important Behavior Guarantees Going Forward
-
-All current viewer-level fixes should apply to new scenes too, not just `demo-01`.
-
-That includes:
-
-- transparent published iframe support
-- no opaque internal background in transparent mode
-- early anti-flash startup reset
-- transparent-mode bloom support
-- editor dark-blue viewport background separation
-- improved audio autoplay retry behavior
-- flipbook animation defaulting to neutral `1x1`
-- flipbook playback working across arbitrary atlas grid sizes
-
-What remains scene-specific:
-
-- camera framing
-- whether bloom is enabled in the exported `scene.json`
-- environment/background settings
-- audio asset itself
-- the correct flipbook `gridX/gridY` values for a particular atlas
-
-## Most Relevant Recent Commits
-
-Recent commits that matter for the current state:
-
-- `304fb51` Update demo-01 scene
-- `4f9850a` Restore editor viewport clear color
-- `21c4e8e` Enable bloom in transparent published player
-- `b1ae713` Prevent transparent player startup background flash
-
-Other important older commits from the same debugging arc:
-
-- `21e5c31` Use shared viewport path for transparent published player
-- `f95d421` Tighten published audio autoplay retries
-
-## Files Most Relevant If Work Continues
-
-- `CODEX_HANDOFF.md`
-- `index.html`
-- `src/app/PublishedPlayerApp.tsx`
-- `src/components/Viewport.tsx`
-- `src/components/BackgroundAudioController.tsx`
-- `src/components/viewport/PostEffects.tsx`
-- `src/styles.css`
-- `src/store/editorStore.ts`
-- `src/features/atlas/useAtlasAnimator.ts`
-- `public/scenes/demo-01/scene.json`
-
-## Current Git State
-
-Working tree included the latest flipbook-default and atlas-grid runtime fix at the time of this handoff update.
-
 ## Validation
 
-Passing during the latest changes:
+Passing at the end of this session:
 
 - `npx tsc --noEmit`
 - `npx vite build`
+
+Vite still prints the usual chunk-size warning, but the build succeeds.
+
+## Dirty Worktree
+
+The worktree is dirty. Do not blindly revert files.
+
+Especially read carefully before changing:
+
+- `CODEX_HANDOFF.md`
+- `src/store/editorStore.ts`
+- `src/components/Sidebar.tsx`
+- `src/components/Outliner.tsx`
+- `src/components/SceneManager.tsx`
+- `src/components/TopBar.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/viewport/TransformTable.tsx`
+- `src/components/viewport/effects/GodRaysBox.tsx`
+- `src/components/viewport/effects/GodRaysBoxes.tsx`
+- `src/components/viewport/effects/GodRaysDust.tsx`
+- `src/components/viewport/effects/GodRaysVolume.tsx`
+- `src/components/viewport/effects/StencilVolume.tsx`
+- `src/components/viewport/effects/StencilVolumes.tsx`
+- `src/features/stencilVolume/maskContour.ts`
+- `src/features/publish/buildPublishedScene.ts`
+- `src/features/publish/exportWebPackage.ts`
+- `src/app/PublishedPlayerApp.tsx`
+- `src/styles.css`
+
+There are also effect / stencil directories that may still be shown as new/untracked depending on local git state:
+
+- `src/components/viewport/effects/`
+- `src/features/stencilVolume/`
+
+## Big Picture
+
+Two effect tracks matter:
+
+1. `God Rays` are stable and are the reference behavior model.
+2. `Stencil Volume` is now feature-complete enough for editor + publish/runtime use.
+
+Important distinction:
+
+- `God Rays` are the canonical simple volumetric beam.
+- `Stencil Volume` is the complex mask-derived grouped beam system that mirrors God Rays semantics where possible.
+
+## God Rays: Stable Reference
+
+`God Rays` are the visual / behavior reference for volumetric lighting.
+
+Semantics that should be preserved:
+
+- pivot at lower-plane center
+- height from object `scale.y`
+- width / depth from object scale
+- `DIR` editing is rotate-based
+- global/local noise semantics stay intact
+- global/local dust direction semantics stay intact
+- roll is not clamped away during direction editing
+
+Relevant files:
+
+- `src/components/viewport/effects/GodRaysBox.tsx`
+- `src/components/viewport/effects/GodRaysBoxes.tsx`
+- `src/components/viewport/effects/GodRaysVolume.tsx`
+- `src/components/viewport/effects/GodRaysDust.tsx`
+- `src/components/viewport/effects/godRaysShared.ts`
+
+## Dust: Important Current Status
+
+This session changed dust behavior in an important way.
+
+For both `God Rays` and `Stencil Volume`:
+
+- dust now uses world-space motion behavior
+- rotating the effect should no longer rotate the perceived dust movement pattern
+- this is not just a global direction fix; the actual dust simulation path was moved toward world-space behavior
+
+Relevant files:
+
+- `src/components/viewport/effects/GodRaysDust.tsx`
+- `src/components/viewport/effects/StencilVolume.tsx`
+- `src/store/editorStore.ts`
+
+If future changes touch dust:
+
+- do not accidentally regress back to local-space motion
+- especially test by rotating the effect object and confirming dust motion still reads global
+
+## Naming / Outliner Status
+
+Effect naming was normalized.
+
+Current intended naming:
+
+- first effect: `God Rays` / `Stencil Volume`
+- second effect: `God Rays 2` / `Stencil Volume 2`
+- there should be no unnecessary `1` suffix on the first instance
+
+Also:
+
+- `Stencil Volume` now appears in the effects outliner list like `God Rays`
+- the add-effect button label was changed from `MASK` to `STENCIL`
+
+Relevant files:
+
+- `src/store/editorStore.ts`
+- `src/components/Outliner.tsx`
+- `src/components/Sidebar.tsx`
+
+## Stencil Volume: Current Editor State
+
+`Stencil Volume` is no longer a scaffold. In the editor it now supports:
+
+- mask loading
+- silhouette contour extraction
+- contour simplify / smooth / min-area filtering
+- `END` editing
+- contour debug
+- projection plane preview
+- grouped irregular ray primitives
+- God Rays-style noise semantics
+- God Rays-style dust semantics
+
+Important editor UX decisions already made:
+
+- add-effect button is `STENCIL`
+- upload row shows `Load MASK` + filename
+- there is a square mask preview area in the sidebar
+- `Extrude` sits directly under the mask preview
+- `Show Helper` defaults to enabled
+- `Invert Mask` was removed from the sidebar UI
+- `Width` / `Height` are compact numeric inputs in one row
+- default source size is `200 x 200 cm` in cm mode
+- `RAYS` and `DUST` are collapsible sections
+- `DUST` is collapsed by default
+
+Important helper behavior:
+
+- grey helper visuals should not linger after deselection
+- `Stencil Volume` guide rendering now depends on selection or active `END` editing, not just `helperVisible`
+
+Relevant files:
+
+- `src/components/Sidebar.tsx`
+- `src/styles.css`
+- `src/components/viewport/effects/StencilVolume.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/viewport/TransformTable.tsx`
+
+## Stencil Volume: Runtime / Architecture Status
+
+Current mental model remains:
+
+- `mask -> closed contours -> grouped irregular beam primitives`
+
+What is true now in editor/runtime code:
+
+- contour authoring and primitive prep were separated from `END` transforms
+- expensive primitive prep no longer needs to rebuild just because `END` moved
+- runtime can consume baked contour/primitive data when present
+
+Important store fields added for baked runtime support:
+
+- `bakedContourShapes`
+- `bakedPrimitiveShapeGroups`
+- `bakedPreparedPrimitives`
+
+These are optional runtime-oriented cached payloads on `StencilVolumeState`.
+
+Relevant files:
+
+- `src/store/editorStore.ts`
+- `src/components/viewport/effects/StencilVolume.tsx`
+- `src/features/stencilVolume/maskContour.ts`
+
+## Stencil Volume: Publish / Player Status
+
+This is the biggest status change from the previous handoff.
+
+`Stencil Volume` now has a real publish/runtime path.
+
+Current facts:
+
+- publish schema was advanced to `version: 14`
+- publish output now carries `stencilVolumes`
+- publish builder now bakes stencil contour/runtime data asynchronously
+- published player restores `Stencil Volume`
+- published runtime does not need live mask contour extraction from the original mask asset
+
+Current baked publish payload for `Stencil Volume` includes:
+
+1. `bakedContourShapes`
+2. `bakedPrimitiveShapeGroups`
+3. `bakedPreparedPrimitives`
+
+That means published runtime skips:
+
+- live contour extraction
+- live contour clustering
+- most primitive authoring preparation
+
+This is true for both:
+
+- local published preview
+- web package export
+
+Important consequence:
+
+- editor-side `END` editing remains an authoring feature
+- published runtime restores the already-baked effect geometry state instead of needing editor workflows
+
+Relevant files:
+
+- `src/features/publish/buildPublishedScene.ts`
+- `src/features/publish/exportWebPackage.ts`
+- `src/app/PublishedPlayerApp.tsx`
+- `src/components/SceneManager.tsx`
+- `src/components/TopBar.tsx`
+
+## Stencil Volume: What Is Still Not “Final Final”
+
+`Stencil Volume` is now in a strong usable state, but the absolute next optimization ceiling would be deeper bake work, for example:
+
+- serializing reusable field / SDF runtime data
+- serializing even more compact per-primitive runtime assets
+
+That would reduce published runtime cost further, but it is a larger follow-up task and not necessary for the current project state.
+
+In other words:
+
+- current implementation is already solid for editor + local publish + web publish
+- next improvements would be optional optimization work, not blockers
+
+## Important Decisions To Preserve
+
+### 1. Do not regress God Rays semantics
+
+Especially:
+
+- global/local noise rules
+- global/local direction rules
+- rotate-based `DIR`
+- unrestricted roll during direction edit
+
+### 2. Keep Stencil Volume tied to God Rays behavior language, not God Rays geometry
+
+The goal remains:
+
+- shared control language
+- more complex mask-derived beam shapes
+
+Do not collapse `Stencil Volume` back into:
+
+- a plain rectangular God Rays box
+- or a flat projected mask slab
+
+### 3. Keep `END` as internal effect geometry state
+
+`extrudeEnd` is not the object transform.
+
+That separation is still correct.
+
+### 4. Preserve baked publish/runtime path
+
+Do not reintroduce published-player dependence on:
+
+- raw mask contour extraction
+- editor-only helper workflows
+- editor-only debug state
+
+### 5. Preserve world-space dust behavior
+
+This applies to both:
+
+- `God Rays`
+- `Stencil Volume`
+
+## Recommended Next Steps
+
+If someone continues from here, the most sensible future work is:
+
+1. add runtime animation ideas for `Stencil Volume` if the user revisits `END` animation
+2. add per-ray selection / per-ray overrides if finer beam control is needed
+3. optionally deepen bake/serialization if published runtime needs to be even lighter
+
+What is *not* the best next step:
+
+- random small polish passes on `Stencil Volume` without a product goal
+- undoing the baked publish path
+- reverting dust motion back to object-local behavior
+
+## Most Relevant Files Right Now
+
+- `CODEX_HANDOFF.md`
+- `src/store/editorStore.ts`
+- `src/components/Sidebar.tsx`
+- `src/components/Outliner.tsx`
+- `src/components/Viewport.tsx`
+- `src/components/viewport/TransformTable.tsx`
+- `src/components/viewport/effects/GodRaysBox.tsx`
+- `src/components/viewport/effects/GodRaysBoxes.tsx`
+- `src/components/viewport/effects/GodRaysDust.tsx`
+- `src/components/viewport/effects/GodRaysVolume.tsx`
+- `src/components/viewport/effects/StencilVolume.tsx`
+- `src/components/viewport/effects/StencilVolumes.tsx`
+- `src/features/stencilVolume/maskContour.ts`
+- `src/features/publish/buildPublishedScene.ts`
+- `src/features/publish/exportWebPackage.ts`
+- `src/app/PublishedPlayerApp.tsx`

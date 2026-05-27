@@ -4,7 +4,7 @@ import magnetIcon from '../assets/icons/magnet.svg'
 import { TransformTable } from './viewport/TransformTable'
 import { formatTransformNumber, sanitizeNumber } from './viewport/transformShared'
 
-type ToolbarMenu = Exclude<TransformMode, 'none'> | null
+type ToolbarMenu = Extract<TransformMode, 'translate' | 'rotate'> | null
 
 export function TransformToolbar() {
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -27,11 +27,16 @@ export function TransformToolbar() {
   )
   const transformMode = useEditorStore((state) => state.hud.transformMode)
   const anchorModeEnabled = useEditorStore((state) => state.hud.anchorModeEnabled)
+  const activeGodRaysDirectionBoxId = useEditorStore((state) => state.hud.activeGodRaysDirectionBoxId)
   const transformSettings = useEditorStore((state) => state.transformSettings)
   const setHud = useEditorStore((state) => state.setHud)
   const setTransformSettings = useEditorStore((state) => state.setTransformSettings)
   const setSelectedAnchorIndex = useEditorStore((state) => state.setSelectedAnchorIndex)
 
+  const isEditingGodRaysDirection = Boolean(
+    activeGodRaysDirectionBoxId &&
+      selectedObjectId === activeGodRaysDirectionBoxId,
+  )
   const canTransform = Boolean(
     selectedObjectId &&
       selectedNode &&
@@ -39,7 +44,9 @@ export function TransformToolbar() {
       objectState &&
       runtimeObject,
   )
-  const canRotate = canTransform && selectedNode?.type !== 'light'
+  const canTranslate = canTransform && !isEditingGodRaysDirection
+  const canRotate = canTransform && (isEditingGodRaysDirection || selectedNode?.type !== 'light')
+  const canScale = canTransform && !isEditingGodRaysDirection && selectedNode?.type !== 'light'
 
   useEffect(() => {
     if (!canTransform) {
@@ -59,6 +66,18 @@ export function TransformToolbar() {
   }, [canRotate, openMenu, setHud, transformMode])
 
   useEffect(() => {
+    if (!canTranslate && openMenu === 'translate') {
+      setOpenMenu(null)
+    }
+  }, [canTranslate, openMenu])
+
+  useEffect(() => {
+    if (!canScale && transformMode === 'scale') {
+      setHud({ transformMode: 'none' })
+    }
+  }, [canScale, setHud, transformMode])
+
+  useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) {
         setOpenMenu(null)
@@ -72,15 +91,20 @@ export function TransformToolbar() {
   }, [])
 
   const handleModeClick = (mode: Exclude<TransformMode, 'none'>) => {
-    if (!canTransform || (mode === 'rotate' && !canRotate)) {
+    if (
+      !canTransform ||
+      (mode === 'translate' && !canTranslate) ||
+      (mode === 'rotate' && !canRotate) ||
+      (mode === 'scale' && !canScale)
+    ) {
       return
     }
 
     setHud({ transformMode: mode })
   }
 
-  const handleMenuToggle = (mode: Exclude<TransformMode, 'none'>) => {
-    if (!canTransform || (mode === 'rotate' && !canRotate)) {
+  const handleMenuToggle = (mode: ToolbarMenu) => {
+    if (!canTransform || (mode === 'translate' && !canTranslate) || (mode === 'rotate' && !canRotate)) {
       return
     }
 
@@ -196,7 +220,7 @@ export function TransformToolbar() {
       <button
         type="button"
         className={`transform-toolbar__button ${transformMode === 'translate' ? 'is-active' : ''}`}
-        disabled={!canTransform}
+        disabled={!canTranslate}
         onClick={() => handleModeClick('translate')}
         onContextMenu={(event) => {
           event.preventDefault()
@@ -217,11 +241,19 @@ export function TransformToolbar() {
       >
         Rotate
       </button>
+      <button
+        type="button"
+        className={`transform-toolbar__button ${transformMode === 'scale' ? 'is-active' : ''}`}
+        disabled={!canScale}
+        onClick={() => handleModeClick('scale')}
+      >
+        Scale
+      </button>
       <TransformTable />
       <button
         type="button"
         className="transform-toolbar__button"
-        disabled={transformMode === 'rotate'}
+        disabled={transformMode === 'rotate' || transformMode === 'scale'}
         onClick={() =>
           setTransformSettings({
             measurementUnit: transformSettings.measurementUnit === 'cm' ? 'm' : 'cm',
@@ -233,7 +265,7 @@ export function TransformToolbar() {
       <button
         type="button"
         className={`transform-toolbar__button ${anchorModeEnabled ? 'is-active' : ''}`}
-        disabled={!canTransform}
+        disabled={!canTransform || isEditingGodRaysDirection}
         onClick={() => {
           const nextValue = !anchorModeEnabled
           setHud({ anchorModeEnabled: nextValue })

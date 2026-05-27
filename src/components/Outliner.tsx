@@ -200,6 +200,8 @@ export function Outliner({
   const extraLights = useEditorStore((state) => state.extraLights)
   const hud = useEditorStore((state) => state.hud)
   const backgroundAudio = useEditorStore((state) => state.backgroundAudio)
+  const godRaysBoxes = useEditorStore((state) => state.godRaysBoxes)
+  const stencilVolumes = useEditorStore((state) => state.stencilVolumes)
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
@@ -213,6 +215,7 @@ export function Outliner({
   const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
   const removeAmbientLight = useEditorStore((state) => state.removeAmbientLight)
   const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
+  const removeGodRaysBox = useEditorStore((state) => state.removeGodRaysBox)
 
   const [search, setSearch] = useState('')
   const [internalViewMode, setInternalViewMode] = useState<ViewMode>('layers')
@@ -350,9 +353,42 @@ export function Outliner({
         })
       }
 
+      godRaysBoxes.forEach((effect, index) => {
+        entries.push({
+          id: effect.id,
+          label: sceneGraph[effect.id]?.label ?? (index === 0 ? 'God Rays' : `God Rays ${index + 1}`),
+          visible: objects[effect.id]?.visible ?? sceneGraph[effect.id]?.visible ?? true,
+          removable: true,
+          kind: 'effect',
+          depth: 0,
+          selectionId: effect.id,
+        })
+      })
+
+      stencilVolumes.forEach((effect, index) => {
+        entries.push({
+          id: effect.id,
+          label: sceneGraph[effect.id]?.label ?? (index === 0 ? 'Stencil Volume' : `Stencil Volume ${index + 1}`),
+          visible: objects[effect.id]?.visible ?? sceneGraph[effect.id]?.visible ?? true,
+          removable: true,
+          kind: 'effect',
+          depth: 0,
+          selectionId: effect.id,
+        })
+      })
+
       return entries
     },
-    [backgroundAudio.isAdded, backgroundAudio.previewEnabled, hud.postEffectsEnabled, hud.postEffectsVisible],
+    [
+      backgroundAudio.isAdded,
+      backgroundAudio.previewEnabled,
+      godRaysBoxes,
+      stencilVolumes,
+      hud.postEffectsEnabled,
+      hud.postEffectsVisible,
+      objects,
+      sceneGraph,
+    ],
   )
 
   const rootSections = useMemo(() => {
@@ -489,7 +525,7 @@ export function Outliner({
     }
 
     const hasEnteredSpecialMode = previousViewModeRef.current !== resolvedViewMode
-    const shouldAutoSelect = hasEnteredSpecialMode || selectedObjectId == null
+    const shouldAutoSelect = hasEnteredSpecialMode
 
     if (shouldAutoSelect) {
       setSelectedObjectId(firstEntry.selectionId)
@@ -518,7 +554,13 @@ export function Outliner({
         setBackgroundAudio({ previewEnabled: !backgroundAudio.previewEnabled && Boolean(backgroundAudio.assetUrl) })
         return
       }
-      setHud({ postEffectsVisible: !hud.postEffectsVisible })
+
+      if (entry.selectionId === 'effect:bloom') {
+        setHud({ postEffectsVisible: !hud.postEffectsVisible })
+        return
+      }
+
+      toggleVisibility(entry.selectionId)
       return
     }
     if (entry.kind === 'environment') {
@@ -562,10 +604,16 @@ export function Outliner({
         })
         return
       }
-      if (selectedObjectId === entry.selectionId) {
-        setSelectedObjectId(null)
+
+      if (entry.selectionId === 'effect:bloom') {
+        if (selectedObjectId === entry.selectionId) {
+          setSelectedObjectId(null)
+        }
+        setHud({ postEffectsEnabled: false, postEffectsVisible: false })
+        return
       }
-      setHud({ postEffectsEnabled: false, postEffectsVisible: false })
+
+      removeGodRaysBox(entry.selectionId)
       return
     }
     if (entry.kind === 'environment') {

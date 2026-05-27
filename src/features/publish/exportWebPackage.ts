@@ -237,7 +237,7 @@ function buildPackageReadme() {
 }
 
 export async function exportWebPackage(filename = 'scene-web-package.zip') {
-  const { scene, warnings: baseWarnings } = buildPublishedScene()
+  const { scene, warnings: baseWarnings } = await buildPublishedScene()
   const sceneForPackage = clonePublishedScene(scene)
   const { zip, warnings: packagingWarnings, assetMap } = await buildPackageAssetMap(sceneForPackage)
 

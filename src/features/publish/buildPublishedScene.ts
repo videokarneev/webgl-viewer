@@ -1,10 +1,121 @@
 import { useEditorStore, type MaterialTextureSlot, type SceneGraphNode } from '../../store/editorStore'
 import { getPublishNodeId } from './publishNodeIds'
+import { extractMaskContour } from '../stencilVolume/maskContour'
 
 type PublishedTextureSource = 'none' | 'original' | 'custom' | 'flipbook'
 
+type PublishedStencilShape = {
+  outline: [number, number][]
+  holes: [number, number][][]
+}
+
+type PublishedStencilPreparedPrimitive = {
+  id: string
+  shapes: PublishedStencilShape[]
+  sourceCenter: [number, number, number]
+  sourceSize: [number, number]
+}
+
+function clusterPublishedStencilShapes(shapes: PublishedStencilShape[]) {
+  if (!shapes.length) {
+    return []
+  }
+
+  const gapThreshold = 0.035
+  const metrics = shapes.map((shape) => {
+    const points = [shape.outline, ...shape.holes].flat()
+    const bounds = points.reduce(
+      (accumulator, point) => ({
+        minX: Math.min(accumulator.minX, point[0]),
+        maxX: Math.max(accumulator.maxX, point[0]),
+        minY: Math.min(accumulator.minY, point[1]),
+        maxY: Math.max(accumulator.maxY, point[1]),
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+      },
+    )
+
+    const centerX = (bounds.minX + bounds.maxX) * 0.5
+    const centerY = (bounds.minY + bounds.maxY) * 0.5
+    const halfX = Math.max((bounds.maxX - bounds.minX) * 0.5, 0.00005)
+    const halfY = Math.max((bounds.maxY - bounds.minY) * 0.5, 0.00005)
+    return { shape, centerX, centerY, halfX, halfY }
+  })
+
+  const clusters: Array<typeof metrics> = []
+  const overlaps = (left: (typeof metrics)[number], right: (typeof metrics)[number]) => {
+    const leftMinX = left.centerX - left.halfX - gapThreshold
+    const leftMaxX = left.centerX + left.halfX + gapThreshold
+    const leftMinY = left.centerY - left.halfY - gapThreshold
+    const leftMaxY = left.centerY + left.halfY + gapThreshold
+    const rightMinX = right.centerX - right.halfX - gapThreshold
+    const rightMaxX = right.centerX + right.halfX + gapThreshold
+    const rightMinY = right.centerY - right.halfY - gapThreshold
+    const rightMaxY = right.centerY + right.halfY + gapThreshold
+    return !(leftMaxX < rightMinX || rightMaxX < leftMinX || leftMaxY < rightMinY || rightMaxY < leftMinY)
+  }
+
+  metrics.forEach((metric) => {
+    const matchingClusters = clusters.filter((cluster) => cluster.some((entry) => overlaps(entry, metric)))
+    if (!matchingClusters.length) {
+      clusters.push([metric])
+      return
+    }
+
+    const primary = matchingClusters[0]
+    primary.push(metric)
+    for (let index = 1; index < matchingClusters.length; index += 1) {
+      const cluster = matchingClusters[index]
+      primary.push(...cluster)
+      clusters.splice(clusters.indexOf(cluster), 1)
+    }
+  })
+
+  return clusters.map((cluster) => cluster.map((entry) => entry.shape))
+}
+
+function buildPublishedStencilPreparedPrimitives(
+  shapeGroups: PublishedStencilShape[][],
+  sourceWidth: number,
+  sourceHeight: number,
+) {
+  return shapeGroups.map<PublishedStencilPreparedPrimitive>((shapeGroup, index) => {
+    const points = shapeGroup.flatMap((shape) => [shape.outline, ...shape.holes].flat())
+    const bounds = points.reduce(
+      (accumulator, point) => ({
+        minX: Math.min(accumulator.minX, point[0]),
+        maxX: Math.max(accumulator.maxX, point[0]),
+        minY: Math.min(accumulator.minY, point[1]),
+        maxY: Math.max(accumulator.maxY, point[1]),
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+      },
+    )
+
+    const halfX = Math.max((bounds.maxX - bounds.minX) * 0.5, 0.00005)
+    const halfY = Math.max((bounds.maxY - bounds.minY) * 0.5, 0.00005)
+    const centerXNormalized = (bounds.minX + bounds.maxX) * 0.5
+    const centerYNormalized = (bounds.minY + bounds.maxY) * 0.5
+
+    return {
+      id: `cluster-${index}`,
+      shapes: shapeGroup,
+      sourceCenter: [centerXNormalized * sourceWidth, centerYNormalized * sourceHeight, 0],
+      sourceSize: [Math.max(halfX * sourceWidth * 2, 0.0001), Math.max(halfY * sourceHeight * 2, 0.0001)],
+    }
+  })
+}
+
 export interface PublishedSceneV2 {
-  version: 3
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
   scene: {
     background: {
       mode: string
@@ -84,6 +195,133 @@ export interface PublishedSceneV2 {
       targetPosition: [number, number, number]
     }>
   }
+  godRaysGlobals?: {
+    noise?: {
+      enabled?: boolean
+      amount?: number
+      scale?: number
+      grain?: number
+      motionMode?: 'off' | 'soft'
+      motionSpeed?: number
+      quality?: 'low' | 'medium' | 'high'
+    }
+    direction?: {
+      vector?: [number, number, number]
+    }
+  }
+  godRaysBoxes: Array<{
+    id: string
+    label: string
+    visible: boolean
+    sideCount: number
+    bottomRadius: number
+    topRadius: number
+    linkTopRadius: boolean
+    helperVisible: boolean
+    topDome: number
+    transform: {
+      position: [number, number, number]
+      rotation: [number, number, number]
+      scale: [number, number, number]
+    }
+    sourceFace: string
+    rays: {
+      enabled: boolean
+      color: string
+      intensity: number
+      falloff: number
+      edgeFade: number
+      useGlobalSettings?: boolean
+      noiseAmount: number
+      noiseScale: number
+      grain: number
+      noiseMotionMode: string
+      noiseMotionSpeed: number
+      quality: string
+    }
+    dust: {
+      enabled: boolean
+      count: number
+      sizeMin: number
+      sizeMax: number
+      speed: number
+      colorLinked?: boolean
+      color?: string
+      strength?: number
+      directionMode?: 'local' | 'global'
+      directionLocal?: [number, number, number]
+      drift: number
+      edgeFade: number
+    }
+  }>
+  stencilVolumes?: Array<{
+    id: string
+    label: string
+    visible: boolean
+    transform: {
+      position: [number, number, number]
+      rotation: [number, number, number]
+      scale: [number, number, number]
+    }
+    source: {
+      width: number
+      height: number
+      bakedContourShapes: Array<{
+        outline: [number, number][]
+        holes: [number, number][][]
+      }>
+      bakedPrimitiveShapeGroups: Array<
+        Array<{
+          outline: [number, number][]
+          holes: [number, number][][]
+        }>
+      >
+      bakedPreparedPrimitives: Array<{
+        id: string
+        shapes: Array<{
+          outline: [number, number][]
+          holes: [number, number][][]
+        }>
+        sourceCenter: [number, number, number]
+        sourceSize: [number, number]
+      }>
+    }
+    extrude: {
+      end: [number, number, number]
+      endRotationX: number
+      endRotationY: number
+      endScaleX: number
+      endScaleY: number
+    }
+    rays: {
+      color: string
+      intensity: number
+      falloff: number
+      edgeFade: number
+      fillQuality: number
+      useGlobalSettings?: boolean
+      noiseAmount: number
+      noiseScale: number
+      grain: number
+      noiseMotionMode: string
+      noiseMotionSpeed: number
+      quality: string
+    }
+    dust: {
+      enabled: boolean
+      count: number
+      sizeMin: number
+      sizeMax: number
+      speed: number
+      colorLinked?: boolean
+      color?: string
+      strength?: number
+      directionMode?: 'local' | 'global'
+      directionLocal?: [number, number, number]
+      drift: number
+      edgeFade: number
+    }
+  }>
   model: {
     id: string
     assetLabel: string | null
@@ -182,7 +420,7 @@ function downloadJson(filename: string, payload: unknown) {
   URL.revokeObjectURL(url)
 }
 
-function buildPublishedSceneInternal() {
+async function buildPublishedSceneInternal() {
   const state = useEditorStore.getState()
   const warnings: string[] = []
   const nodeIdCache = new Map<string, string>()
@@ -316,6 +554,154 @@ function buildPublishedSceneInternal() {
     }
   })
 
+  const godRaysBoxes: PublishedSceneV2['godRaysBoxes'] = state.godRaysBoxes
+    .map((entry) => {
+      const objectState = state.objects[entry.id]
+      const node = state.sceneGraph[entry.id]
+      if (!objectState || !node) {
+        return null
+      }
+
+      return {
+        id: entry.id,
+        label: node.label,
+        visible: objectState.visible,
+        sideCount: entry.sideCount,
+        bottomRadius: entry.bottomRadius,
+        topRadius: entry.topRadius,
+        linkTopRadius: entry.linkTopRadius,
+        helperVisible: entry.helperVisible,
+        topDome: entry.topDome,
+        transform: {
+          position: [...objectState.position] as [number, number, number],
+          rotation: [...objectState.rotation] as [number, number, number],
+          scale: [...objectState.scale] as [number, number, number],
+        },
+        sourceFace: entry.sourceFace,
+        rays: {
+          enabled: entry.raysEnabled,
+          color: entry.rayColor,
+          intensity: entry.rayIntensity,
+          falloff: entry.rayFalloff,
+          edgeFade: entry.rayEdgeFade,
+          useGlobalSettings: entry.rayUseGlobalNoiseSettings,
+          noiseAmount: entry.rayNoiseAmount,
+          noiseScale: entry.rayNoiseScale,
+          grain: entry.rayGrain,
+          noiseMotionMode: entry.rayNoiseMotionMode,
+          noiseMotionSpeed: entry.rayNoiseMotionSpeed,
+          quality: entry.rayQuality,
+        },
+        dust: {
+          enabled: entry.dustEnabled,
+          count: entry.dustCount,
+          sizeMin: entry.dustSizeMin,
+          sizeMax: entry.dustSizeMax,
+          speed: entry.dustSpeed,
+          colorLinked: entry.dustColorLinked,
+          color: entry.dustColor,
+          strength: entry.dustStrength,
+          directionMode: entry.dustDirectionMode,
+          directionLocal: [...entry.dustDirectionLocal] as [number, number, number],
+          drift: entry.dustDrift,
+          edgeFade: entry.dustEdgeFade,
+        },
+      }
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+
+  const stencilVolumesRaw = await Promise.all(
+    state.stencilVolumes.map(async (entry) => {
+      const objectState = state.objects[entry.id]
+      const node = state.sceneGraph[entry.id]
+      if (!objectState || !node) {
+        return null
+      }
+
+      const bakedContourShapes = entry.bakedContourShapes?.length
+        ? entry.bakedContourShapes
+        : entry.maskAssetUrl
+          ? (await extractMaskContour(entry.maskAssetUrl, {
+              invert: entry.maskInvert,
+              detail: entry.contourDetail,
+              simplify: entry.contourSimplify,
+              smooth: entry.contourSmooth,
+              minArea: entry.contourMinArea,
+              mode: 'silhouette',
+            }))?.shapes ?? []
+          : []
+
+      if (!bakedContourShapes.length) {
+        warnings.push(`Stencil Volume "${node.label}" could not be baked and was skipped from publish output.`)
+        return null
+      }
+
+      const normalizedBakedContourShapes = bakedContourShapes.map((shape) => ({
+        outline: shape.outline.map((point) => [...point] as [number, number]),
+        holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+      }))
+      const bakedPrimitiveShapeGroups = clusterPublishedStencilShapes(normalizedBakedContourShapes)
+
+      return {
+        id: entry.id,
+        label: node.label,
+        visible: objectState.visible,
+        transform: {
+          position: [...objectState.position] as [number, number, number],
+          rotation: [...objectState.rotation] as [number, number, number],
+          scale: [...objectState.scale] as [number, number, number],
+        },
+        source: {
+          width: entry.sourceWidth,
+          height: entry.sourceHeight,
+          bakedContourShapes: normalizedBakedContourShapes,
+          bakedPrimitiveShapeGroups,
+          bakedPreparedPrimitives: buildPublishedStencilPreparedPrimitives(
+            bakedPrimitiveShapeGroups,
+            entry.sourceWidth,
+            entry.sourceHeight,
+          ),
+        },
+        extrude: {
+          end: [...entry.extrudeEnd] as [number, number, number],
+          endRotationX: entry.endRotationX,
+          endRotationY: entry.endRotationY,
+          endScaleX: entry.endScaleX,
+          endScaleY: entry.endScaleY,
+        },
+        rays: {
+          color: entry.volumeColor,
+          intensity: entry.volumeIntensity,
+          falloff: entry.volumeFalloff,
+          edgeFade: entry.rayEdgeFade,
+          fillQuality: entry.rayFillQuality,
+          useGlobalSettings: entry.rayUseGlobalNoiseSettings,
+          noiseAmount: entry.rayNoiseAmount,
+          noiseScale: entry.rayNoiseScale,
+          grain: entry.rayGrain,
+          noiseMotionMode: entry.rayNoiseMotionMode,
+          noiseMotionSpeed: entry.rayNoiseMotionSpeed,
+          quality: entry.rayQuality,
+        },
+        dust: {
+          enabled: entry.dustEnabled,
+          count: entry.dustCount,
+          sizeMin: entry.dustSizeMin,
+          sizeMax: entry.dustSizeMax,
+          speed: entry.dustSpeed,
+          colorLinked: entry.dustColorLinked,
+          color: entry.dustColor,
+          strength: entry.dustStrength,
+          directionMode: entry.dustDirectionMode,
+          directionLocal: [...entry.dustDirectionLocal] as [number, number, number],
+          drift: entry.dustDrift,
+          edgeFade: entry.dustEdgeFade,
+        },
+      }
+    }),
+  )
+  const stencilVolumes = stencilVolumesRaw.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+
   const animations: PublishedSceneV2['animations'] = []
   if (state.rotateAnimation.isAdded && state.rotateAnimation.targetObjectId) {
     animations.push({
@@ -331,7 +717,7 @@ function buildPublishedSceneInternal() {
   }
 
   const scene: PublishedSceneV2 = {
-    version: 3,
+    version: 14,
     scene: {
       background: {
         mode: state.backgroundMode,
@@ -411,6 +797,21 @@ function buildPublishedSceneInternal() {
         targetPosition: [...light.targetPosition] as [number, number, number],
       })),
     },
+    godRaysGlobals: {
+      noise: {
+        amount: state.godRaysGlobalNoise.rayNoiseAmount,
+        scale: state.godRaysGlobalNoise.rayNoiseScale,
+        grain: state.godRaysGlobalNoise.rayGrain,
+        motionMode: state.godRaysGlobalNoise.rayNoiseMotionMode,
+        motionSpeed: state.godRaysGlobalNoise.rayNoiseMotionSpeed,
+        quality: state.godRaysGlobalNoise.rayQuality,
+      },
+      direction: {
+        vector: [...state.godRaysGlobalDirection] as [number, number, number],
+      },
+    },
+    godRaysBoxes,
+    stencilVolumes,
     model,
     objects,
     materials,
@@ -424,14 +825,14 @@ export function buildPublishedScene() {
   return buildPublishedSceneInternal()
 }
 
-export function downloadPublishedScene(filename = 'scene.json') {
-  const { scene, warnings } = buildPublishedSceneInternal()
+export async function downloadPublishedScene(filename = 'scene.json') {
+  const { scene, warnings } = await buildPublishedSceneInternal()
   downloadJson(filename, scene)
   return warnings
 }
 
-export function openPublishedScenePreview() {
-  const { scene, warnings } = buildPublishedSceneInternal()
+export async function openPublishedScenePreview() {
+  const { scene, warnings } = await buildPublishedSceneInternal()
   const previewPrefix = 'published-scene:'
   Object.keys(localStorage)
     .filter((key) => key.startsWith(previewPrefix))

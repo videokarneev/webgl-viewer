@@ -9,6 +9,9 @@ import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
   DEFAULT_VIEWER_FOCAL_LENGTH,
+  getGodRaysDirectionArrowId,
+  getGodRaysStoredDirectionFromArrowObject,
+  getStencilVolumeEndHandleId,
   type FrameAspectPreset,
   useEditorStore,
 } from '../store/editorStore'
@@ -16,6 +19,8 @@ import { MaterialEffectController } from './MaterialEffectController'
 import { SceneAnimationController } from './SceneAnimationController'
 import { TransformToolbar } from './TransformToolbar'
 import { ViewportHud } from './ViewportHud'
+import { GodRaysBoxes } from './viewport/effects/GodRaysBoxes'
+import { StencilVolumes } from './viewport/effects/StencilVolumes'
 import { FlightController } from './viewport/FlightController'
 import { syncRuntimeObjectTransform } from './viewport/transformShared'
 import {
@@ -70,6 +75,18 @@ type ViewportFrameRect = {
   top: number
 }
 
+type OrientationQuaternion = [number, number, number, number]
+type OrientationFace = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
+
+type ViewOrientationAnimation = {
+  startTime: number
+  duration: number
+  fromPosition: THREE.Vector3
+  toPosition: THREE.Vector3
+  fromTarget: THREE.Vector3
+  toTarget: THREE.Vector3
+}
+
 function getViewportFrameRect(width: number, height: number, aspect: number): ViewportFrameRect {
   const safeWidth = Math.max(width, 1)
   const safeHeight = Math.max(height, 1)
@@ -95,6 +112,152 @@ function getViewportFrameRect(width: number, height: number, aspect: number): Vi
     left: 0,
     top: (safeHeight - frameHeight) / 2,
   }
+}
+
+function OrientationTracker({
+  onChange,
+}: {
+  onChange: (quaternion: OrientationQuaternion) => void
+}) {
+  const camera = useThree((state) => state.camera)
+  const previousQuaternionRef = useRef<OrientationQuaternion | null>(null)
+
+  useFrame(() => {
+    const nextQuaternion: OrientationQuaternion = [
+      camera.quaternion.x,
+      camera.quaternion.y,
+      camera.quaternion.z,
+      camera.quaternion.w,
+    ]
+
+    const previous = previousQuaternionRef.current
+    if (
+      previous &&
+      Math.abs(previous[0] - nextQuaternion[0]) < 0.0001 &&
+      Math.abs(previous[1] - nextQuaternion[1]) < 0.0001 &&
+      Math.abs(previous[2] - nextQuaternion[2]) < 0.0001 &&
+      Math.abs(previous[3] - nextQuaternion[3]) < 0.0001
+    ) {
+      return
+    }
+
+    previousQuaternionRef.current = nextQuaternion
+    onChange(nextQuaternion)
+  })
+
+  return null
+}
+
+function ViewportOrientationCube({
+  quaternion,
+  onFaceClick,
+  onDragRotate,
+}: {
+  quaternion: OrientationQuaternion
+  onFaceClick: (face: OrientationFace) => void
+  onDragRotate: (deltaX: number, deltaY: number) => void
+}) {
+  const dragStateRef = useRef<{
+    pointerId: number
+    x: number
+    y: number
+    moved: boolean
+  } | null>(null)
+  const rotationStyle = useMemo(() => {
+    const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3])
+    const euler = new THREE.Euler().setFromQuaternion(q, 'YXZ')
+    return {
+      transform: `rotateX(${THREE.MathUtils.radToDeg(euler.x)}deg) rotateY(${THREE.MathUtils.radToDeg(euler.y)}deg) rotateZ(${-THREE.MathUtils.radToDeg(euler.z)}deg)`,
+    } satisfies CSSProperties
+  }, [quaternion])
+
+  const faces: Array<{ face: OrientationFace; label: string; className: string }> = [
+    { face: 'front', label: 'FRONT', className: 'is-front' },
+    { face: 'back', label: 'BACK', className: 'is-back' },
+    { face: 'left', label: 'LEFT', className: 'is-right' },
+    { face: 'right', label: 'RIGHT', className: 'is-left' },
+    { face: 'top', label: 'TOP', className: 'is-top' },
+    { face: 'bottom', label: 'BOTTOM', className: 'is-bottom' },
+  ]
+
+  return (
+    <div className="viewport-orientation" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+      <div
+        className="viewport-orientation__scene"
+        onPointerDown={(event) => {
+          event.stopPropagation()
+          dragStateRef.current = {
+            pointerId: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            moved: false,
+          }
+          event.currentTarget.setPointerCapture(event.pointerId)
+        }}
+        onPointerMove={(event) => {
+          const dragState = dragStateRef.current
+          if (!dragState || dragState.pointerId !== event.pointerId) {
+            return
+          }
+
+          const deltaX = event.clientX - dragState.x
+          const deltaY = event.clientY - dragState.y
+          if (Math.abs(deltaX) > 0 || Math.abs(deltaY) > 0) {
+            dragState.moved = dragState.moved || Math.abs(deltaX) + Math.abs(deltaY) > 2
+            dragState.x = event.clientX
+            dragState.y = event.clientY
+            onDragRotate(deltaX, deltaY)
+          }
+        }}
+        onPointerUp={(event) => {
+          const dragState = dragStateRef.current
+          if (!dragState || dragState.pointerId !== event.pointerId) {
+            return
+          }
+
+          const faceButton = document
+            .elementFromPoint(event.clientX, event.clientY)
+            ?.closest<HTMLButtonElement>('.viewport-orientation__face')
+          const face = faceButton?.dataset.face as OrientationFace | undefined
+
+          dragStateRef.current = null
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          }
+
+          if (!dragState.moved && face) {
+            onFaceClick(face)
+          }
+        }}
+        onPointerCancel={(event) => {
+          const dragState = dragStateRef.current
+          if (!dragState || dragState.pointerId !== event.pointerId) {
+            return
+          }
+
+          dragStateRef.current = null
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          }
+        }}
+      >
+        <div className="viewport-orientation__cube" style={rotationStyle}>
+          {faces.map((entry) => (
+            <button
+              key={entry.face}
+              type="button"
+              className={`viewport-orientation__face ${entry.className}`}
+              data-face={entry.face}
+              title={`View ${entry.label.toLowerCase()}`}
+              aria-label={`View ${entry.label.toLowerCase()}`}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function writeBoundingBoxCorners(box: THREE.Box3, corners: THREE.Vector3[]) {
@@ -629,7 +792,12 @@ function SelectionHighlight() {
   }, [helper, scene])
 
   useFrame(() => {
-    if (!selectedObjectId || !selectedObject) {
+    const isSelectedGodRays =
+      Boolean(selectedObjectId && selectedObjectId.startsWith('effect:god-rays:'))
+    const isSelectedStencilVolume =
+      Boolean(selectedObjectId && selectedObjectId.startsWith('effect:stencil-volume:'))
+
+    if (!selectedObjectId || !selectedObject || isSelectedGodRays || isSelectedStencilVolume) {
       helper.visible = false
       return
     }
@@ -660,9 +828,18 @@ function AnchorHandles() {
   const handleRefs = useRef<Array<THREE.Group | null>>([])
   const [hoveredAnchorIndex, setHoveredAnchorIndex] = useState<number | null>(null)
   const perspectiveCamera = camera as THREE.PerspectiveCamera
+  const isSelectedGodRays =
+    Boolean(selectedObjectId && selectedNode?.type === 'effect' && selectedObjectId.startsWith('effect:god-rays:'))
 
   useFrame(() => {
-    if (!anchorModeEnabled || !selectedObjectId || !selectedNode || selectedNode.type === 'material' || !object) {
+    if (
+      isSelectedGodRays ||
+      !anchorModeEnabled ||
+      !selectedObjectId ||
+      !selectedNode ||
+      selectedNode.type === 'material' ||
+      !object
+    ) {
       return
     }
 
@@ -701,7 +878,14 @@ function AnchorHandles() {
     })
   }, -1)
 
-  if (!anchorModeEnabled || !selectedObjectId || !selectedNode || selectedNode.type === 'material' || !object) {
+  if (
+    isSelectedGodRays ||
+    !anchorModeEnabled ||
+    !selectedObjectId ||
+    !selectedNode ||
+    selectedNode.type === 'material' ||
+    !object
+  ) {
     return null
   }
 
@@ -776,8 +960,35 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
     state.selectedObjectId ? state.sceneGraph[state.selectedObjectId] ?? null : null,
   )
   const rootNodeIds = useEditorStore((state) => state.rootNodeIds)
-  const object = useEditorStore((state) =>
+  const selectedRuntimeObject = useEditorStore((state) =>
     state.selectedObjectId ? state.runtime.objectById[state.selectedObjectId] ?? null : null,
+  )
+  const activeGodRaysDirectionBoxId = useEditorStore((state) => state.hud.activeGodRaysDirectionBoxId)
+  const directionObject = useEditorStore((state) =>
+    state.hud.activeGodRaysDirectionBoxId
+      ? state.runtime.objectById[getGodRaysDirectionArrowId(state.hud.activeGodRaysDirectionBoxId)] ?? null
+      : null,
+  )
+  const activeGodRaysEntry = useEditorStore((state) =>
+    state.hud.activeGodRaysDirectionBoxId
+      ? state.godRaysBoxes.find((entry) => entry.id === state.hud.activeGodRaysDirectionBoxId) ?? null
+      : null,
+  )
+  const activeGodRaysObject = useEditorStore((state) =>
+    state.hud.activeGodRaysDirectionBoxId
+      ? state.runtime.objectById[state.hud.activeGodRaysDirectionBoxId] ?? null
+      : null,
+  )
+  const activeStencilVolumeEndHandleId = useEditorStore((state) => state.hud.activeStencilVolumeEndHandleId)
+  const stencilEndObject = useEditorStore((state) =>
+    state.hud.activeStencilVolumeEndHandleId
+      ? state.runtime.objectById[getStencilVolumeEndHandleId(state.hud.activeStencilVolumeEndHandleId)] ?? null
+      : null,
+  )
+  const activeStencilVolumeEntry = useEditorStore((state) =>
+    state.hud.activeStencilVolumeEndHandleId
+      ? state.stencilVolumes.find((entry) => entry.id === state.hud.activeStencilVolumeEndHandleId) ?? null
+      : null,
   )
   const transformMode = useEditorStore((state) => state.hud.transformMode)
   const anchorModeEnabled = useEditorStore((state) => state.hud.anchorModeEnabled)
@@ -786,15 +997,52 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
   const cameraMode = useEditorStore((state) => state.viewer.cameraMode)
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const updateExtraLight = useEditorStore((state) => state.updateExtraLight)
+  const updateGodRaysBox = useEditorStore((state) => state.updateGodRaysBox)
+  const updateStencilVolume = useEditorStore((state) => state.updateStencilVolume)
+  const setGodRaysGlobalDirection = useEditorStore((state) => state.setGodRaysGlobalDirection)
+  const duplicateExtraLight = useEditorStore((state) => state.duplicateExtraLight)
+  const duplicateGodRaysBox = useEditorStore((state) => state.duplicateGodRaysBox)
+  const duplicateStencilVolume = useEditorStore((state) => state.duplicateStencilVolume)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const beginHistoryGesture = useEditorStore((state) => state.beginHistoryGesture)
   const endHistoryGesture = useEditorStore((state) => state.endHistoryGesture)
-  const canRotate = selectedNode?.type !== 'light'
+  const isEditingGodRaysDirection = Boolean(
+    activeGodRaysDirectionBoxId &&
+      selectedObjectId === activeGodRaysDirectionBoxId &&
+      directionObject,
+  )
+  const wantsStencilVolumeEndEdit = Boolean(
+    activeStencilVolumeEndHandleId &&
+      selectedObjectId === activeStencilVolumeEndHandleId,
+  )
+  const isEditingStencilVolumeEnd = wantsStencilVolumeEndEdit && Boolean(stencilEndObject)
+  const object = isEditingGodRaysDirection
+    ? directionObject
+    : wantsStencilVolumeEndEdit
+      ? stencilEndObject
+      : selectedRuntimeObject
+  const canRotate = isEditingGodRaysDirection || wantsStencilVolumeEndEdit || selectedNode?.type !== 'light'
+  const canScale = !isEditingGodRaysDirection && (wantsStencilVolumeEndEdit || selectedNode?.type !== 'light')
   const pivotObject = useMemo(() => new THREE.Object3D(), [])
   const previousPivotStateRef = useRef<{
     position: THREE.Vector3
     quaternion: THREE.Quaternion
   } | null>(null)
+  const duplicateDragSessionRef = useRef<{
+    sourceId: string
+    duplicateId: string
+    sourceTransform: {
+      position: [number, number, number]
+      rotation: [number, number, number]
+      scale: [number, number, number]
+      visible: boolean
+    }
+    sourceLightTargetPosition?: [number, number, number]
+  } | null>(null)
   const isDraggingRef = useRef(false)
+  const directionWriteArmedRef = useRef(false)
+  const stencilEndWriteArmedRef = useRef(false)
+  const shiftPressedRef = useRef(false)
   const tempBox = useMemo(() => new THREE.Box3(), [])
   const tempCenter = useMemo(() => new THREE.Vector3(), [])
   const tempObjectWorldPosition = useMemo(() => new THREE.Vector3(), [])
@@ -812,9 +1060,10 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
   const anchorCorners = useMemo(() => Array.from({ length: 8 }, () => new THREE.Vector3()), [])
   const isRootSelection = Boolean(selectedObjectId && rootNodeIds.includes(selectedObjectId))
   const hasSelectedAnchor = anchorModeEnabled && selectedAnchorIndex !== null && selectedAnchorIndex >= 0 && selectedAnchorIndex < 8
-  const usesRootPivot = isRootSelection && transformMode === 'rotate'
-  const usesAnchorPivot = hasSelectedAnchor
+  const usesRootPivot = !isEditingGodRaysDirection && !wantsStencilVolumeEndEdit && isRootSelection && transformMode === 'rotate'
+  const usesAnchorPivot = !isEditingGodRaysDirection && !wantsStencilVolumeEndEdit && hasSelectedAnchor
   const usesCustomPivot = usesRootPivot || usesAnchorPivot
+  const activeTransformMode = transformMode
 
   useEffect(() => {
     pivotObject.visible = false
@@ -824,6 +1073,36 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
       scene.remove(pivotObject)
     }
   }, [pivotObject, scene])
+
+  useEffect(() => {
+    if (!isEditingGodRaysDirection) {
+      directionWriteArmedRef.current = false
+    }
+    if (!isEditingStencilVolumeEnd) {
+      stencilEndWriteArmedRef.current = false
+    }
+  }, [isEditingGodRaysDirection, isEditingStencilVolumeEnd])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'ShiftLeft') {
+        shiftPressedRef.current = true
+      }
+    }
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'ShiftLeft') {
+        shiftPressedRef.current = false
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [])
   const translationSnapValue =
     transformSettings.isGridSnapping
       ? transformSettings.gridSize > 0
@@ -833,13 +1112,59 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
           : undefined
       : undefined
   const canRender =
-    transformMode !== 'none' &&
+    activeTransformMode !== 'none' &&
     Boolean(selectedObjectId && selectedNode && selectedNode.type !== 'material' && object) &&
     cameraMode === 'orbit' &&
-    !(transformMode === 'rotate' && !canRotate)
+    !(isEditingGodRaysDirection && activeTransformMode !== 'rotate') &&
+    !(activeTransformMode === 'rotate' && !canRotate) &&
+    !(activeTransformMode === 'scale' && !canScale)
 
   const syncTransform = () => {
     if (!selectedObjectId || !selectedNode || !object) {
+      return
+    }
+
+    if (isEditingGodRaysDirection && activeGodRaysDirectionBoxId && activeGodRaysEntry && activeGodRaysObject) {
+      const nextDirection = getGodRaysStoredDirectionFromArrowObject(
+        object,
+        activeGodRaysEntry.dustDirectionMode,
+        activeGodRaysObject,
+      )
+      const patch =
+        activeGodRaysEntry.dustDirectionMode === 'local'
+          ? {
+              dustDirectionMode: activeGodRaysEntry.dustDirectionMode,
+              dustDirectionLocal: nextDirection,
+            }
+          : null
+      if (activeGodRaysEntry.dustDirectionMode === 'global') {
+        setGodRaysGlobalDirection(nextDirection)
+      } else if (patch) {
+        updateGodRaysBox(activeGodRaysDirectionBoxId, patch)
+      }
+      return
+    }
+
+    if (isEditingStencilVolumeEnd && activeStencilVolumeEndHandleId && activeStencilVolumeEntry) {
+      if (activeTransformMode === 'rotate') {
+        updateStencilVolume(activeStencilVolumeEndHandleId, {
+          endRotationX: object.rotation.x,
+          endRotationY: object.rotation.y,
+        })
+        return
+      }
+
+      if (activeTransformMode === 'scale') {
+        updateStencilVolume(activeStencilVolumeEndHandleId, {
+          endScaleX: object.scale.x,
+          endScaleY: object.scale.y,
+        })
+        return
+      }
+
+      updateStencilVolume(activeStencilVolumeEndHandleId, {
+        extrudeEnd: [object.position.x, object.position.y, object.position.z],
+      })
       return
     }
 
@@ -987,12 +1312,21 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
   return (
     <TransformControls
       object={gizmoObject}
-      mode={transformMode}
+      mode={activeTransformMode}
+      showX
+      showY
+      showZ={!isEditingStencilVolumeEnd || activeTransformMode === 'translate'}
       translationSnap={translationSnapValue}
       rotationSnap={
         transformSettings.rotationStep > 0 ? THREE.MathUtils.degToRad(transformSettings.rotationStep) : undefined
       }
       onObjectChange={() => {
+        if (isEditingGodRaysDirection && (!isDraggingRef.current || !directionWriteArmedRef.current)) {
+          return
+        }
+        if (isEditingStencilVolumeEnd && (!isDraggingRef.current || !stencilEndWriteArmedRef.current)) {
+          return
+        }
         if (usesCustomPivot) {
           applyPivotDelta()
         }
@@ -1001,6 +1335,86 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
       onMouseDown={() => {
         beginHistoryGesture()
         isDraggingRef.current = true
+        if (isEditingGodRaysDirection) {
+          directionWriteArmedRef.current = true
+        }
+        if (isEditingStencilVolumeEnd) {
+          stencilEndWriteArmedRef.current = true
+        }
+        if (
+          activeTransformMode === 'translate' &&
+          !isEditingStencilVolumeEnd &&
+          shiftPressedRef.current &&
+          selectedObjectId &&
+          selectedNode
+        ) {
+          if (selectedNode.type === 'light') {
+            const nextId = duplicateExtraLight(selectedObjectId, { selectDuplicate: false })
+            if (nextId) {
+              const selectedLight = useEditorStore.getState().extraLights.find((entry) => entry.id === selectedObjectId) ?? null
+              duplicateDragSessionRef.current = {
+                sourceId: selectedObjectId,
+                duplicateId: nextId,
+                sourceTransform: {
+                  position: [object.position.x, object.position.y, object.position.z],
+                  rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+                  scale: [object.scale.x, object.scale.y, object.scale.z],
+                  visible: object.visible,
+                },
+                sourceLightTargetPosition: selectedLight ? [...selectedLight.targetPosition] as [number, number, number] : undefined,
+              }
+            }
+          } else if (selectedNode.type === 'effect' && selectedObjectId.startsWith('effect:god-rays:')) {
+            const nextId = duplicateGodRaysBox(selectedObjectId, { selectDuplicate: false })
+            if (nextId) {
+              duplicateDragSessionRef.current = {
+                sourceId: selectedObjectId,
+                duplicateId: nextId,
+                sourceTransform: {
+                  position: [object.position.x, object.position.y, object.position.z],
+                  rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+                  scale: [object.scale.x, object.scale.y, object.scale.z],
+                  visible: object.visible,
+                },
+              }
+            }
+          } else if (selectedNode.type === 'effect' && selectedObjectId.startsWith('effect:stencil-volume:')) {
+            const nextId = duplicateStencilVolume(selectedObjectId, { selectDuplicate: false })
+            if (nextId) {
+              duplicateDragSessionRef.current = {
+                sourceId: selectedObjectId,
+                duplicateId: nextId,
+                sourceTransform: {
+                  position: [object.position.x, object.position.y, object.position.z],
+                  rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+                  scale: [object.scale.x, object.scale.y, object.scale.z],
+                  visible: object.visible,
+                },
+              }
+            }
+          }
+        } else if (
+          activeTransformMode === 'rotate' &&
+          !isEditingGodRaysDirection &&
+          shiftPressedRef.current &&
+          selectedObjectId &&
+          selectedNode?.type === 'effect' &&
+          selectedObjectId.startsWith('effect:god-rays:')
+        ) {
+          const nextId = duplicateGodRaysBox(selectedObjectId, { selectDuplicate: false })
+          if (nextId) {
+            duplicateDragSessionRef.current = {
+              sourceId: selectedObjectId,
+              duplicateId: nextId,
+              sourceTransform: {
+                position: [object.position.x, object.position.y, object.position.z],
+                rotation: [object.rotation.x, object.rotation.y, object.rotation.z],
+                scale: [object.scale.x, object.scale.y, object.scale.z],
+                visible: object.visible,
+              },
+            }
+          }
+        }
         if (usesCustomPivot) {
           previousPivotStateRef.current = {
             position: pivotObject.position.clone(),
@@ -1014,7 +1428,37 @@ function TransformGizmo({ onDraggingChange }: { onDraggingChange: (value: boolea
           applyPivotDelta()
         }
         syncTransform()
+        if (duplicateDragSessionRef.current) {
+          const session = duplicateDragSessionRef.current
+          const movedTransform = {
+            position: [object.position.x, object.position.y, object.position.z] as [number, number, number],
+            rotation: [object.rotation.x, object.rotation.y, object.rotation.z] as [number, number, number],
+            scale: [object.scale.x, object.scale.y, object.scale.z] as [number, number, number],
+            visible: object.visible,
+          }
+
+          updateObjectTransform(session.duplicateId, movedTransform)
+          updateObjectTransform(session.sourceId, session.sourceTransform)
+          object.position.set(...session.sourceTransform.position)
+          object.rotation.set(...session.sourceTransform.rotation)
+          object.scale.set(...session.sourceTransform.scale)
+          object.visible = session.sourceTransform.visible
+          object.updateMatrixWorld(true)
+
+          if (selectedNode?.type === 'light') {
+            updateExtraLight(session.duplicateId, { position: movedTransform.position })
+            updateExtraLight(session.sourceId, {
+              position: session.sourceTransform.position,
+              targetPosition: session.sourceLightTargetPosition,
+            })
+          }
+
+          setSelectedObjectId(session.duplicateId)
+          duplicateDragSessionRef.current = null
+        }
         isDraggingRef.current = false
+        directionWriteArmedRef.current = false
+        stencilEndWriteArmedRef.current = false
         if (usesCustomPivot) {
           previousPivotStateRef.current = {
             position: pivotObject.position.clone(),
@@ -1085,6 +1529,9 @@ function PerformanceProbe({
 function ViewportScene({
   onStats,
   registerResetCamera,
+  registerViewDirection,
+  registerViewOrbitDrag,
+  onCameraQuaternionChange,
   onTransformDraggingChange,
   transformDragging,
   allowSelection,
@@ -1094,6 +1541,9 @@ function ViewportScene({
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
+  registerViewDirection: (handler: (direction: OrientationFace) => void) => void
+  registerViewOrbitDrag: (handler: (deltaX: number, deltaY: number) => void) => void
+  onCameraQuaternionChange: (quaternion: OrientationQuaternion) => void
   onTransformDraggingChange: (value: boolean) => void
   transformDragging: boolean
   allowSelection: boolean
@@ -1111,6 +1561,37 @@ function ViewportScene({
     state.rootNodeId ? state.runtime.objectById[state.rootNodeId] ?? null : null,
   )
   const autoFramedRootIdRef = useRef<string | null>(null)
+  const orientationAnimationRef = useRef<ViewOrientationAnimation | null>(null)
+
+  useFrame(({ clock }) => {
+    const animation = orientationAnimationRef.current
+    if (!animation) {
+      return
+    }
+
+    const elapsed = performance.now() - animation.startTime
+    const rawProgress = THREE.MathUtils.clamp(elapsed / animation.duration, 0, 1)
+    const easedProgress = 1 - Math.pow(1 - rawProgress, 3)
+    const nextPosition = animation.fromPosition.clone().lerp(animation.toPosition, easedProgress)
+    const nextTarget = animation.fromTarget.clone().lerp(animation.toTarget, easedProgress)
+    const perspectiveCamera = camera as THREE.PerspectiveCamera
+
+    perspectiveCamera.position.copy(nextPosition)
+    perspectiveCamera.lookAt(nextTarget)
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(nextTarget)
+      controlsRef.current.update()
+    }
+
+    if (rawProgress >= 1) {
+      orientationAnimationRef.current = null
+      useEditorStore.getState().setViewer({
+        cameraMode: 'orbit',
+        cameraPosition: [nextPosition.x, nextPosition.y, nextPosition.z],
+        orbitTarget: [nextTarget.x, nextTarget.y, nextTarget.z],
+      })
+    }
+  })
 
   useEffect(() => {
     if (viewer.cameraMode !== 'firstPerson') {
@@ -1179,15 +1660,88 @@ function ViewportScene({
     }
   }, [camera, registerResetCamera, viewer.focalLength, viewer.resetCameraPosition, viewer.resetOrbitTarget])
 
+  useEffect(() => {
+    registerViewDirection((direction) => {
+      orientationAnimationRef.current = null
+      const target = new THREE.Vector3(...viewer.orbitTarget)
+      const currentPosition = new THREE.Vector3(camera.position.x, camera.position.y, camera.position.z)
+      const distance = Math.max(currentPosition.distanceTo(target), 0.5)
+      const directionVector =
+        direction === 'front'
+          ? new THREE.Vector3(0, 0, 1)
+          : direction === 'back'
+            ? new THREE.Vector3(0, 0, -1)
+            : direction === 'left'
+              ? new THREE.Vector3(-1, 0, 0)
+              : direction === 'right'
+                ? new THREE.Vector3(1, 0, 0)
+                : direction === 'top'
+                  ? new THREE.Vector3(0, 1, 0)
+                  : new THREE.Vector3(0, -1, 0)
+
+      const nextPosition = target.clone().add(directionVector.multiplyScalar(distance))
+      useEditorStore.getState().setHud({ orbitEnabled: true })
+      orientationAnimationRef.current = {
+        startTime: performance.now(),
+        duration: 340,
+        fromPosition: currentPosition,
+        toPosition: nextPosition,
+        fromTarget: controlsRef.current?.target.clone() ?? target.clone(),
+        toTarget: target,
+      }
+    })
+
+    return () => {
+      registerViewDirection(() => {})
+    }
+  }, [camera, controlsRef, registerViewDirection, viewer.focalLength, viewer.orbitTarget])
+
+  useEffect(() => {
+    registerViewOrbitDrag((deltaX, deltaY) => {
+      orientationAnimationRef.current = null
+      const target = controlsRef.current?.target.clone() ?? new THREE.Vector3(...viewer.orbitTarget)
+      const offset = new THREE.Vector3().subVectors(camera.position, target)
+      const spherical = new THREE.Spherical().setFromVector3(offset)
+      const rotationSpeed = 0.012
+      const phiLimit = 0.08
+
+      spherical.theta += deltaX * rotationSpeed
+      spherical.phi = THREE.MathUtils.clamp(
+        spherical.phi - deltaY * rotationSpeed,
+        phiLimit,
+        Math.PI - phiLimit,
+      )
+
+      offset.setFromSpherical(spherical)
+      camera.position.copy(target.clone().add(offset))
+      camera.lookAt(target)
+      const perspectiveCamera = camera as THREE.PerspectiveCamera
+      applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(target)
+        controlsRef.current.update()
+      }
+      useEditorStore.getState().setHud({ orbitEnabled: true })
+      useEditorStore.getState().setViewer({ cameraMode: 'orbit' })
+    })
+
+    return () => {
+      registerViewOrbitDrag(() => {})
+    }
+  }, [camera, registerViewOrbitDrag, viewer.focalLength, viewer.orbitTarget])
+
   return (
     <>
       <RendererBridge transparentBackground={transparentBackground} clearColor={clearColor} />
       <CameraBridge controlsRef={controlsRef} />
+      <OrientationTracker onChange={onCameraQuaternionChange} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
         {transparentBackground ? <TransparentEnvironmentBridge /> : <EnvironmentManager />}
         <LightRig />
         <SceneBridge allowSelection={allowSelection} />
+        <StencilVolumes />
+        <GodRaysBoxes />
         {allowSelection ? <SelectionHighlight /> : null}
         {allowSelection ? <AnchorHandles /> : null}
         {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
@@ -1196,17 +1750,31 @@ function ViewportScene({
         {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (
-        <Grid
-          args={[20, 20]}
-          position={[0, -0.002, 0]}
-          cellColor={VIEWPORT_GRID_CELL_COLOR}
-          sectionColor={VIEWPORT_GRID_SECTION_COLOR}
-          fadeDistance={22}
-          fadeStrength={1.3}
-          cellSize={Math.max(gridSize, 0.0001)}
-          sectionSize={Math.max(gridSize * 5, 0.0005)}
-          infiniteGrid={false}
-        />
+        <>
+          <Grid
+            args={[20, 20]}
+            position={[0, -0.002, 0]}
+            cellColor={VIEWPORT_GRID_CELL_COLOR}
+            sectionColor={VIEWPORT_GRID_SECTION_COLOR}
+            fadeDistance={22}
+            fadeStrength={1.3}
+            cellSize={Math.max(gridSize, 0.0001)}
+            sectionSize={Math.max(gridSize * 5, 0.0005)}
+            infiniteGrid={false}
+          />
+          <Grid
+            args={[20, 20]}
+            position={[0, -0.002, 0]}
+            rotation={[Math.PI, 0, 0]}
+            cellColor={VIEWPORT_GRID_CELL_COLOR}
+            sectionColor={VIEWPORT_GRID_SECTION_COLOR}
+            fadeDistance={22}
+            fadeStrength={1.3}
+            cellSize={Math.max(gridSize, 0.0001)}
+            sectionSize={Math.max(gridSize * 5, 0.0005)}
+            infiniteGrid={false}
+          />
+        </>
       ) : null}
       {hud.axesVisible ? <axesHelper args={[2]} /> : null}
       {viewer.cameraMode === 'orbit' ? (
@@ -1318,9 +1886,12 @@ export function Viewport({
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const containerRef = useRef<HTMLElement | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
+  const applyViewDirectionRef = useRef<(direction: OrientationFace) => void>(() => {})
+  const applyViewOrbitDragRef = useRef<(deltaX: number, deltaY: number) => void>(() => {})
   const [metricTextPalette, setMetricTextPalette] = useState(LIGHT_METRIC_TEXT)
   const [isTransformDragging, setIsTransformDragging] = useState(false)
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
+  const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
   const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
   const frameRect = useMemo(
     () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
@@ -1537,8 +2108,15 @@ export function Viewport({
               allowSelection={allowSelection}
               autoFrameOnLoad={autoFrameOnLoad}
               clearColor={clearColor}
+              onCameraQuaternionChange={setCameraQuaternion}
               onStats={setViewportMetrics}
               onTransformDraggingChange={setIsTransformDragging}
+              registerViewDirection={(handler) => {
+                applyViewDirectionRef.current = handler
+              }}
+              registerViewOrbitDrag={(handler) => {
+                applyViewOrbitDragRef.current = handler
+              }}
               transparentBackground={transparentBackground}
               transformDragging={isTransformDragging}
               registerResetCamera={(handler) => {
@@ -1579,8 +2157,15 @@ export function Viewport({
             allowSelection={allowSelection}
             autoFrameOnLoad={autoFrameOnLoad}
             clearColor={clearColor}
+            onCameraQuaternionChange={setCameraQuaternion}
             onStats={setViewportMetrics}
             onTransformDraggingChange={setIsTransformDragging}
+            registerViewDirection={(handler) => {
+              applyViewDirectionRef.current = handler
+            }}
+            registerViewOrbitDrag={(handler) => {
+              applyViewOrbitDragRef.current = handler
+            }}
             transparentBackground={transparentBackground}
             transformDragging={isTransformDragging}
             registerResetCamera={(handler) => {
@@ -1616,6 +2201,13 @@ export function Viewport({
         </>
       ) : null}
       {showChrome ? <TransformToolbar /> : null}
+      {showChrome ? (
+        <ViewportOrientationCube
+          quaternion={cameraQuaternion}
+          onFaceClick={(face) => applyViewDirectionRef.current(face)}
+          onDragRotate={(deltaX, deltaY) => applyViewOrbitDragRef.current(deltaX, deltaY)}
+        />
+      ) : null}
       {showChrome ? <PerformanceStats /> : null}
       {showChrome ? <ViewportHud onResetCamera={() => resetCameraRef.current()} /> : null}
       {!isZenMode && showChrome ? (

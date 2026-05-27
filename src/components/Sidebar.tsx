@@ -5,6 +5,11 @@ import { downloadPublishedScene, openPublishedScenePreview } from '../features/p
 import { exportWebPackage } from '../features/publish/exportWebPackage'
 import { STANDARD_ENVIRONMENT_PRESETS } from '../features/environment/standardEnvironmentPresets'
 import {
+  DEFAULT_STENCIL_VOLUME,
+  getGodRaysDustSpeedFromSliderValue,
+  getGodRaysDustSpeedSliderValue,
+  getGodRaysDefaultDirection,
+  normalizeGodRaysDirection,
   useEditorStore,
   type ExtraLightState,
   type FrameAspectPreset,
@@ -15,6 +20,7 @@ import {
 
 type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx' | 'anim'
 type OutlinerViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
+type GodRaysDirectionPreset = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 
 const TAB_LABELS: Record<SidebarTab, string> = {
   scn: 'SCN',
@@ -42,7 +48,14 @@ const FRAME_ASPECT_OPTIONS: Array<{ value: FrameAspectPreset; label: string }> =
   { value: '9:16', label: '9:16 Portrait' },
 ]
 const FOCAL_LENGTH_PRESETS = [10, 16, 20, 28, 35, 50, 85, 105]
-
+const GOD_RAYS_DIRECTION_PRESETS: Array<{ id: GodRaysDirectionPreset; label: string; direction: [number, number, number] }> = [
+  { id: 'front', label: 'FRONT', direction: [0, 0, 1] },
+  { id: 'back', label: 'BACK', direction: [0, 0, -1] },
+  { id: 'left', label: 'LEFT', direction: [-1, 0, 0] },
+  { id: 'right', label: 'RIGHT', direction: [1, 0, 0] },
+  { id: 'top', label: 'TOP', direction: [0, 1, 0] },
+  { id: 'bottom', label: 'BOTTOM', direction: [0, -1, 0] },
+]
 function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
   const dimensions =
     preset === '1:1'
@@ -95,6 +108,18 @@ function getEnvironmentDisplayName(value: string | null | undefined, fallback: s
 
 function formatNumber(value: number, digits = 2) {
   return value.toFixed(digits)
+}
+
+function parseNumberInput(value: string) {
+  return Number(value.replace(',', '.'))
+}
+
+function toDisplayStencilDimension(value: number, unit: 'cm' | 'm') {
+  return unit === 'm' ? value : value * 100
+}
+
+function toInternalStencilDimension(value: number, unit: 'cm' | 'm') {
+  return unit === 'm' ? value : value / 100
 }
 
 function formatDuration(value: number) {
@@ -689,16 +714,193 @@ function FxTabContent() {
   const hud = useEditorStore((state) => state.hud)
   const viewer = useEditorStore((state) => state.viewer)
   const backgroundAudio = useEditorStore((state) => state.backgroundAudio)
+  const godRaysBoxes = useEditorStore((state) => state.godRaysBoxes)
+  const stencilVolumes = useEditorStore((state) => state.stencilVolumes)
+  const objects = useEditorStore((state) => state.objects)
+  const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const transformSettings = useEditorStore((state) => state.transformSettings)
+  const activeGodRaysDirectionBoxId = useEditorStore((state) => state.hud.activeGodRaysDirectionBoxId)
+  const activeStencilVolumeEndHandleId = useEditorStore((state) => state.hud.activeStencilVolumeEndHandleId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setHud = useEditorStore((state) => state.setHud)
   const setViewer = useEditorStore((state) => state.setViewer)
   const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
+  const addGodRaysBox = useEditorStore((state) => state.addGodRaysBox)
+  const addStencilVolume = useEditorStore((state) => state.addStencilVolume)
+  const updateGodRaysBox = useEditorStore((state) => state.updateGodRaysBox)
+  const updateStencilVolume = useEditorStore((state) => state.updateStencilVolume)
+  const setGodRaysGlobalNoise = useEditorStore((state) => state.setGodRaysGlobalNoise)
+  const godRaysGlobalNoise = useEditorStore((state) => state.godRaysGlobalNoise)
+  const setGodRaysGlobalDirection = useEditorStore((state) => state.setGodRaysGlobalDirection)
+  const godRaysGlobalDirection = useEditorStore((state) => state.godRaysGlobalDirection)
+  const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
   const isBloomSelected = selectedObjectId === 'effect:bloom'
   const isSceneAudioSelected = selectedObjectId === 'effect:scene-audio'
+  const selectedStencilVolume = stencilVolumes.find((entry) => entry.id === selectedObjectId) ?? null
+  const isEditingStencilVolumeEnd = Boolean(
+    selectedStencilVolume && activeStencilVolumeEndHandleId === selectedStencilVolume.id,
+  )
+  const selectedGodRaysBox =
+    godRaysBoxes.find((entry) => entry.id === selectedObjectId) ??
+    godRaysBoxes.find((entry) => entry.id === activeGodRaysDirectionBoxId) ??
+    null
+  const isEditingGodRaysDirection = Boolean(
+    selectedGodRaysBox && activeGodRaysDirectionBoxId === selectedGodRaysBox.id,
+  )
+  const selectedGodRaysTransform = selectedGodRaysBox ? objects[selectedGodRaysBox.id] ?? null : null
+  const [isGodRaysNoiseOpen, setIsGodRaysNoiseOpen] = useState(false)
+  const [isGodRaysDustDirectionOpen, setIsGodRaysDustDirectionOpen] = useState(false)
+  const [isStencilRaysOpen, setIsStencilRaysOpen] = useState(true)
+  const [isStencilNoiseOpen, setIsStencilNoiseOpen] = useState(false)
+  const [isStencilDustOpen, setIsStencilDustOpen] = useState(false)
+  const [isStencilDustDirectionOpen, setIsStencilDustDirectionOpen] = useState(false)
+  const godRaysNoiseMotionModes = ['off', 'soft'] as const
   const audioInputRef = useRef<HTMLInputElement | null>(null)
+  const stencilMaskInputRef = useRef<HTMLInputElement | null>(null)
   const currentAudioLabel = getEnvironmentDisplayName(backgroundAudio.assetLabel, 'No audio loaded')
   const hasSceneAudio = backgroundAudio.isAdded
+  const activeGodRaysNoiseSettings = selectedGodRaysBox?.rayUseGlobalNoiseSettings
+    ? godRaysGlobalNoise
+    : selectedGodRaysBox
+      ? {
+          rayNoiseAmount: selectedGodRaysBox.rayNoiseAmount,
+          rayNoiseScale: selectedGodRaysBox.rayNoiseScale,
+          rayGrain: selectedGodRaysBox.rayGrain,
+          rayNoiseMotionMode: selectedGodRaysBox.rayNoiseMotionMode,
+          rayNoiseMotionSpeed: selectedGodRaysBox.rayNoiseMotionSpeed,
+          rayQuality: selectedGodRaysBox.rayQuality,
+        }
+      : null
+  const activeGodRaysDirection = selectedGodRaysBox
+    ? normalizeGodRaysDirection(
+        selectedGodRaysBox.dustDirectionMode === 'global'
+          ? godRaysGlobalDirection
+          : selectedGodRaysBox.dustDirectionLocal,
+      )
+    : null
+  const activeStencilNoiseSettings = selectedStencilVolume?.rayUseGlobalNoiseSettings !== false
+    ? godRaysGlobalNoise
+    : selectedStencilVolume
+      ? {
+          rayNoiseAmount: selectedStencilVolume.rayNoiseAmount ?? godRaysGlobalNoise.rayNoiseAmount,
+          rayNoiseScale: selectedStencilVolume.rayNoiseScale ?? godRaysGlobalNoise.rayNoiseScale,
+          rayGrain: selectedStencilVolume.rayGrain ?? godRaysGlobalNoise.rayGrain,
+          rayNoiseMotionMode: selectedStencilVolume.rayNoiseMotionMode ?? godRaysGlobalNoise.rayNoiseMotionMode,
+          rayNoiseMotionSpeed: selectedStencilVolume.rayNoiseMotionSpeed ?? godRaysGlobalNoise.rayNoiseMotionSpeed,
+          rayQuality: selectedStencilVolume.rayQuality ?? godRaysGlobalNoise.rayQuality,
+        }
+      : null
+  const activeStencilDirection = selectedStencilVolume
+    ? normalizeGodRaysDirection(
+        (selectedStencilVolume.dustDirectionMode ?? 'global') === 'global'
+          ? godRaysGlobalDirection
+          : selectedStencilVolume.dustDirectionLocal ?? godRaysGlobalDirection,
+      )
+    : null
+  const updateGodRaysNoiseSettings = (
+    patch: Partial<{
+      rayNoiseAmount: number
+      rayNoiseScale: number
+      rayGrain: number
+      rayNoiseMotionMode: (typeof godRaysNoiseMotionModes)[number]
+      rayNoiseMotionSpeed: number
+      rayQuality: 'low' | 'medium' | 'high'
+    }>,
+  ) => {
+    if (!selectedGodRaysBox) {
+      return
+    }
+
+    if (selectedGodRaysBox.rayUseGlobalNoiseSettings) {
+      setGodRaysGlobalNoise(patch)
+      return
+    }
+
+    updateGodRaysBox(selectedGodRaysBox.id, patch)
+  }
+
+  const updateActiveGodRaysDirection = (direction: [number, number, number]) => {
+    if (!selectedGodRaysBox) {
+      return
+    }
+
+    if (selectedGodRaysBox.dustDirectionMode === 'local') {
+      updateGodRaysBox(selectedGodRaysBox.id, {
+        dustDirectionLocal: direction,
+      })
+      return
+    }
+
+    setGodRaysGlobalDirection(direction)
+  }
+
+  const resetActiveGodRaysDirection = () => {
+    updateActiveGodRaysDirection(getGodRaysDefaultDirection())
+  }
+
+  const updateStencilNoiseSettings = (
+    patch: Partial<{
+      rayNoiseAmount: number
+      rayNoiseScale: number
+      rayGrain: number
+      rayNoiseMotionMode: (typeof godRaysNoiseMotionModes)[number]
+      rayNoiseMotionSpeed: number
+      rayQuality: 'low' | 'medium' | 'high'
+    }>,
+  ) => {
+    if (!selectedStencilVolume) {
+      return
+    }
+
+    if (selectedStencilVolume.rayUseGlobalNoiseSettings !== false) {
+      setGodRaysGlobalNoise(patch)
+      return
+    }
+
+    updateStencilVolume(selectedStencilVolume.id, patch)
+  }
+
+  const updateActiveStencilDirection = (direction: [number, number, number]) => {
+    if (!selectedStencilVolume) {
+      return
+    }
+
+    if ((selectedStencilVolume.dustDirectionMode ?? 'global') === 'local') {
+      updateStencilVolume(selectedStencilVolume.id, {
+        dustDirectionLocal: direction,
+      })
+      return
+    }
+
+    setGodRaysGlobalDirection(direction)
+  }
+
+  const resetActiveStencilDirection = () => {
+    updateActiveStencilDirection(getGodRaysDefaultDirection())
+  }
+
+  const isGodRaysDirectionPresetActive = (direction: [number, number, number]) => {
+    if (!activeGodRaysDirection) {
+      return false
+    }
+
+    const [ax, ay, az] = activeGodRaysDirection
+    const [bx, by, bz] = normalizeGodRaysDirection(direction)
+    const dot = ax * bx + ay * by + az * bz
+    return dot >= 0.999
+  }
+
+  const isStencilDirectionPresetActive = (direction: [number, number, number]) => {
+    if (!activeStencilDirection) {
+      return false
+    }
+
+    const [ax, ay, az] = activeStencilDirection
+    const [bx, by, bz] = normalizeGodRaysDirection(direction)
+    const dot = ax * bx + ay * by + az * bz
+    return dot >= 0.999
+  }
 
   return (
     <div className="settings-tab">
@@ -732,6 +934,26 @@ function FxTabContent() {
           >
             <span className="tool-button__glyph">AUDIO</span>
             <span className="tool-button__label">Scene</span>
+          </button>
+          <button
+            type="button"
+            className={`tool-button effect-create-button${selectedGodRaysBox ? ' is-active' : ''}`}
+            onClick={() => {
+              addGodRaysBox()
+            }}
+          >
+            <span className="tool-button__glyph">RAYS</span>
+            <span className="tool-button__label">Create</span>
+          </button>
+          <button
+            type="button"
+            className={`tool-button effect-create-button${selectedStencilVolume ? ' is-active' : ''}`}
+            onClick={() => {
+              addStencilVolume()
+            }}
+          >
+            <span className="tool-button__glyph">STENCIL</span>
+            <span className="tool-button__label">Create</span>
           </button>
         </div>
         <input
@@ -890,6 +1112,1129 @@ function FxTabContent() {
               <span>Loop</span>
             </label>
             <p className="settings-note">Scene audio starts quietly and repeats while the scene is open.</p>
+          </>
+        ) : null}
+        {selectedGodRaysBox ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">
+              {sceneGraph[selectedGodRaysBox.id]?.label ?? 'God Rays'}
+            </p>
+            <div className="god-rays-toggle-row">
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedGodRaysBox.raysEnabled}
+                  onChange={(event) => updateGodRaysBox(selectedGodRaysBox.id, { raysEnabled: event.currentTarget.checked })}
+                />
+                <span>Rays Enabled</span>
+              </label>
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedGodRaysBox.helperVisible}
+                  onChange={(event) =>
+                    updateGodRaysBox(selectedGodRaysBox.id, {
+                      helperVisible: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Show Helper</span>
+              </label>
+            </div>
+            <div className="god-rays-top-row">
+              <label className="left-color-field left-color-field--swatch">
+                <span>Ray Color</span>
+                <input
+                  type="color"
+                  value={selectedGodRaysBox.rayColor}
+                  onChange={(event) => updateGodRaysBox(selectedGodRaysBox.id, { rayColor: event.currentTarget.value })}
+                />
+              </label>
+              <label className="left-slider">
+                <span>Side Count</span>
+                <input
+                  type="range"
+                  min="3"
+                  max="20"
+                  step="1"
+                  value={selectedGodRaysBox.sideCount}
+                  onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { sideCount: Number(event.currentTarget.value) })}
+                />
+                <strong>{selectedGodRaysBox.sideCount}</strong>
+              </label>
+            </div>
+            <label className="left-slider">
+              <span>Height</span>
+              <input
+                type="range"
+                min="0.1"
+                max="10"
+                step="0.01"
+                value={selectedGodRaysTransform?.scale[1] ?? 1}
+                onInput={(event) => {
+                  const nextHeight = Number(event.currentTarget.value)
+                  const currentScale = selectedGodRaysTransform?.scale ?? [1, 1, 1]
+                  updateObjectTransform(selectedGodRaysBox.id, {
+                    scale: [currentScale[0], nextHeight, currentScale[2]],
+                  })
+                }}
+              />
+              <strong>{formatNumber(selectedGodRaysTransform?.scale[1] ?? 1)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Bottom Radius</span>
+              <input
+                type="range"
+                min="0.05"
+                max="2"
+                step="0.01"
+                value={selectedGodRaysBox.bottomRadius}
+                onInput={(event) =>
+                  updateGodRaysBox(selectedGodRaysBox.id, {
+                    bottomRadius: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{formatNumber(selectedGodRaysBox.bottomRadius)}</strong>
+            </label>
+            <label className="left-toggle">
+              <input
+                type="checkbox"
+                checked={selectedGodRaysBox.linkTopRadius}
+                onChange={(event) =>
+                  updateGodRaysBox(selectedGodRaysBox.id, {
+                    linkTopRadius: event.currentTarget.checked,
+                  })
+                }
+              />
+              <span>Link Top Radius</span>
+            </label>
+            <label className="left-slider">
+              <span>Top Radius</span>
+              <input
+                type="range"
+                min="0.05"
+                max="2"
+                step="0.01"
+                value={selectedGodRaysBox.topRadius}
+                disabled={selectedGodRaysBox.linkTopRadius}
+                onInput={(event) =>
+                  updateGodRaysBox(selectedGodRaysBox.id, {
+                    topRadius: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{formatNumber(selectedGodRaysBox.topRadius)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Rounded Top</span>
+              <input
+                type="range"
+                min="0"
+                max="10"
+                step="0.1"
+                value={selectedGodRaysBox.topDome}
+                onInput={(event) =>
+                  updateGodRaysBox(selectedGodRaysBox.id, {
+                    topDome: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{formatNumber(selectedGodRaysBox.topDome)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Ray Intensity</span>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                step="0.01"
+                value={selectedGodRaysBox.rayIntensity}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { rayIntensity: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.rayIntensity)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Ray Falloff</span>
+              <input
+                type="range"
+                min="0"
+                max="4"
+                step="0.01"
+                value={selectedGodRaysBox.rayFalloff}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { rayFalloff: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.rayFalloff)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Ray Edge Fade</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedGodRaysBox.rayEdgeFade}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { rayEdgeFade: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.rayEdgeFade)}</strong>
+            </label>
+            <details className="left-accordion" open={isGodRaysNoiseOpen} onToggle={(event) => setIsGodRaysNoiseOpen(event.currentTarget.open)}>
+              <summary className="left-accordion__summary">
+                <span>Noise</span>
+                <span className="left-accordion__meta">{isGodRaysNoiseOpen ? 'Open' : 'Closed'}</span>
+              </summary>
+              <div className="left-accordion__content">
+                <div className="left-controls__stack">
+                  <span className="left-controls__label">Noise Motion</span>
+                  <div className="segmented">
+                    {godRaysNoiseMotionModes.map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={`tool-button mode-button${activeGodRaysNoiseSettings?.rayNoiseMotionMode === mode ? ' is-active' : ''}`}
+                        onClick={() =>
+                          updateGodRaysNoiseSettings({
+                            rayNoiseMotionMode: mode,
+                          })
+                        }
+                      >
+                        {mode === 'soft' ? 'ANIM' : mode.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label className="left-toggle">
+                  <input
+                    type="checkbox"
+                    checked={selectedGodRaysBox.rayUseGlobalNoiseSettings}
+                    onChange={(event) =>
+                      updateGodRaysBox(selectedGodRaysBox.id, {
+                        rayUseGlobalNoiseSettings: event.currentTarget.checked,
+                      })
+                    }
+                  />
+                  <span>Global Noise Settings</span>
+                </label>
+                <label className="left-slider">
+                  <span>Noise Amount</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={activeGodRaysNoiseSettings?.rayNoiseAmount ?? 0}
+                    onInput={(event) => updateGodRaysNoiseSettings({ rayNoiseAmount: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatNumber(activeGodRaysNoiseSettings?.rayNoiseAmount ?? 0)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Noise Scale</span>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="10"
+                    step="0.01"
+                    value={activeGodRaysNoiseSettings?.rayNoiseScale ?? 0.1}
+                    onInput={(event) => updateGodRaysNoiseSettings({ rayNoiseScale: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatNumber(activeGodRaysNoiseSettings?.rayNoiseScale ?? 0.1)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Grain</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={activeGodRaysNoiseSettings?.rayGrain ?? 0}
+                    onInput={(event) => updateGodRaysNoiseSettings({ rayGrain: Number(event.currentTarget.value) })}
+                  />
+                  <strong>{formatNumber(activeGodRaysNoiseSettings?.rayGrain ?? 0)}</strong>
+                </label>
+                <label className="left-select">
+                  <span>Quality</span>
+                  <select
+                    value={activeGodRaysNoiseSettings?.rayQuality ?? 'low'}
+                    onChange={(event) =>
+                      updateGodRaysNoiseSettings({
+                        rayQuality: event.currentTarget.value as 'low' | 'medium' | 'high',
+                      })
+                    }
+                  >
+                    <option value="low">LOW</option>
+                    <option value="medium">MEDIUM</option>
+                    <option value="high">HIGH</option>
+                  </select>
+                </label>
+                {activeGodRaysNoiseSettings?.rayNoiseMotionMode === 'soft' ? (
+                  <label className="left-slider">
+                    <span>Noise Motion Speed</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="3"
+                      step="0.01"
+                      value={activeGodRaysNoiseSettings?.rayNoiseMotionSpeed ?? 0}
+                      onInput={(event) =>
+                        updateGodRaysNoiseSettings({
+                          rayNoiseMotionSpeed: Number(event.currentTarget.value),
+                        })
+                      }
+                    />
+                    <strong>{formatNumber(activeGodRaysNoiseSettings?.rayNoiseMotionSpeed ?? 0)}</strong>
+                  </label>
+                ) : null}
+              </div>
+            </details>
+            <span className="left-controls__label">Dust</span>
+            <div className="god-rays-dust-toggles">
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedGodRaysBox.dustEnabled}
+                  onChange={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustEnabled: event.currentTarget.checked })}
+                />
+                <span>Dust Enabled</span>
+              </label>
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedGodRaysBox.dustColorLinked}
+                  onChange={(event) =>
+                    updateGodRaysBox(selectedGodRaysBox.id, {
+                      dustColorLinked: event.currentTarget.checked,
+                      dustColor: event.currentTarget.checked ? selectedGodRaysBox.rayColor : selectedGodRaysBox.dustColor,
+                    })
+                  }
+                />
+                <span>Link Dust Color To Rays</span>
+              </label>
+            </div>
+            <div className="god-rays-top-row">
+              <label className="left-color-field left-color-field--swatch">
+                <span>Dust Color</span>
+                <input
+                  type="color"
+                  value={selectedGodRaysBox.dustColorLinked ? selectedGodRaysBox.rayColor : selectedGodRaysBox.dustColor}
+                  disabled={selectedGodRaysBox.dustColorLinked}
+                  onChange={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustColor: event.currentTarget.value })}
+                />
+              </label>
+              <label className="left-slider">
+                <span>Dust Count</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  value={selectedGodRaysBox.dustCount}
+                  onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustCount: Number(event.currentTarget.value) })}
+                />
+                <strong>{selectedGodRaysBox.dustCount}</strong>
+              </label>
+            </div>
+            <label className="left-slider">
+              <span>Dust Size Min</span>
+              <input
+                type="range"
+                min="0.005"
+                max="0.1"
+                step="0.001"
+                value={selectedGodRaysBox.dustSizeMin}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustSizeMin: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.dustSizeMin, 3)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Dust Size Max</span>
+              <input
+                type="range"
+                min="0.005"
+                max="0.2"
+                step="0.001"
+                value={selectedGodRaysBox.dustSizeMax}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustSizeMax: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.dustSizeMax, 3)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Dust Speed</span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="0.01"
+                value={getGodRaysDustSpeedSliderValue(selectedGodRaysBox.dustSpeed)}
+                onInput={(event) =>
+                  updateGodRaysBox(selectedGodRaysBox.id, {
+                    dustSpeed: getGodRaysDustSpeedFromSliderValue(Number(event.currentTarget.value)),
+                  })
+                }
+              />
+              <strong>{formatNumber(getGodRaysDustSpeedSliderValue(selectedGodRaysBox.dustSpeed))}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Dust Strength</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedGodRaysBox.dustStrength}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustStrength: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.dustStrength)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Dust Drift</span>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.01"
+                value={selectedGodRaysBox.dustDrift}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustDrift: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.dustDrift)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Dust Edge Fade</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedGodRaysBox.dustEdgeFade}
+                onInput={(event) => updateGodRaysBox(selectedGodRaysBox.id, { dustEdgeFade: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(selectedGodRaysBox.dustEdgeFade)}</strong>
+            </label>
+            <details
+              className="left-accordion"
+              open={isGodRaysDustDirectionOpen}
+              onToggle={(event) => setIsGodRaysDustDirectionOpen(event.currentTarget.open)}
+            >
+              <summary className="left-accordion__summary">
+                <span>Dust Direction Mode</span>
+                <span className="left-accordion__meta">{isGodRaysDustDirectionOpen ? 'Open' : 'Closed'}</span>
+              </summary>
+              <div className="left-accordion__content">
+                <div className="god-rays-direction-grid" role="group" aria-label="Dust direction presets">
+                  {GOD_RAYS_DIRECTION_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`tool-button mode-button god-rays-direction-grid__button${isGodRaysDirectionPresetActive(preset.direction) ? ' is-active' : ''}`}
+                      aria-pressed={isGodRaysDirectionPresetActive(preset.direction)}
+                      onClick={() => updateActiveGodRaysDirection(preset.direction)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <label className="left-toggle">
+                  <input
+                    type="checkbox"
+                    checked={selectedGodRaysBox.dustDirectionMode === 'global'}
+                    onChange={(event) =>
+                      updateGodRaysBox(selectedGodRaysBox.id, {
+                        dustDirectionMode: event.currentTarget.checked ? 'global' : 'local',
+                      })
+                    }
+                  />
+                  <span>Global Direction Settings</span>
+                </label>
+                <div className="god-rays-direction-actions">
+                  <button
+                    type="button"
+                    className={`tool-button god-rays-direction-actions__button${isEditingGodRaysDirection ? ' is-active' : ''}`}
+                    onClick={() => {
+                      if (isEditingGodRaysDirection) {
+                        setSelectedObjectId(selectedGodRaysBox.id)
+                        setHud({
+                          transformMode: 'none',
+                          activeGodRaysDirectionBoxId: null,
+                          activeStencilVolumeEndHandleId: null,
+                        })
+                        return
+                      }
+
+                      setSelectedObjectId(selectedGodRaysBox.id)
+                      setHud({
+                        anchorModeEnabled: false,
+                        transformMode: 'rotate',
+                        activeGodRaysDirectionBoxId: selectedGodRaysBox.id,
+                        activeStencilVolumeEndHandleId: null,
+                      })
+                    }}
+                  >
+                    <span className="tool-button__glyph">DIR</span>
+                    <span className="tool-button__label">{isEditingGodRaysDirection ? 'Done' : 'Edit Direction'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="tool-button god-rays-direction-actions__button god-rays-direction-actions__button--reset"
+                    onClick={resetActiveGodRaysDirection}
+                  >
+                    <span className="tool-button__glyph">RST</span>
+                    <span className="tool-button__label">Reset Active</span>
+                  </button>
+                </div>
+              </div>
+            </details>
+          </>
+        ) : null}
+        {selectedStencilVolume ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">
+              {sceneGraph[selectedStencilVolume.id]?.label ?? 'Stencil Volume'}
+            </p>
+            <div className="material-asset-control material-asset-control--upload">
+              <button
+                type="button"
+                className="material-asset-control__button material-asset-control__button--compact"
+                onClick={() => stencilMaskInputRef.current?.click()}
+              >
+                <span className="tool-button__label">Load MASK</span>
+              </button>
+              <div
+                className="material-asset-control__value"
+                title={selectedStencilVolume.maskAssetLabel ?? 'No mask loaded'}
+              >
+                {selectedStencilVolume.maskAssetLabel ?? 'No mask loaded'}
+              </div>
+            </div>
+            <input
+              ref={stencilMaskInputRef}
+              className="hidden-input"
+              type="file"
+              accept=".png,.jpg,.jpeg,.webp,.bmp,image/*"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                if (!file) {
+                  return
+                }
+
+                updateStencilVolume(selectedStencilVolume.id, {
+                  maskAssetLabel: file.name,
+                  maskAssetUrl: createObjectUrl(file),
+                })
+                event.currentTarget.value = ''
+              }}
+            />
+            <div className="stencil-mask-preview" aria-label="Stencil mask preview">
+              {selectedStencilVolume.maskAssetUrl ? (
+                <img
+                  className="stencil-mask-preview__image"
+                  src={selectedStencilVolume.maskAssetUrl}
+                  alt={selectedStencilVolume.maskAssetLabel ?? 'Stencil mask'}
+                />
+              ) : (
+                <div className="stencil-mask-preview__placeholder">
+                  <span>MASK</span>
+                  <em>Preview</em>
+                </div>
+              )}
+            </div>
+            <span className="left-controls__label">Extrude</span>
+            <div className="god-rays-direction-actions">
+              <button
+                type="button"
+                className={`tool-button god-rays-direction-actions__button${isEditingStencilVolumeEnd ? ' is-active' : ''}`}
+                onClick={() => {
+                  if (isEditingStencilVolumeEnd) {
+                    setSelectedObjectId(selectedStencilVolume.id)
+                    setHud({
+                      transformMode: 'none',
+                      activeStencilVolumeEndHandleId: null,
+                    })
+                    return
+                  }
+
+                  setSelectedObjectId(selectedStencilVolume.id)
+                  setHud({
+                    anchorModeEnabled: false,
+                    transformMode: 'translate',
+                    activeGodRaysDirectionBoxId: null,
+                    activeStencilVolumeEndHandleId: selectedStencilVolume.id,
+                  })
+                }}
+              >
+                <span className="tool-button__glyph">END</span>
+                <span className="tool-button__label">{isEditingStencilVolumeEnd ? 'Done' : 'Edit End'}</span>
+              </button>
+              <button
+                type="button"
+                className="tool-button god-rays-direction-actions__button god-rays-direction-actions__button--reset"
+                onClick={() =>
+                  updateStencilVolume(selectedStencilVolume.id, {
+                    extrudeEnd: [...DEFAULT_STENCIL_VOLUME.extrudeEnd],
+                    endRotationX: DEFAULT_STENCIL_VOLUME.endRotationX,
+                    endRotationY: DEFAULT_STENCIL_VOLUME.endRotationY,
+                    endScaleX: DEFAULT_STENCIL_VOLUME.endScaleX,
+                    endScaleY: DEFAULT_STENCIL_VOLUME.endScaleY,
+                  })
+                }
+              >
+                <span className="tool-button__glyph">RST</span>
+                <span className="tool-button__label">Reset End</span>
+              </button>
+            </div>
+            <p className="sidebar-field-title">Mask</p>
+            <div className="stencil-volume-toggle-grid">
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedStencilVolume.helperVisible}
+                  onChange={(event) =>
+                    updateStencilVolume(selectedStencilVolume.id, {
+                      helperVisible: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Show Helper</span>
+              </label>
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedStencilVolume.contourDebugVisible ?? DEFAULT_STENCIL_VOLUME.contourDebugVisible}
+                  onChange={(event) =>
+                    updateStencilVolume(selectedStencilVolume.id, {
+                      contourDebugVisible: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Contour Debug</span>
+              </label>
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedStencilVolume.projectionVisible}
+                  onChange={(event) =>
+                    updateStencilVolume(selectedStencilVolume.id, {
+                      projectionVisible: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Projection Planes</span>
+              </label>
+            </div>
+            <label className="left-slider">
+              <span>Contour Detail</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedStencilVolume.contourDetail}
+                onInput={(event) =>
+                  updateStencilVolume(selectedStencilVolume.id, {
+                    contourDetail: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{Math.round(selectedStencilVolume.contourDetail * 100)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Simplify</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedStencilVolume.contourSimplify}
+                onInput={(event) =>
+                  updateStencilVolume(selectedStencilVolume.id, {
+                    contourSimplify: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{Math.round(selectedStencilVolume.contourSimplify * 100)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Smooth</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedStencilVolume.contourSmooth}
+                onInput={(event) =>
+                  updateStencilVolume(selectedStencilVolume.id, {
+                    contourSmooth: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{Math.round(selectedStencilVolume.contourSmooth * 100)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Min Contour Area</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={selectedStencilVolume.contourMinArea ?? DEFAULT_STENCIL_VOLUME.contourMinArea}
+                onInput={(event) =>
+                  updateStencilVolume(selectedStencilVolume.id, {
+                    contourMinArea: Number(event.currentTarget.value),
+                  })
+                }
+              />
+              <strong>{Math.round((selectedStencilVolume.contourMinArea ?? DEFAULT_STENCIL_VOLUME.contourMinArea) * 100)}</strong>
+            </label>
+            <div className="stencil-volume-dimensions">
+              <label className="field field--compact-number stencil-volume-dimensions__field">
+                <span>Width</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={transformSettings.measurementUnit === 'cm' ? 5 : 0.05}
+                  max={transformSettings.measurementUnit === 'cm' ? 2000 : 20}
+                  step={transformSettings.measurementUnit === 'cm' ? 1 : 0.01}
+                  value={Number(formatNumber(toDisplayStencilDimension(selectedStencilVolume.sourceWidth, transformSettings.measurementUnit)))}
+                  onChange={(event) => {
+                    const nextValue = Number(event.currentTarget.value)
+                    if (!Number.isFinite(nextValue)) {
+                      return
+                    }
+
+                    updateStencilVolume(selectedStencilVolume.id, {
+                      sourceWidth: toInternalStencilDimension(nextValue, transformSettings.measurementUnit),
+                    })
+                  }}
+                />
+              </label>
+              <label className="field field--compact-number stencil-volume-dimensions__field">
+                <span>Height</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={transformSettings.measurementUnit === 'cm' ? 5 : 0.05}
+                  max={transformSettings.measurementUnit === 'cm' ? 2000 : 20}
+                  step={transformSettings.measurementUnit === 'cm' ? 1 : 0.01}
+                  value={Number(formatNumber(toDisplayStencilDimension(selectedStencilVolume.sourceHeight, transformSettings.measurementUnit)))}
+                  onChange={(event) => {
+                    const nextValue = Number(event.currentTarget.value)
+                    if (!Number.isFinite(nextValue)) {
+                      return
+                    }
+
+                    updateStencilVolume(selectedStencilVolume.id, {
+                      sourceHeight: toInternalStencilDimension(nextValue, transformSettings.measurementUnit),
+                    })
+                  }}
+                />
+              </label>
+              <span className="stencil-volume-dimensions__unit">{transformSettings.measurementUnit}</span>
+            </div>
+            <details className="left-accordion" open={isStencilRaysOpen} onToggle={(event) => setIsStencilRaysOpen(event.currentTarget.open)}>
+              <summary className="left-accordion__summary">
+                <span>Rays</span>
+                <span className="left-accordion__meta">{isStencilRaysOpen ? 'Open' : 'Closed'}</span>
+              </summary>
+              <div className="left-accordion__content">
+                <label className="left-color-field left-color-field--swatch">
+                  <span>Volume Color</span>
+                  <input
+                    type="color"
+                    value={selectedStencilVolume.volumeColor}
+                    onChange={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        volumeColor: event.currentTarget.value,
+                      })
+                    }
+                  />
+                </label>
+                <label className="left-slider">
+                  <span>Volume Intensity</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="0.01"
+                    value={selectedStencilVolume.volumeIntensity}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        volumeIntensity: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.volumeIntensity)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Volume Falloff</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="4"
+                    step="0.01"
+                    value={selectedStencilVolume.volumeFalloff}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        volumeFalloff: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.volumeFalloff)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Edge Fade</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.01"
+                    value={selectedStencilVolume.rayEdgeFade ?? DEFAULT_STENCIL_VOLUME.rayEdgeFade}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        rayEdgeFade: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.rayEdgeFade ?? DEFAULT_STENCIL_VOLUME.rayEdgeFade)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Ray Fill Quality</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedStencilVolume.rayFillQuality ?? DEFAULT_STENCIL_VOLUME.rayFillQuality}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        rayFillQuality: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{Math.round((selectedStencilVolume.rayFillQuality ?? DEFAULT_STENCIL_VOLUME.rayFillQuality) * 100)}</strong>
+                </label>
+                <details className="left-accordion" open={isStencilNoiseOpen} onToggle={(event) => setIsStencilNoiseOpen(event.currentTarget.open)}>
+                  <summary className="left-accordion__summary">
+                    <span>Noise</span>
+                    <span className="left-accordion__meta">{isStencilNoiseOpen ? 'Open' : 'Closed'}</span>
+                  </summary>
+                  <div className="left-accordion__content">
+                    <div className="left-controls__stack">
+                      <span className="left-controls__label">Noise Motion</span>
+                      <div className="segmented">
+                        {godRaysNoiseMotionModes.map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            className={`tool-button mode-button${activeStencilNoiseSettings?.rayNoiseMotionMode === mode ? ' is-active' : ''}`}
+                            onClick={() =>
+                              updateStencilNoiseSettings({
+                                rayNoiseMotionMode: mode,
+                              })
+                            }
+                          >
+                            {mode === 'soft' ? 'ANIM' : mode.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <label className="left-toggle">
+                      <input
+                        type="checkbox"
+                        checked={selectedStencilVolume.rayUseGlobalNoiseSettings !== false}
+                        onChange={(event) =>
+                          updateStencilVolume(selectedStencilVolume.id, {
+                            rayUseGlobalNoiseSettings: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                      <span>Global Noise Settings</span>
+                    </label>
+                    <label className="left-slider">
+                      <span>Noise Amount</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={activeStencilNoiseSettings?.rayNoiseAmount ?? 0}
+                        onInput={(event) => updateStencilNoiseSettings({ rayNoiseAmount: Number(event.currentTarget.value) })}
+                      />
+                      <strong>{formatNumber(activeStencilNoiseSettings?.rayNoiseAmount ?? 0)}</strong>
+                    </label>
+                    <label className="left-slider">
+                      <span>Noise Scale</span>
+                      <input
+                        type="range"
+                        min="0.1"
+                        max="10"
+                        step="0.01"
+                        value={activeStencilNoiseSettings?.rayNoiseScale ?? 0.1}
+                        onInput={(event) => updateStencilNoiseSettings({ rayNoiseScale: Number(event.currentTarget.value) })}
+                      />
+                      <strong>{formatNumber(activeStencilNoiseSettings?.rayNoiseScale ?? 0.1)}</strong>
+                    </label>
+                    <label className="left-slider">
+                      <span>Grain</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={activeStencilNoiseSettings?.rayGrain ?? 0}
+                        onInput={(event) => updateStencilNoiseSettings({ rayGrain: Number(event.currentTarget.value) })}
+                      />
+                      <strong>{formatNumber(activeStencilNoiseSettings?.rayGrain ?? 0)}</strong>
+                    </label>
+                    <label className="left-select">
+                      <span>Quality</span>
+                      <select
+                        value={activeStencilNoiseSettings?.rayQuality ?? 'low'}
+                        onChange={(event) =>
+                          updateStencilNoiseSettings({
+                            rayQuality: event.currentTarget.value as 'low' | 'medium' | 'high',
+                          })
+                        }
+                      >
+                        <option value="low">LOW</option>
+                        <option value="medium">MEDIUM</option>
+                        <option value="high">HIGH</option>
+                      </select>
+                    </label>
+                    {activeStencilNoiseSettings?.rayNoiseMotionMode === 'soft' ? (
+                      <label className="left-slider">
+                        <span>Noise Motion Speed</span>
+                        <input
+                          type="range"
+                          min="0"
+                          max="3"
+                          step="0.01"
+                          value={activeStencilNoiseSettings?.rayNoiseMotionSpeed ?? 0}
+                          onInput={(event) =>
+                            updateStencilNoiseSettings({
+                              rayNoiseMotionSpeed: Number(event.currentTarget.value),
+                            })
+                          }
+                        />
+                        <strong>{formatNumber(activeStencilNoiseSettings?.rayNoiseMotionSpeed ?? 0)}</strong>
+                      </label>
+                    ) : null}
+                  </div>
+                </details>
+              </div>
+            </details>
+            <details className="left-accordion" open={isStencilDustOpen} onToggle={(event) => setIsStencilDustOpen(event.currentTarget.open)}>
+              <summary className="left-accordion__summary">
+                <span>Dust</span>
+                <span className="left-accordion__meta">{isStencilDustOpen ? 'Open' : 'Closed'}</span>
+              </summary>
+              <div className="left-accordion__content">
+                <div className="god-rays-dust-toggles">
+                  <label className="left-toggle">
+                    <input
+                      type="checkbox"
+                      checked={selectedStencilVolume.dustEnabled}
+                      onChange={(event) =>
+                        updateStencilVolume(selectedStencilVolume.id, {
+                          dustEnabled: event.currentTarget.checked,
+                        })
+                      }
+                    />
+                    <span>Dust Enabled</span>
+                  </label>
+                  <label className="left-toggle">
+                    <input
+                      type="checkbox"
+                      checked={selectedStencilVolume.dustColorLinked ?? DEFAULT_STENCIL_VOLUME.dustColorLinked}
+                      onChange={(event) =>
+                        updateStencilVolume(selectedStencilVolume.id, {
+                          dustColorLinked: event.currentTarget.checked,
+                          dustColor: event.currentTarget.checked
+                            ? selectedStencilVolume.volumeColor
+                            : selectedStencilVolume.dustColor ?? selectedStencilVolume.volumeColor,
+                        })
+                      }
+                    />
+                    <span>Link Dust Color To Volume</span>
+                  </label>
+                </div>
+                <div className="god-rays-top-row">
+                  <label className="left-color-field left-color-field--swatch">
+                    <span>Dust Color</span>
+                    <input
+                      type="color"
+                      value={
+                        (selectedStencilVolume.dustColorLinked ?? DEFAULT_STENCIL_VOLUME.dustColorLinked)
+                          ? selectedStencilVolume.volumeColor
+                          : selectedStencilVolume.dustColor ?? selectedStencilVolume.volumeColor
+                      }
+                      disabled={selectedStencilVolume.dustColorLinked ?? DEFAULT_STENCIL_VOLUME.dustColorLinked}
+                      onChange={(event) =>
+                        updateStencilVolume(selectedStencilVolume.id, {
+                          dustColor: event.currentTarget.value,
+                        })
+                      }
+                    />
+                  </label>
+                  <label className="left-slider">
+                    <span>Dust Count</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1000"
+                      step="1"
+                      value={selectedStencilVolume.dustCount}
+                      onInput={(event) =>
+                        updateStencilVolume(selectedStencilVolume.id, {
+                          dustCount: Number(event.currentTarget.value),
+                        })
+                      }
+                    />
+                    <strong>{selectedStencilVolume.dustCount}</strong>
+                  </label>
+                </div>
+                <label className="left-slider">
+                  <span>Dust Size Min</span>
+                  <input
+                    type="range"
+                    min="0.005"
+                    max="0.1"
+                    step="0.001"
+                    value={selectedStencilVolume.dustSizeMin}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustSizeMin: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.dustSizeMin, 3)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Dust Size Max</span>
+                  <input
+                    type="range"
+                    min="0.005"
+                    max="0.2"
+                    step="0.001"
+                    value={selectedStencilVolume.dustSizeMax}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustSizeMax: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.dustSizeMax, 3)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Dust Speed</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={getGodRaysDustSpeedSliderValue(selectedStencilVolume.dustSpeed)}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustSpeed: getGodRaysDustSpeedFromSliderValue(Number(event.currentTarget.value)),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(getGodRaysDustSpeedSliderValue(selectedStencilVolume.dustSpeed))}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Dust Strength</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedStencilVolume.dustStrength}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustStrength: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.dustStrength)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Dust Drift</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.01"
+                    value={selectedStencilVolume.dustDrift}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustDrift: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.dustDrift)}</strong>
+                </label>
+                <label className="left-slider">
+                  <span>Dust Edge Fade</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedStencilVolume.dustEdgeFade ?? DEFAULT_STENCIL_VOLUME.dustEdgeFade}
+                    onInput={(event) =>
+                      updateStencilVolume(selectedStencilVolume.id, {
+                        dustEdgeFade: Number(event.currentTarget.value),
+                      })
+                    }
+                  />
+                  <strong>{formatNumber(selectedStencilVolume.dustEdgeFade ?? DEFAULT_STENCIL_VOLUME.dustEdgeFade)}</strong>
+                </label>
+                <details
+                  className="left-accordion"
+                  open={isStencilDustDirectionOpen}
+                  onToggle={(event) => setIsStencilDustDirectionOpen(event.currentTarget.open)}
+                >
+                  <summary className="left-accordion__summary">
+                    <span>Dust Direction Mode</span>
+                    <span className="left-accordion__meta">{isStencilDustDirectionOpen ? 'Open' : 'Closed'}</span>
+                  </summary>
+                  <div className="left-accordion__content">
+                    <div className="god-rays-direction-grid" role="group" aria-label="Stencil dust direction presets">
+                      {GOD_RAYS_DIRECTION_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={`tool-button mode-button god-rays-direction-grid__button${isStencilDirectionPresetActive(preset.direction) ? ' is-active' : ''}`}
+                          aria-pressed={isStencilDirectionPresetActive(preset.direction)}
+                          onClick={() => updateActiveStencilDirection(preset.direction)}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="left-toggle">
+                      <input
+                        type="checkbox"
+                        checked={(selectedStencilVolume.dustDirectionMode ?? DEFAULT_STENCIL_VOLUME.dustDirectionMode) === 'global'}
+                        onChange={(event) =>
+                          updateStencilVolume(selectedStencilVolume.id, {
+                            dustDirectionMode: event.currentTarget.checked ? 'global' : 'local',
+                          })
+                        }
+                      />
+                      <span>Global Direction Settings</span>
+                    </label>
+                    <div className="god-rays-direction-actions">
+                      <button
+                        type="button"
+                        className="tool-button god-rays-direction-actions__button god-rays-direction-actions__button--reset"
+                        onClick={resetActiveStencilDirection}
+                      >
+                        <span className="tool-button__glyph">RST</span>
+                        <span className="tool-button__label">Reset Active</span>
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </details>
           </>
         ) : null}
       </div>
@@ -1185,9 +2530,9 @@ export function Sidebar() {
   const glbInputRef = useRef<HTMLInputElement | null>(null)
   const configInputRef = useRef<HTMLInputElement | null>(null)
 
-  const handlePublishScene = () => {
+  const handlePublishScene = async () => {
     try {
-      const warnings = downloadPublishedScene()
+      const warnings = await downloadPublishedScene()
       if (warnings.length) {
         setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
         return
@@ -1200,9 +2545,9 @@ export function Sidebar() {
     }
   }
 
-  const handleRunPublishedScene = () => {
+  const handleRunPublishedScene = async () => {
     try {
-      const warnings = openPublishedScenePreview()
+      const warnings = await openPublishedScenePreview()
       if (warnings.length) {
         setStatus(`Published preview opened with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
         return

@@ -1,13 +1,14 @@
 import { create } from 'zustand'
 import * as THREE from 'three'
 import { DEFAULT_STANDARD_ENVIRONMENT_PRESET } from '../features/environment/standardEnvironmentPresets'
+import { clampGodRaysSideCount } from '../components/viewport/effects/godRaysShared'
 
-export type SceneNodeType = 'scene' | 'group' | 'mesh' | 'light' | 'camera' | 'material'
+export type SceneNodeType = 'scene' | 'group' | 'mesh' | 'light' | 'camera' | 'material' | 'effect'
 export type AtlasTargetSlot = 'emissive' | 'baseColor'
 export type AtlasFrameOrder = 'row' | 'column'
 export type AtlasUvChannel = 'auto' | 'normal' | 'baseColor' | 'emissive' | 'uv' | 'uv2'
 export type AtlasWrapMode = 'repeat' | 'clamp'
-export type TransformMode = 'translate' | 'rotate' | 'none'
+export type TransformMode = 'translate' | 'rotate' | 'scale' | 'none'
 export type MeasurementUnit = 'cm' | 'm'
 export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
 export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap' | 'aoMap' | 'emissiveMap' | 'alphaMap' | 'bumpMap' | 'displacementMap' | 'specularMap'
@@ -15,6 +16,147 @@ export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
 export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '9:16'
+export type GodRaysDirectionSpace = 'local' | 'global'
+export type StencilContourMode = 'silhouette'
+
+const GOD_RAYS_DIRECTION_ARROW_PREFIX = 'god-rays-direction:'
+const GOD_RAYS_DIRECTION_ARROW_AXIS = new THREE.Vector3(0, 1, 0)
+const STENCIL_VOLUME_END_HANDLE_PREFIX = 'stencil-volume-end:'
+
+export function getGodRaysDirectionArrowId(effectId: string) {
+  return `${GOD_RAYS_DIRECTION_ARROW_PREFIX}${effectId}`
+}
+
+export function getStencilVolumeEndHandleId(effectId: string) {
+  return `${STENCIL_VOLUME_END_HANDLE_PREFIX}${effectId}`
+}
+
+export function getGodRaysDirectionQuaternion(direction: [number, number, number]) {
+  const target = new THREE.Vector3(...direction)
+  if (target.lengthSq() <= 0.000001) {
+    target.copy(GOD_RAYS_DIRECTION_ARROW_AXIS)
+  } else {
+    target.normalize()
+  }
+  return new THREE.Quaternion().setFromUnitVectors(GOD_RAYS_DIRECTION_ARROW_AXIS, target)
+}
+
+export function getGodRaysDirectionFromObject(object: THREE.Object3D): [number, number, number] {
+  const direction = GOD_RAYS_DIRECTION_ARROW_AXIS.clone().applyQuaternion(object.quaternion).normalize()
+  return [direction.x, direction.y, direction.z]
+}
+
+export function normalizeGodRaysDirection(direction: [number, number, number]): [number, number, number] {
+  const normalized = new THREE.Vector3(...direction)
+  if (normalized.lengthSq() <= 0.000001) {
+    return [0, 1, 0]
+  }
+
+  normalized.normalize()
+  return [normalized.x, normalized.y, normalized.z]
+}
+
+export function getGodRaysDirectionWorldFromLocal(
+  localDirection: [number, number, number],
+  object: THREE.Object3D,
+): [number, number, number] {
+  const worldQuaternion = new THREE.Quaternion()
+  object.updateWorldMatrix(true, false)
+  object.getWorldQuaternion(worldQuaternion)
+
+  const worldDirection = new THREE.Vector3(...normalizeGodRaysDirection(localDirection)).applyQuaternion(worldQuaternion)
+  return [worldDirection.x, worldDirection.y, worldDirection.z]
+}
+
+export function getGodRaysDirectionLocalFromWorld(
+  worldDirection: [number, number, number],
+  object: THREE.Object3D,
+): [number, number, number] {
+  const worldQuaternion = new THREE.Quaternion()
+  object.updateWorldMatrix(true, false)
+  object.getWorldQuaternion(worldQuaternion)
+
+  const localDirection = new THREE.Vector3(...normalizeGodRaysDirection(worldDirection)).applyQuaternion(
+    worldQuaternion.invert(),
+  )
+  return [localDirection.x, localDirection.y, localDirection.z]
+}
+
+export function getGodRaysDefaultDirection(): [number, number, number] {
+  return [0, 1, 0]
+}
+
+function clampGodRaysDustStrengthValue(value: number) {
+  return Math.min(Math.max(value, 0), 1)
+}
+
+export const GOD_RAYS_DUST_SPEED_MAX = 0.02
+
+export function getGodRaysDustSpeedFromSliderValue(value: number) {
+  const normalized = Math.min(Math.max(value, 0), 100) / 100
+  const curved = 1 - (1 - normalized) * (1 - normalized)
+  return curved * GOD_RAYS_DUST_SPEED_MAX
+}
+
+export function getGodRaysDustSpeedSliderValue(speed: number) {
+  const normalized = Math.min(Math.max(speed, 0), GOD_RAYS_DUST_SPEED_MAX) / GOD_RAYS_DUST_SPEED_MAX
+  const slider = 1 - Math.sqrt(1 - normalized)
+  return slider * 100
+}
+
+export function getGodRaysDustStrengthValue(
+  strength?: number | null,
+) {
+  if (typeof strength === 'number' && Number.isFinite(strength)) {
+    return clampGodRaysDustStrengthValue(strength)
+  }
+  return clampGodRaysDustStrengthValue(0.54)
+}
+
+export function getGodRaysEffectiveLocalDirection(
+  entry: Pick<GodRaysBoxState, 'dustDirectionMode' | 'dustDirectionLocal'>,
+  object: THREE.Object3D,
+  sharedGlobalDirection?: [number, number, number],
+): [number, number, number] {
+  if (entry.dustDirectionMode === 'global') {
+    return getGodRaysDirectionLocalFromWorld(sharedGlobalDirection ?? getGodRaysDefaultDirection(), object)
+  }
+
+  return normalizeGodRaysDirection(entry.dustDirectionLocal)
+}
+
+export function getGodRaysArrowLocalDirection(
+  entry: Pick<GodRaysBoxState, 'dustDirectionMode' | 'dustDirectionLocal'>,
+  object: THREE.Object3D,
+  sharedGlobalDirection?: [number, number, number],
+): [number, number, number] {
+  return getGodRaysEffectiveLocalDirection(entry, object, sharedGlobalDirection)
+}
+
+export function getGodRaysArrowWorldDirection(
+  entry: Pick<GodRaysBoxState, 'dustDirectionMode' | 'dustDirectionLocal'>,
+  object: THREE.Object3D,
+  sharedGlobalDirection?: [number, number, number],
+): [number, number, number] {
+  if (entry.dustDirectionMode === 'global') {
+    return normalizeGodRaysDirection(sharedGlobalDirection ?? getGodRaysDefaultDirection())
+  }
+
+  return getGodRaysDirectionWorldFromLocal(entry.dustDirectionLocal, object)
+}
+
+export function getGodRaysStoredDirectionFromArrowObject(
+  arrowObject: THREE.Object3D,
+  mode: GodRaysDirectionSpace,
+  godRaysObject: THREE.Object3D,
+): [number, number, number] {
+  const worldDirection = getGodRaysDirectionFromObject(arrowObject)
+  if (mode === 'global') {
+    return normalizeGodRaysDirection(worldDirection)
+  }
+
+  return getGodRaysDirectionLocalFromWorld(worldDirection, godRaysObject)
+}
 
 export interface MaterialTextureSlotState {
   originalLabel: string | null
@@ -180,6 +322,8 @@ export interface ViewportHudState {
   sidebarVisible: boolean
   inspectorVisible: boolean
   transformMode: TransformMode
+  activeGodRaysDirectionBoxId: string | null
+  activeStencilVolumeEndHandleId: string | null
 }
 
 export interface TransformSettingsState {
@@ -341,6 +485,222 @@ export const DEFAULT_BACKGROUND_AUDIO: BackgroundAudioState = {
   loop: true,
 }
 
+export type GodRaysSourceFace = '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
+export type GodRaysQuality = 'low' | 'medium' | 'high'
+export type GodRaysNoiseMotionMode = 'off' | 'soft'
+
+export interface GodRaysGlobalNoiseState {
+  rayNoiseAmount: number
+  rayNoiseScale: number
+  rayGrain: number
+  rayNoiseMotionMode: GodRaysNoiseMotionMode
+  rayNoiseMotionSpeed: number
+  rayQuality: GodRaysQuality
+}
+
+export interface GodRaysBoxState {
+  id: string
+  sideCount: number
+  bottomRadius: number
+  topRadius: number
+  linkTopRadius: boolean
+  helperVisible: boolean
+  topDome: number
+  sourceFace: GodRaysSourceFace
+  raysEnabled: boolean
+  rayColor: string
+  rayIntensity: number
+  rayFalloff: number
+  rayEdgeFade: number
+  rayNoiseAmount: number
+  rayNoiseScale: number
+  rayGrain: number
+  rayNoiseMotionMode: GodRaysNoiseMotionMode
+  rayNoiseMotionSpeed: number
+  rayQuality: GodRaysQuality
+  rayUseGlobalNoiseSettings: boolean
+  dustEnabled: boolean
+  dustCount: number
+  dustSizeMin: number
+  dustSizeMax: number
+  dustSpeed: number
+  dustColorLinked: boolean
+  dustColor: string
+  dustStrength: number
+  dustDirectionMode: GodRaysDirectionSpace
+  dustDirectionLocal: [number, number, number]
+  dustDrift: number
+  dustEdgeFade: number
+}
+
+export interface StencilVolumeState {
+  id: string
+  sourceWidth: number
+  sourceHeight: number
+  maskAssetLabel: string | null
+  maskAssetUrl: string | null
+  bakedContourShapes?: Array<{
+    outline: [number, number][]
+    holes: [number, number][][]
+  }> | null
+  bakedPrimitiveShapeGroups?: Array<
+    Array<{
+      outline: [number, number][]
+      holes: [number, number][][]
+    }>
+  > | null
+  bakedPreparedPrimitives?: Array<{
+    id: string
+    shapes: Array<{
+      outline: [number, number][]
+      holes: [number, number][][]
+    }>
+    sourceCenter: [number, number, number]
+    sourceSize: [number, number]
+  }> | null
+  projectionVisible: boolean
+  maskInvert: boolean
+  contourDetail: number
+  contourSimplify: number
+  contourSmooth: number
+  contourMinArea: number
+  contourMode: StencilContourMode
+  contourShowInnerLoops: boolean
+  contourDebugVisible: boolean
+  extrudeEnd: [number, number, number]
+  endRotationX: number
+  endRotationY: number
+  endScaleX: number
+  endScaleY: number
+  volumeColor: string
+  volumeIntensity: number
+  volumeFalloff: number
+  rayEdgeFade: number
+  rayFillQuality: number
+  rayNoiseAmount: number
+  rayNoiseScale: number
+  rayGrain: number
+  rayNoiseMotionMode: GodRaysNoiseMotionMode
+  rayNoiseMotionSpeed: number
+  rayQuality: GodRaysQuality
+  rayUseGlobalNoiseSettings: boolean
+  roundedTop: number
+  dustEnabled: boolean
+  dustCount: number
+  dustSizeMin: number
+  dustSizeMax: number
+  dustSpeed: number
+  dustColorLinked: boolean
+  dustColor: string
+  dustDirectionMode: GodRaysDirectionSpace
+  dustDirectionLocal: [number, number, number]
+  dustDrift: number
+  dustStrength: number
+  dustEdgeFade: number
+  helperVisible: boolean
+}
+
+export const DEFAULT_GOD_RAYS_BOX: Omit<GodRaysBoxState, 'id'> = {
+  sideCount: 4,
+  bottomRadius: 0.7071067811865476,
+  topRadius: 0.7071067811865476,
+  linkTopRadius: true,
+  helperVisible: true,
+  topDome: 10,
+  sourceFace: '-y',
+  raysEnabled: true,
+  rayColor: '#fff4cf',
+  rayIntensity: 1.2,
+  rayFalloff: 1.4,
+  rayEdgeFade: 0.22,
+  rayNoiseAmount: 0.6,
+  rayNoiseScale: 5,
+  rayGrain: 0.18,
+  rayNoiseMotionMode: 'off',
+  rayNoiseMotionSpeed: 1.6,
+  rayQuality: 'low',
+  rayUseGlobalNoiseSettings: true,
+  dustEnabled: true,
+  dustCount: 180,
+  dustSizeMin: 0.015,
+  dustSizeMax: 0.05,
+  dustSpeed: 0.01,
+  dustColorLinked: true,
+  dustColor: '#fff4cf',
+  dustStrength: 0.54,
+  dustDirectionMode: 'global',
+  dustDirectionLocal: [0, 1, 0],
+  dustDrift: 0.18,
+  dustEdgeFade: 0.16,
+}
+
+export const DEFAULT_STENCIL_VOLUME: Omit<StencilVolumeState, 'id'> = {
+  sourceWidth: 2,
+  sourceHeight: 2,
+  maskAssetLabel: null,
+  maskAssetUrl: null,
+  bakedContourShapes: null,
+  bakedPrimitiveShapeGroups: null,
+  bakedPreparedPrimitives: null,
+  projectionVisible: false,
+  maskInvert: false,
+  contourDetail: 0.5,
+  contourSimplify: 0.18,
+  contourSmooth: 0.35,
+  contourMinArea: 0.02,
+  contourMode: 'silhouette',
+  contourShowInnerLoops: true,
+  contourDebugVisible: false,
+  extrudeEnd: [0, 0, 2],
+  endRotationX: 0,
+  endRotationY: 0,
+  endScaleX: 1,
+  endScaleY: 1,
+  volumeColor: '#fff4cf',
+  volumeIntensity: 1.2,
+  volumeFalloff: 1.4,
+  rayEdgeFade: DEFAULT_GOD_RAYS_BOX.rayEdgeFade,
+  rayFillQuality: 0,
+  rayNoiseAmount: DEFAULT_GOD_RAYS_BOX.rayNoiseAmount,
+  rayNoiseScale: DEFAULT_GOD_RAYS_BOX.rayNoiseScale,
+  rayGrain: DEFAULT_GOD_RAYS_BOX.rayGrain,
+  rayNoiseMotionMode: DEFAULT_GOD_RAYS_BOX.rayNoiseMotionMode,
+  rayNoiseMotionSpeed: DEFAULT_GOD_RAYS_BOX.rayNoiseMotionSpeed,
+  rayQuality: DEFAULT_GOD_RAYS_BOX.rayQuality,
+  rayUseGlobalNoiseSettings: true,
+  roundedTop: 6,
+  dustEnabled: true,
+  dustCount: 180,
+  dustSizeMin: 0.015,
+  dustSizeMax: 0.05,
+  dustSpeed: 0.01,
+  dustColorLinked: true,
+  dustColor: '#fff4cf',
+  dustDirectionMode: 'global',
+  dustDirectionLocal: [0, 1, 0],
+  dustDrift: 0.18,
+  dustStrength: 0.54,
+  dustEdgeFade: DEFAULT_GOD_RAYS_BOX.dustEdgeFade,
+  helperVisible: true,
+}
+
+function getIndexedEffectLabel(base: string, index: number) {
+  return index <= 1 ? base : `${base} ${index}`
+}
+
+export const DEFAULT_GOD_RAYS_GLOBAL_NOISE: GodRaysGlobalNoiseState = {
+  rayNoiseAmount: DEFAULT_GOD_RAYS_BOX.rayNoiseAmount,
+  rayNoiseScale: DEFAULT_GOD_RAYS_BOX.rayNoiseScale,
+  rayGrain: DEFAULT_GOD_RAYS_BOX.rayGrain,
+  rayNoiseMotionMode: DEFAULT_GOD_RAYS_BOX.rayNoiseMotionMode,
+  rayNoiseMotionSpeed: DEFAULT_GOD_RAYS_BOX.rayNoiseMotionSpeed,
+  rayQuality: DEFAULT_GOD_RAYS_BOX.rayQuality,
+}
+
+export const DEFAULT_GOD_RAYS_GLOBAL_DIRECTION: [number, number, number] = [
+  ...DEFAULT_GOD_RAYS_BOX.dustDirectionLocal,
+]
+
 export interface EnvironmentRequest extends AssetRequest {
   kind: 'hdri' | 'panorama' | 'image' | 'background'
 }
@@ -413,6 +773,10 @@ interface HistorySnapshot {
   backgroundColor: string
   backgroundRotation: number
   extraLights: ExtraLightState[]
+  godRaysBoxes: GodRaysBoxState[]
+  stencilVolumes: StencilVolumeState[]
+  godRaysGlobalNoise: GodRaysGlobalNoiseState
+  godRaysGlobalDirection: [number, number, number]
   rotateAnimation: RotateAnimationState
   backgroundAudio: BackgroundAudioState
 }
@@ -454,6 +818,10 @@ interface EditorState {
   viewer: ViewerState
   assets: AssetSourceState
   extraLights: ExtraLightState[]
+  godRaysBoxes: GodRaysBoxState[]
+  stencilVolumes: StencilVolumeState[]
+  godRaysGlobalNoise: GodRaysGlobalNoiseState
+  godRaysGlobalDirection: [number, number, number]
   rotateAnimation: RotateAnimationState
   backgroundAudio: BackgroundAudioState
   status: string
@@ -515,6 +883,19 @@ interface EditorState {
   removeExtraLight: (id?: string) => void
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
   replaceExtraLights: (lights: ExtraLightState[]) => void
+  duplicateExtraLight: (id: string, options?: { selectDuplicate?: boolean }) => string | null
+  addGodRaysBox: () => void
+  removeGodRaysBox: (id: string) => void
+  updateGodRaysBox: (id: string, patch: Partial<Omit<GodRaysBoxState, 'id'>>) => void
+  setGodRaysGlobalNoise: (patch: Partial<GodRaysGlobalNoiseState>) => void
+  setGodRaysGlobalDirection: (direction: [number, number, number]) => void
+  replaceGodRaysBoxes: (entries: Array<GodRaysBoxState & { label: string; visible: boolean; transform: ObjectTransformState }>) => void
+  duplicateGodRaysBox: (id: string, options?: { selectDuplicate?: boolean }) => string | null
+  addStencilVolume: () => void
+  removeStencilVolume: (id: string) => void
+  updateStencilVolume: (id: string, patch: Partial<Omit<StencilVolumeState, 'id'>>) => void
+  replaceStencilVolumes: (entries: Array<StencilVolumeState & { label: string; visible: boolean; transform: ObjectTransformState }>) => void
+  duplicateStencilVolume: (id: string, options?: { selectDuplicate?: boolean }) => string | null
   addRotateAnimation: (targetObjectId: string | null) => void
   updateRotateAnimation: (patch: Partial<RotateAnimationState>) => void
   removeRotateAnimation: () => void
@@ -546,6 +927,181 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
     frameCount: maxFrames,
     currentFrame: Math.min(Math.max(0, effect.currentFrame), maxFrames - 1),
   }
+}
+
+function clampGodRaysBox(entry: GodRaysBoxState): GodRaysBoxState {
+  const minRadius = 0.05
+  const bottomRadius = Math.max(entry.bottomRadius, minRadius)
+  const topRadius =
+    entry.linkTopRadius && Math.abs(entry.bottomRadius) > 0.0001
+      ? Math.max((entry.topRadius / entry.bottomRadius) * bottomRadius, minRadius)
+      : Math.max(entry.topRadius, minRadius)
+
+  return {
+    ...entry,
+    sourceFace: '-y',
+    sideCount: clampGodRaysSideCount(entry.sideCount),
+    bottomRadius,
+    topRadius,
+    linkTopRadius: entry.linkTopRadius,
+    topDome: Math.min(Math.max(entry.topDome, 0), 10),
+    rayIntensity: Math.min(Math.max(entry.rayIntensity, 0), 10),
+    rayFalloff: Math.min(Math.max(entry.rayFalloff, 0), 8),
+    rayEdgeFade: Math.min(Math.max(entry.rayEdgeFade, 0), 1),
+    rayNoiseAmount: Math.min(Math.max(entry.rayNoiseAmount, 0), 1),
+    rayNoiseScale: Math.min(Math.max(entry.rayNoiseScale, 0.01), 20),
+    rayGrain: Math.min(Math.max(entry.rayGrain, 0), 1),
+    rayNoiseMotionMode: entry.rayNoiseMotionMode,
+    rayNoiseMotionSpeed: Math.min(Math.max(entry.rayNoiseMotionSpeed, 0), 3),
+    rayQuality: entry.rayQuality,
+    rayUseGlobalNoiseSettings: entry.rayUseGlobalNoiseSettings ?? true,
+    dustCount: Math.round(Math.min(Math.max(entry.dustCount, 0), 5000)),
+    dustSizeMin: Math.min(Math.max(entry.dustSizeMin, 0.001), 1),
+    dustSizeMax: Math.min(Math.max(entry.dustSizeMax, entry.dustSizeMin), 1),
+    dustSpeed: Math.min(Math.max(entry.dustSpeed, 0), GOD_RAYS_DUST_SPEED_MAX),
+    dustColorLinked: entry.dustColorLinked ?? true,
+    dustColor: entry.dustColorLinked ? entry.rayColor : entry.dustColor ?? entry.rayColor,
+    dustStrength: getGodRaysDustStrengthValue(entry.dustStrength),
+    dustDirectionMode: entry.dustDirectionMode ?? 'local',
+    dustDirectionLocal: normalizeGodRaysDirection(entry.dustDirectionLocal ?? getGodRaysDefaultDirection()),
+    dustDrift: Math.min(Math.max(entry.dustDrift, 0), 5),
+    dustEdgeFade: Math.min(Math.max(entry.dustEdgeFade, 0), 1),
+  }
+}
+
+function applyGodRaysPatch(current: GodRaysBoxState, patch: Partial<Omit<GodRaysBoxState, 'id'>>) {
+  const nextPatch = { ...patch }
+  if (current.linkTopRadius && patch.bottomRadius !== undefined && patch.topRadius === undefined) {
+    const ratio = current.bottomRadius > 0.0001 ? current.topRadius / current.bottomRadius : 1
+    nextPatch.topRadius = patch.bottomRadius * ratio
+  }
+
+  const nextDustColorLinked = nextPatch.dustColorLinked ?? current.dustColorLinked
+  if (nextDustColorLinked && nextPatch.rayColor !== undefined && nextPatch.dustColor === undefined) {
+    nextPatch.dustColor = nextPatch.rayColor
+  }
+  if (patch.dustColorLinked !== undefined && patch.dustColorLinked && nextPatch.dustColor === undefined) {
+    nextPatch.dustColor = nextPatch.rayColor ?? current.rayColor
+  }
+
+  return clampGodRaysBox({
+    ...current,
+    ...nextPatch,
+    dustDirectionLocal: nextPatch.dustDirectionLocal ?? current.dustDirectionLocal,
+  })
+}
+
+function clampStencilVolume(entry: StencilVolumeState): StencilVolumeState {
+  const nextExtrudeEnd = [...(entry.extrudeEnd ?? DEFAULT_STENCIL_VOLUME.extrudeEnd)] as [number, number, number]
+  for (let index = 0; index < 3; index += 1) {
+    const value = nextExtrudeEnd[index]
+    nextExtrudeEnd[index] = Number.isFinite(value) ? THREE.MathUtils.clamp(value, -20, 20) : DEFAULT_STENCIL_VOLUME.extrudeEnd[index]
+  }
+  const contourMode: StencilContourMode = 'silhouette'
+  const rayNoiseMotionMode = entry.rayNoiseMotionMode === 'soft' ? 'soft' : 'off'
+  const rayQuality =
+    entry.rayQuality === 'medium' || entry.rayQuality === 'high' || entry.rayQuality === 'low'
+      ? entry.rayQuality
+      : DEFAULT_STENCIL_VOLUME.rayQuality
+  const dustColorLinked = entry.dustColorLinked ?? DEFAULT_STENCIL_VOLUME.dustColorLinked
+  const volumeColor = entry.volumeColor ?? DEFAULT_STENCIL_VOLUME.volumeColor
+
+  return {
+    ...entry,
+    sourceWidth: THREE.MathUtils.clamp(entry.sourceWidth, 0.05, 20),
+    sourceHeight: THREE.MathUtils.clamp(entry.sourceHeight, 0.05, 20),
+    maskAssetLabel: entry.maskAssetLabel ?? null,
+    maskAssetUrl: entry.maskAssetUrl ?? null,
+    bakedContourShapes: entry.bakedContourShapes
+      ? entry.bakedContourShapes.map((shape) => ({
+          outline: shape.outline.map((point) => [...point] as [number, number]),
+          holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+        }))
+      : null,
+    bakedPrimitiveShapeGroups: entry.bakedPrimitiveShapeGroups
+      ? entry.bakedPrimitiveShapeGroups.map((group) =>
+          group.map((shape) => ({
+            outline: shape.outline.map((point) => [...point] as [number, number]),
+            holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+          })),
+        )
+      : null,
+    bakedPreparedPrimitives: entry.bakedPreparedPrimitives
+      ? entry.bakedPreparedPrimitives.map((primitive) => ({
+          id: primitive.id,
+          shapes: primitive.shapes.map((shape) => ({
+            outline: shape.outline.map((point) => [...point] as [number, number]),
+            holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+          })),
+          sourceCenter: [...primitive.sourceCenter] as [number, number, number],
+          sourceSize: [...primitive.sourceSize] as [number, number],
+        }))
+      : null,
+    projectionVisible: entry.projectionVisible ?? DEFAULT_STENCIL_VOLUME.projectionVisible,
+    maskInvert: entry.maskInvert ?? false,
+    contourDetail: THREE.MathUtils.clamp(entry.contourDetail, 0, 1),
+    contourSimplify: THREE.MathUtils.clamp(entry.contourSimplify ?? DEFAULT_STENCIL_VOLUME.contourSimplify, 0, 1),
+    contourSmooth: THREE.MathUtils.clamp(entry.contourSmooth ?? DEFAULT_STENCIL_VOLUME.contourSmooth, 0, 1),
+    contourMinArea: THREE.MathUtils.clamp(entry.contourMinArea ?? DEFAULT_STENCIL_VOLUME.contourMinArea, 0, 1),
+    contourMode,
+    contourShowInnerLoops: entry.contourShowInnerLoops ?? DEFAULT_STENCIL_VOLUME.contourShowInnerLoops,
+    contourDebugVisible: entry.contourDebugVisible ?? DEFAULT_STENCIL_VOLUME.contourDebugVisible,
+    extrudeEnd: nextExtrudeEnd,
+    endRotationX: Number.isFinite(entry.endRotationX) ? entry.endRotationX : DEFAULT_STENCIL_VOLUME.endRotationX,
+    endRotationY: Number.isFinite(entry.endRotationY) ? entry.endRotationY : DEFAULT_STENCIL_VOLUME.endRotationY,
+    endScaleX: THREE.MathUtils.clamp(entry.endScaleX, 0.05, 20),
+    endScaleY: THREE.MathUtils.clamp(entry.endScaleY, 0.05, 20),
+    volumeColor,
+    volumeIntensity: THREE.MathUtils.clamp(entry.volumeIntensity, 0, 10),
+    volumeFalloff: THREE.MathUtils.clamp(entry.volumeFalloff, 0, 8),
+    rayEdgeFade: THREE.MathUtils.clamp(entry.rayEdgeFade ?? DEFAULT_STENCIL_VOLUME.rayEdgeFade, 0, 2),
+    rayFillQuality: THREE.MathUtils.clamp(entry.rayFillQuality ?? DEFAULT_STENCIL_VOLUME.rayFillQuality, 0, 1),
+    rayNoiseAmount: THREE.MathUtils.clamp(entry.rayNoiseAmount ?? DEFAULT_STENCIL_VOLUME.rayNoiseAmount, 0, 1),
+    rayNoiseScale: THREE.MathUtils.clamp(entry.rayNoiseScale ?? DEFAULT_STENCIL_VOLUME.rayNoiseScale, 0.01, 20),
+    rayGrain: THREE.MathUtils.clamp(entry.rayGrain ?? DEFAULT_STENCIL_VOLUME.rayGrain, 0, 1),
+    rayNoiseMotionMode,
+    rayNoiseMotionSpeed: THREE.MathUtils.clamp(
+      entry.rayNoiseMotionSpeed ?? DEFAULT_STENCIL_VOLUME.rayNoiseMotionSpeed,
+      0,
+      3,
+    ),
+    rayQuality,
+    rayUseGlobalNoiseSettings: entry.rayUseGlobalNoiseSettings ?? DEFAULT_STENCIL_VOLUME.rayUseGlobalNoiseSettings,
+    roundedTop: THREE.MathUtils.clamp(entry.roundedTop, 0, 10),
+    dustEnabled: entry.dustEnabled ?? true,
+    dustCount: Math.round(THREE.MathUtils.clamp(entry.dustCount, 0, 5000)),
+    dustSizeMin: THREE.MathUtils.clamp(entry.dustSizeMin, 0.001, 1),
+    dustSizeMax: THREE.MathUtils.clamp(Math.max(entry.dustSizeMax, entry.dustSizeMin), 0.001, 1),
+    dustSpeed: THREE.MathUtils.clamp(entry.dustSpeed, 0, GOD_RAYS_DUST_SPEED_MAX),
+    dustColorLinked,
+    dustColor: dustColorLinked ? volumeColor : entry.dustColor ?? volumeColor,
+    dustDirectionMode: entry.dustDirectionMode ?? DEFAULT_STENCIL_VOLUME.dustDirectionMode,
+    dustDirectionLocal: normalizeGodRaysDirection(
+      entry.dustDirectionLocal ?? DEFAULT_STENCIL_VOLUME.dustDirectionLocal,
+    ),
+    dustDrift: THREE.MathUtils.clamp(entry.dustDrift, 0, 5),
+    dustStrength: getGodRaysDustStrengthValue(entry.dustStrength),
+    dustEdgeFade: THREE.MathUtils.clamp(entry.dustEdgeFade ?? DEFAULT_STENCIL_VOLUME.dustEdgeFade, 0, 1),
+    helperVisible: entry.helperVisible ?? true,
+  }
+}
+
+function applyStencilVolumePatch(current: StencilVolumeState, patch: Partial<Omit<StencilVolumeState, 'id'>>) {
+  const nextPatch = { ...patch }
+  const nextDustColorLinked = nextPatch.dustColorLinked ?? current.dustColorLinked
+  if (nextDustColorLinked && nextPatch.volumeColor !== undefined && nextPatch.dustColor === undefined) {
+    nextPatch.dustColor = nextPatch.volumeColor
+  }
+  if (patch.dustColorLinked !== undefined && patch.dustColorLinked && nextPatch.dustColor === undefined) {
+    nextPatch.dustColor = nextPatch.volumeColor ?? current.volumeColor
+  }
+
+  return clampStencilVolume({
+    ...current,
+    ...nextPatch,
+    extrudeEnd: nextPatch.extrudeEnd ? [...nextPatch.extrudeEnd] as [number, number, number] : current.extrudeEnd,
+    dustDirectionLocal: nextPatch.dustDirectionLocal ?? current.dustDirectionLocal,
+  })
 }
 
 function disposeRuntimeMaterial(material: THREE.Material) {
@@ -657,6 +1213,56 @@ function cloneExtraLightsState(extraLights: ExtraLightState[]) {
   }))
 }
 
+function cloneGodRaysBoxesState(godRaysBoxes: GodRaysBoxState[]) {
+  return godRaysBoxes.map((entry) => ({
+    ...entry,
+    dustDirectionLocal: [...entry.dustDirectionLocal] as [number, number, number],
+  }))
+}
+
+function cloneStencilVolumesState(stencilVolumes: StencilVolumeState[]) {
+  return stencilVolumes.map((entry) => ({
+    ...entry,
+    extrudeEnd: [...entry.extrudeEnd] as [number, number, number],
+    bakedContourShapes: entry.bakedContourShapes
+      ? entry.bakedContourShapes.map((shape) => ({
+          outline: shape.outline.map((point) => [...point] as [number, number]),
+          holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+        }))
+      : null,
+    bakedPrimitiveShapeGroups: entry.bakedPrimitiveShapeGroups
+      ? entry.bakedPrimitiveShapeGroups.map((group) =>
+          group.map((shape) => ({
+            outline: shape.outline.map((point) => [...point] as [number, number]),
+            holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+          })),
+        )
+      : null,
+    bakedPreparedPrimitives: entry.bakedPreparedPrimitives
+      ? entry.bakedPreparedPrimitives.map((primitive) => ({
+          id: primitive.id,
+          shapes: primitive.shapes.map((shape) => ({
+            outline: shape.outline.map((point) => [...point] as [number, number]),
+            holes: shape.holes.map((hole) => hole.map((point) => [...point] as [number, number])),
+          })),
+          sourceCenter: [...primitive.sourceCenter] as [number, number, number],
+          sourceSize: [...primitive.sourceSize] as [number, number],
+        }))
+      : null,
+    dustDirectionLocal: [...(entry.dustDirectionLocal ?? DEFAULT_STENCIL_VOLUME.dustDirectionLocal)] as [number, number, number],
+  }))
+}
+
+function cloneGodRaysGlobalNoiseState(godRaysGlobalNoise: GodRaysGlobalNoiseState): GodRaysGlobalNoiseState {
+  return { ...godRaysGlobalNoise }
+}
+
+function cloneGodRaysGlobalDirectionState(
+  godRaysGlobalDirection: [number, number, number],
+): [number, number, number] {
+  return [...godRaysGlobalDirection] as [number, number, number]
+}
+
 function cloneRotateAnimationState(rotateAnimation: RotateAnimationState): RotateAnimationState {
   return { ...rotateAnimation }
 }
@@ -696,6 +1302,10 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     backgroundColor: state.backgroundColor,
     backgroundRotation: state.backgroundRotation,
     extraLights: cloneExtraLightsState(state.extraLights),
+    godRaysBoxes: cloneGodRaysBoxesState(state.godRaysBoxes),
+    stencilVolumes: cloneStencilVolumesState(state.stencilVolumes),
+    godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(state.godRaysGlobalNoise),
+    godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(state.godRaysGlobalDirection),
     rotateAnimation: cloneRotateAnimationState(state.rotateAnimation),
     backgroundAudio: cloneBackgroundAudioState(state.backgroundAudio),
   }
@@ -1028,6 +1638,10 @@ function buildDeletePatch(state: EditorState, id: string) {
   const rotateAnimationTargetWasRemoved =
     state.rotateAnimation.targetObjectId === id ||
     (state.rotateAnimation.targetObjectId ? idsToRemove.has(state.rotateAnimation.targetObjectId) : false)
+  const activeGodRaysDirectionWasRemoved =
+    state.hud.activeGodRaysDirectionBoxId != null && idsToRemove.has(state.hud.activeGodRaysDirectionBoxId)
+  const activeStencilVolumeEndWasRemoved =
+    state.hud.activeStencilVolumeEndHandleId != null && idsToRemove.has(state.hud.activeStencilVolumeEndHandleId)
 
   return {
     sceneGraph,
@@ -1054,6 +1668,17 @@ function buildDeletePatch(state: EditorState, id: string) {
       selectedObjectWasRemoved || selectedMaterialWasRemoved
         ? null
         : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+    godRaysBoxes: state.godRaysBoxes.filter((entry) => !idsToRemove.has(entry.id)),
+    stencilVolumes: state.stencilVolumes.filter((entry) => !idsToRemove.has(entry.id)),
+    hud: activeGodRaysDirectionWasRemoved || activeStencilVolumeEndWasRemoved
+      ? {
+          ...state.hud,
+          activeGodRaysDirectionBoxId: activeGodRaysDirectionWasRemoved ? null : state.hud.activeGodRaysDirectionBoxId,
+          activeStencilVolumeEndHandleId: activeStencilVolumeEndWasRemoved
+            ? null
+            : state.hud.activeStencilVolumeEndHandleId,
+        }
+      : state.hud,
     rotateAnimation: rotateAnimationTargetWasRemoved
       ? {
           ...DEFAULT_ROTATE_ANIMATION,
@@ -1063,7 +1688,7 @@ function buildDeletePatch(state: EditorState, id: string) {
   }
 }
 
-export const useEditorStore = create<EditorState>((set) => ({
+export const useEditorStore = create<EditorState>((set, get) => ({
   sceneGraph: {},
   rootNodeId: null,
   rootNodeIds: [],
@@ -1125,6 +1750,8 @@ export const useEditorStore = create<EditorState>((set) => ({
     sidebarVisible: true,
     inspectorVisible: true,
     transformMode: 'none',
+    activeGodRaysDirectionBoxId: null,
+    activeStencilVolumeEndHandleId: null,
   },
   transformSettings: {
     measurementUnit: 'cm',
@@ -1170,6 +1797,10 @@ export const useEditorStore = create<EditorState>((set) => ({
     fileSize: null,
   },
   extraLights: [],
+  godRaysBoxes: [],
+  stencilVolumes: [],
+  godRaysGlobalNoise: DEFAULT_GOD_RAYS_GLOBAL_NOISE,
+  godRaysGlobalDirection: DEFAULT_GOD_RAYS_GLOBAL_DIRECTION,
   rotateAnimation: DEFAULT_ROTATE_ANIMATION,
   backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
@@ -1199,11 +1830,28 @@ export const useEditorStore = create<EditorState>((set) => ({
   setSelectedObjectId: (id) =>
     set((state) => {
       const resolvedMaterialId = resolveSelectedMaterialId(id, state.sceneGraph)
+      const activeGodRaysDirectionBoxId =
+        state.hud.activeGodRaysDirectionBoxId && state.hud.activeGodRaysDirectionBoxId !== id
+          ? null
+          : state.hud.activeGodRaysDirectionBoxId
+      const activeStencilVolumeEndHandleId =
+        state.hud.activeStencilVolumeEndHandleId && state.hud.activeStencilVolumeEndHandleId !== id
+          ? null
+          : state.hud.activeStencilVolumeEndHandleId
 
       return {
         selectedObjectId: id,
-        selectedMaterialId: resolvedMaterialId ?? state.selectedMaterialId,
+        selectedMaterialId: resolvedMaterialId,
         selectedAnchorIndex: null,
+        hud:
+          activeGodRaysDirectionBoxId === state.hud.activeGodRaysDirectionBoxId &&
+          activeStencilVolumeEndHandleId === state.hud.activeStencilVolumeEndHandleId
+            ? state.hud
+            : {
+                ...state.hud,
+                activeGodRaysDirectionBoxId,
+                activeStencilVolumeEndHandleId,
+              },
       }
     }),
   setSelectedMaterialId: (id) =>
@@ -1224,6 +1872,13 @@ export const useEditorStore = create<EditorState>((set) => ({
         selectedMaterialId: id,
         selectedObjectId: material.meshIds[0] ?? state.selectedObjectId,
         selectedAnchorIndex: null,
+        hud: state.hud.activeGodRaysDirectionBoxId || state.hud.activeStencilVolumeEndHandleId
+          ? {
+              ...state.hud,
+              activeGodRaysDirectionBoxId: null,
+              activeStencilVolumeEndHandleId: null,
+            }
+          : state.hud,
       }
     }),
   setSelectedAnchorIndex: (index) => set({ selectedAnchorIndex: index }),
@@ -1247,6 +1902,46 @@ export const useEditorStore = create<EditorState>((set) => ({
           rotation: [0, 0, 0],
           scale: [1, 1, 1],
           visible: light.visible,
+        }
+      })
+
+      state.godRaysBoxes.forEach((effect, index) => {
+        const objectState = state.objects[effect.id]
+        const sceneNode = state.sceneGraph[effect.id]
+        nextSceneGraph[effect.id] = {
+          id: effect.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: sceneNode?.label ?? getIndexedEffectLabel('God Rays', index + 1),
+          objectUuid: effect.id,
+          visible: sceneNode?.visible ?? objectState?.visible ?? true,
+        }
+        nextObjects[effect.id] = objectState ?? {
+          position: [0, 1.5, 0],
+          rotation: [0, 0, 0],
+          scale: [1.5, 2.5, 1.5],
+          visible: true,
+        }
+      })
+
+      state.stencilVolumes.forEach((effect, index) => {
+        const objectState = state.objects[effect.id]
+        const sceneNode = state.sceneGraph[effect.id]
+        nextSceneGraph[effect.id] = {
+          id: effect.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: sceneNode?.label ?? getIndexedEffectLabel('Stencil Volume', index + 1),
+          objectUuid: effect.id,
+          visible: sceneNode?.visible ?? objectState?.visible ?? true,
+        }
+        nextObjects[effect.id] = objectState ?? {
+          position: [0, 1.5, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          visible: true,
         }
       })
 
@@ -1282,6 +1977,46 @@ export const useEditorStore = create<EditorState>((set) => ({
         ...materials,
       }
       const nextSelectedObjectId = selectedObjectId === undefined ? rootNodeId : selectedObjectId
+
+      state.godRaysBoxes.forEach((effect, index) => {
+        const objectState = state.objects[effect.id]
+        const sceneNode = state.sceneGraph[effect.id]
+        nextSceneGraph[effect.id] = {
+          id: effect.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: sceneNode?.label ?? getIndexedEffectLabel('God Rays', index + 1),
+          objectUuid: effect.id,
+          visible: sceneNode?.visible ?? objectState?.visible ?? true,
+        }
+        nextObjects[effect.id] = objectState ?? {
+          position: [0, 1.5, 0],
+          rotation: [0, 0, 0],
+          scale: [1.5, 2.5, 1.5],
+          visible: true,
+        }
+      })
+
+      state.stencilVolumes.forEach((effect, index) => {
+        const objectState = state.objects[effect.id]
+        const sceneNode = state.sceneGraph[effect.id]
+        nextSceneGraph[effect.id] = {
+          id: effect.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: sceneNode?.label ?? getIndexedEffectLabel('Stencil Volume', index + 1),
+          objectUuid: effect.id,
+          visible: sceneNode?.visible ?? objectState?.visible ?? true,
+        }
+        nextObjects[effect.id] = objectState ?? {
+          position: [0, 1.5, 0],
+          rotation: [0, 0, 0],
+          scale: [1, 1, 1],
+          visible: true,
+        }
+      })
 
       return {
         sceneGraph: nextSceneGraph,
@@ -1869,6 +2604,388 @@ export const useEditorStore = create<EditorState>((set) => ({
         objects: nextObjects,
       }
     }),
+  duplicateExtraLight: (id, options) => {
+    const state = get()
+    const light = state.extraLights.find((entry) => entry.id === id)
+    if (!light) {
+      return null
+    }
+
+    const nextIndex = state.extraLights.length + 1
+    const nextId = `light:extra:${nextIndex}:${Date.now()}`
+    const nextLight: ExtraLightState = {
+      ...light,
+      id: nextId,
+      label:
+        light.type === 'ambient'
+          ? `Ambient Light ${nextIndex}`
+          : light.type === 'directional'
+            ? `Directional Light ${nextIndex}`
+            : light.type === 'spot'
+              ? `Spot Light ${nextIndex}`
+              : `Point Light ${nextIndex}`,
+      position: [...light.position] as [number, number, number],
+      targetPosition: [...light.targetPosition] as [number, number, number],
+    }
+
+    const selectDuplicate = options?.selectDuplicate ?? true
+
+    set((currentState) =>
+      withHistory(currentState, {
+        extraLights: [...currentState.extraLights, nextLight],
+        sceneGraph: {
+          ...currentState.sceneGraph,
+          [nextId]: {
+            id: nextId,
+            parentId: null,
+            children: [],
+            type: 'light',
+            label: nextLight.label,
+            objectUuid: nextId,
+            visible: nextLight.visible,
+          },
+        },
+        objects: {
+          ...currentState.objects,
+          [nextId]: {
+            position: [...nextLight.position] as [number, number, number],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            visible: nextLight.visible,
+          },
+        },
+        selectedObjectId: selectDuplicate ? nextId : currentState.selectedObjectId,
+        selectedAnchorIndex: null,
+        selectedMaterialId: selectDuplicate ? null : currentState.selectedMaterialId,
+      }),
+    )
+
+    return nextId
+  },
+  addGodRaysBox: () =>
+    set((state) => {
+      const nextIndex = state.godRaysBoxes.length + 1
+      const id = `effect:god-rays:${nextIndex}:${Date.now()}`
+      const label = getIndexedEffectLabel('God Rays', nextIndex)
+      const nextBox = clampGodRaysBox({
+        id,
+        ...DEFAULT_GOD_RAYS_BOX,
+      })
+
+      return {
+        godRaysBoxes: [...state.godRaysBoxes, nextBox],
+        sceneGraph: {
+          ...state.sceneGraph,
+          [id]: {
+            id,
+            parentId: null,
+            children: [],
+            type: 'effect',
+            label,
+            objectUuid: id,
+            visible: true,
+          },
+        },
+        objects: {
+          ...state.objects,
+          [id]: {
+            position: [0, 1.5, 0],
+            rotation: [0, 0, 0],
+            scale: [1.5, 2.5, 1.5],
+            visible: true,
+          },
+        },
+        selectedObjectId: id,
+        selectedAnchorIndex: null,
+        selectedMaterialId: null,
+        history: clearHistory(),
+      }
+    }),
+  removeGodRaysBox: (id) =>
+    set((state) => ({
+      ...buildDeletePatch(state, id),
+      history: clearHistory(),
+    })),
+  updateGodRaysBox: (id, patch) =>
+    set((state) => {
+      const current = state.godRaysBoxes.find((entry) => entry.id === id)
+      if (!current) {
+        return state
+      }
+
+      const next = applyGodRaysPatch(current, patch)
+
+      return withHistory(state, {
+        godRaysBoxes: state.godRaysBoxes.map((entry) => (entry.id === id ? next : entry)),
+      })
+    }),
+  setGodRaysGlobalNoise: (patch) =>
+    set((state) =>
+      withHistory(state, {
+        godRaysGlobalNoise: {
+          ...state.godRaysGlobalNoise,
+          ...patch,
+        },
+      }),
+    ),
+  setGodRaysGlobalDirection: (direction) =>
+    set((state) =>
+      withHistory(state, {
+        godRaysGlobalDirection: normalizeGodRaysDirection(direction),
+      }),
+    ),
+  replaceGodRaysBoxes: (entries) =>
+    set((state) => {
+      const nextSceneGraph = { ...state.sceneGraph }
+      const nextObjects = { ...state.objects }
+      const existingIds = new Set(state.godRaysBoxes.map((entry) => entry.id))
+      const nextIds = new Set(entries.map((entry) => entry.id))
+
+      existingIds.forEach((effectId) => {
+        if (nextIds.has(effectId)) {
+          return
+        }
+
+        delete nextSceneGraph[effectId]
+        delete nextObjects[effectId]
+      })
+
+      entries.forEach((entry) => {
+        nextSceneGraph[entry.id] = {
+          id: entry.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: entry.label,
+          objectUuid: entry.id,
+          visible: entry.visible,
+        }
+        nextObjects[entry.id] = {
+          ...entry.transform,
+          position: [...entry.transform.position] as [number, number, number],
+          rotation: [...entry.transform.rotation] as [number, number, number],
+          scale: [...entry.transform.scale] as [number, number, number],
+          visible: entry.visible,
+        }
+      })
+
+      return {
+        godRaysBoxes: entries.map(({ label: _label, visible: _visible, transform: _transform, ...entry }) =>
+          clampGodRaysBox({
+            ...entry,
+            dustDirectionLocal: [...entry.dustDirectionLocal] as [number, number, number],
+          }),
+        ),
+        sceneGraph: nextSceneGraph,
+        objects: nextObjects,
+      }
+    }),
+  duplicateGodRaysBox: (id, options) => {
+    const state = get()
+    const effect = state.godRaysBoxes.find((entry) => entry.id === id)
+    const objectState = state.objects[id]
+    const sceneNode = state.sceneGraph[id]
+    if (!effect || !objectState || !sceneNode) {
+      return null
+    }
+
+    const nextIndex = state.godRaysBoxes.length + 1
+    const nextId = `effect:god-rays:${nextIndex}:${Date.now()}`
+    const nextLabel = getIndexedEffectLabel('God Rays', nextIndex)
+    const nextEffect = clampGodRaysBox({
+      ...effect,
+      id: nextId,
+      dustDirectionLocal: [...effect.dustDirectionLocal] as [number, number, number],
+    })
+
+    const selectDuplicate = options?.selectDuplicate ?? true
+
+    set((currentState) =>
+      withHistory(currentState, {
+        godRaysBoxes: [...currentState.godRaysBoxes, nextEffect],
+        sceneGraph: {
+          ...currentState.sceneGraph,
+          [nextId]: {
+            id: nextId,
+            parentId: null,
+            children: [],
+            type: 'effect',
+            label: nextLabel,
+            objectUuid: nextId,
+            visible: objectState.visible,
+          },
+        },
+        objects: {
+          ...currentState.objects,
+          [nextId]: {
+            position: [...objectState.position] as [number, number, number],
+            rotation: [...objectState.rotation] as [number, number, number],
+            scale: [...objectState.scale] as [number, number, number],
+            visible: objectState.visible,
+          },
+        },
+        selectedObjectId: selectDuplicate ? nextId : currentState.selectedObjectId,
+        selectedAnchorIndex: null,
+        selectedMaterialId: selectDuplicate ? null : currentState.selectedMaterialId,
+      }),
+    )
+
+    return nextId
+  },
+  addStencilVolume: () =>
+    set((state) => {
+      const nextIndex = state.stencilVolumes.length + 1
+      const id = `effect:stencil-volume:${nextIndex}:${Date.now()}`
+      const label = getIndexedEffectLabel('Stencil Volume', nextIndex)
+      const nextVolume = clampStencilVolume({
+        id,
+        ...DEFAULT_STENCIL_VOLUME,
+      })
+
+      return {
+        stencilVolumes: [...state.stencilVolumes, nextVolume],
+        sceneGraph: {
+          ...state.sceneGraph,
+          [id]: {
+            id,
+            parentId: null,
+            children: [],
+            type: 'effect',
+            label,
+            objectUuid: id,
+            visible: true,
+          },
+        },
+        objects: {
+          ...state.objects,
+          [id]: {
+            position: [0, 1.5, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            visible: true,
+          },
+        },
+        selectedObjectId: id,
+        selectedAnchorIndex: null,
+        selectedMaterialId: null,
+        history: clearHistory(),
+      }
+    }),
+  removeStencilVolume: (id) =>
+    set((state) => ({
+      ...buildDeletePatch(state, id),
+      history: clearHistory(),
+    })),
+  updateStencilVolume: (id, patch) =>
+    set((state) => {
+      const current = state.stencilVolumes.find((entry) => entry.id === id)
+      if (!current) {
+        return state
+      }
+
+      const next = applyStencilVolumePatch(current, patch)
+      return withHistory(state, {
+        stencilVolumes: state.stencilVolumes.map((entry) => (entry.id === id ? next : entry)),
+      })
+    }),
+  replaceStencilVolumes: (entries) =>
+    set((state) => {
+      const nextSceneGraph = { ...state.sceneGraph }
+      const nextObjects = { ...state.objects }
+      const existingIds = new Set(state.stencilVolumes.map((entry) => entry.id))
+      const nextIds = new Set(entries.map((entry) => entry.id))
+
+      existingIds.forEach((effectId) => {
+        if (nextIds.has(effectId)) {
+          return
+        }
+
+        delete nextSceneGraph[effectId]
+        delete nextObjects[effectId]
+      })
+
+      entries.forEach((entry) => {
+        nextSceneGraph[entry.id] = {
+          id: entry.id,
+          parentId: null,
+          children: [],
+          type: 'effect',
+          label: entry.label,
+          objectUuid: entry.id,
+          visible: entry.visible,
+        }
+        nextObjects[entry.id] = {
+          ...entry.transform,
+          position: [...entry.transform.position] as [number, number, number],
+          rotation: [...entry.transform.rotation] as [number, number, number],
+          scale: [...entry.transform.scale] as [number, number, number],
+          visible: entry.visible,
+        }
+      })
+
+      return {
+        stencilVolumes: entries.map(({ label: _label, visible: _visible, transform: _transform, ...entry }) =>
+          clampStencilVolume({
+            ...entry,
+            extrudeEnd: [...entry.extrudeEnd] as [number, number, number],
+            dustDirectionLocal: [...(entry.dustDirectionLocal ?? DEFAULT_STENCIL_VOLUME.dustDirectionLocal)] as [number, number, number],
+          }),
+        ),
+        sceneGraph: nextSceneGraph,
+        objects: nextObjects,
+      }
+    }),
+  duplicateStencilVolume: (id, options) => {
+    const state = get()
+    const effect = state.stencilVolumes.find((entry) => entry.id === id)
+    const objectState = state.objects[id]
+    if (!effect || !objectState) {
+      return null
+    }
+
+    const nextIndex = state.stencilVolumes.length + 1
+    const nextId = `effect:stencil-volume:${nextIndex}:${Date.now()}`
+    const nextLabel = getIndexedEffectLabel('Stencil Volume', nextIndex)
+    const nextEffect = clampStencilVolume({
+      ...effect,
+      id: nextId,
+      extrudeEnd: [...effect.extrudeEnd] as [number, number, number],
+      dustDirectionLocal: [...(effect.dustDirectionLocal ?? DEFAULT_STENCIL_VOLUME.dustDirectionLocal)] as [number, number, number],
+    })
+    const selectDuplicate = options?.selectDuplicate ?? true
+
+    set((currentState) =>
+      withHistory(currentState, {
+        stencilVolumes: [...currentState.stencilVolumes, nextEffect],
+        sceneGraph: {
+          ...currentState.sceneGraph,
+          [nextId]: {
+            id: nextId,
+            parentId: null,
+            children: [],
+            type: 'effect',
+            label: nextLabel,
+            objectUuid: nextId,
+            visible: objectState.visible,
+          },
+        },
+        objects: {
+          ...currentState.objects,
+          [nextId]: {
+            position: [...objectState.position] as [number, number, number],
+            rotation: [...objectState.rotation] as [number, number, number],
+            scale: [...objectState.scale] as [number, number, number],
+            visible: objectState.visible,
+          },
+        },
+        selectedObjectId: selectDuplicate ? nextId : currentState.selectedObjectId,
+        selectedAnchorIndex: null,
+        selectedMaterialId: selectDuplicate ? null : currentState.selectedMaterialId,
+      }),
+    )
+
+    return nextId
+  },
   addRotateAnimation: (targetObjectId) =>
     set(() => ({
       rotateAnimation: {
@@ -2149,6 +3266,8 @@ export const useEditorStore = create<EditorState>((set) => ({
           sidebarVisible: true,
           inspectorVisible: true,
           transformMode: 'none',
+          activeGodRaysDirectionBoxId: null,
+          activeStencilVolumeEndHandleId: null,
         },
         transformSettings: {
           measurementUnit: 'cm',
@@ -2172,6 +3291,10 @@ export const useEditorStore = create<EditorState>((set) => ({
           fileSize: null,
         },
         extraLights: [],
+        godRaysBoxes: [],
+        stencilVolumes: [],
+        godRaysGlobalNoise: { ...DEFAULT_GOD_RAYS_GLOBAL_NOISE },
+        godRaysGlobalDirection: [...DEFAULT_GOD_RAYS_GLOBAL_DIRECTION] as [number, number, number],
         rotateAnimation: DEFAULT_ROTATE_ANIMATION,
         backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
         runtimeTextures: {
@@ -2265,6 +3388,10 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundColor: previous.backgroundColor,
         backgroundRotation: previous.backgroundRotation,
         extraLights: cloneExtraLightsState(previous.extraLights),
+        godRaysBoxes: cloneGodRaysBoxesState(previous.godRaysBoxes),
+        stencilVolumes: cloneStencilVolumesState(previous.stencilVolumes),
+        godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(previous.godRaysGlobalNoise),
+        godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(previous.godRaysGlobalDirection),
         rotateAnimation: cloneRotateAnimationState(previous.rotateAnimation),
         backgroundAudio: cloneBackgroundAudioState(previous.backgroundAudio),
         history: {
@@ -2300,6 +3427,10 @@ export const useEditorStore = create<EditorState>((set) => ({
         backgroundColor: next.backgroundColor,
         backgroundRotation: next.backgroundRotation,
         extraLights: cloneExtraLightsState(next.extraLights),
+        godRaysBoxes: cloneGodRaysBoxesState(next.godRaysBoxes),
+        stencilVolumes: cloneStencilVolumesState(next.stencilVolumes),
+        godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(next.godRaysGlobalNoise),
+        godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(next.godRaysGlobalDirection),
         rotateAnimation: cloneRotateAnimationState(next.rotateAnimation),
         backgroundAudio: cloneBackgroundAudioState(next.backgroundAudio),
         history: {
