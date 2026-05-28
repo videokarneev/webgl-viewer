@@ -16,6 +16,7 @@ export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
 export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '9:16'
+export type ResponsiveFramePresetKind = 'landscape' | 'portrait' | 'square'
 export type GodRaysDirectionSpace = 'local' | 'global'
 export type StencilContourMode = 'silhouette'
 
@@ -185,6 +186,38 @@ export const DEFAULT_VIEWER_CAMERA_FOV = 63.5
 export const DEFAULT_VIEWER_CAMERA_POSITION: [number, number, number] = [4, 3, 5]
 export const DEFAULT_VIEWER_ORBIT_TARGET: [number, number, number] = [0, 0, 0]
 export const DEFAULT_FRAME_ASPECT_PRESET: FrameAspectPreset = '1:1'
+
+export interface ResponsiveFramePresetState {
+  frameAspectPreset: FrameAspectPreset
+  cameraPosition: [number, number, number]
+  orbitTarget: [number, number, number]
+  focalLength: number
+}
+
+export interface ResponsiveFrameState {
+  enabled: boolean
+  landscape: ResponsiveFramePresetState
+  portrait: ResponsiveFramePresetState
+  square: ResponsiveFramePresetState
+}
+
+function createDefaultResponsiveFramePreset(frameAspectPreset: FrameAspectPreset): ResponsiveFramePresetState {
+  return {
+    frameAspectPreset,
+    cameraPosition: [...DEFAULT_VIEWER_CAMERA_POSITION],
+    orbitTarget: [...DEFAULT_VIEWER_ORBIT_TARGET],
+    focalLength: DEFAULT_VIEWER_FOCAL_LENGTH,
+  }
+}
+
+export function createDefaultResponsiveFrameState(): ResponsiveFrameState {
+  return {
+    enabled: false,
+    landscape: createDefaultResponsiveFramePreset('16:9'),
+    portrait: createDefaultResponsiveFramePreset('9:16'),
+    square: createDefaultResponsiveFramePreset('1:1'),
+  }
+}
 
 export interface AtlasEffectState {
   isAdded: boolean
@@ -357,6 +390,23 @@ export interface ViewerState {
   dofManualBlur: number
 }
 
+function cloneResponsiveFramePresetState(entry: ResponsiveFramePresetState): ResponsiveFramePresetState {
+  return {
+    ...entry,
+    cameraPosition: [...entry.cameraPosition],
+    orbitTarget: [...entry.orbitTarget],
+  }
+}
+
+function cloneResponsiveFrameState(responsiveFrame: ResponsiveFrameState): ResponsiveFrameState {
+  return {
+    enabled: responsiveFrame.enabled,
+    landscape: cloneResponsiveFramePresetState(responsiveFrame.landscape),
+    portrait: cloneResponsiveFramePresetState(responsiveFrame.portrait),
+    square: cloneResponsiveFramePresetState(responsiveFrame.square),
+  }
+}
+
 export interface AmbientLightState {
   exists: boolean
   color: string
@@ -401,6 +451,7 @@ export interface RuntimeTextureState {
 export interface RuntimeRegistryState {
   objectById: Record<string, THREE.Object3D>
   materialById: Record<string, THREE.Material>
+  materialEffectPreviewFrameById: Record<string, number>
 }
 
 export interface ViewportMetricsState {
@@ -717,6 +768,12 @@ export interface SceneConfig {
     cameraMode?: string | null
     focalLength?: number | null
     frameAspectPreset?: FrameAspectPreset | null
+    responsiveFrame?: {
+      enabled?: boolean | null
+      landscape?: Partial<ResponsiveFramePresetState> | null
+      portrait?: Partial<ResponsiveFramePresetState> | null
+      square?: Partial<ResponsiveFramePresetState> | null
+    } | null
     frameGuidesEnabled?: boolean | null
     exposure?: number | null
     bloomIntensity?: number | null
@@ -769,6 +826,7 @@ interface HistorySnapshot {
   }
   transformSettings: TransformSettingsState
   viewer: ViewerState
+  responsiveFrame: ResponsiveFrameState
   backgroundMode: BackgroundMode
   backgroundColor: string
   backgroundRotation: number
@@ -816,6 +874,7 @@ interface EditorState {
   hud: ViewportHudState
   transformSettings: TransformSettingsState
   viewer: ViewerState
+  responsiveFrame: ResponsiveFrameState
   assets: AssetSourceState
   extraLights: ExtraLightState[]
   godRaysBoxes: GodRaysBoxState[]
@@ -878,6 +937,9 @@ interface EditorState {
   setHud: (patch: Partial<ViewportHudState>) => void
   setTransformSettings: (patch: Partial<TransformSettingsState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
+  setResponsiveFrameEnabled: (value: boolean) => void
+  setResponsiveFramePreset: (kind: ResponsiveFramePresetKind, patch: Partial<ResponsiveFramePresetState>) => void
+  saveCurrentCameraToResponsivePreset: (kind: ResponsiveFramePresetKind) => void
   setAssets: (patch: Partial<AssetSourceState>) => void
   addExtraLight: (type?: ExtraLightType) => void
   removeExtraLight: (id?: string) => void
@@ -905,6 +967,7 @@ interface EditorState {
   registerMaterialRef: (id: string, material: THREE.Material | null) => void
   setAtlasTexture: (texture: THREE.Texture | null) => void
   setAtlasFrameTexture: (texture: THREE.CanvasTexture | null) => void
+  setMaterialEffectPreviewFrame: (materialId: string, frame: number | null) => void
   setEnvironmentTextures: (patch: Partial<RuntimeTextureState>) => void
   upsertMaterialEnvironment: (entry: MaterialEnvironmentAssetState, texture: THREE.Texture) => void
   removeMaterialEnvironment: (id: string) => void
@@ -1298,6 +1361,7 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     },
     transformSettings: { ...state.transformSettings },
     viewer: cloneViewerState(state.viewer),
+    responsiveFrame: cloneResponsiveFrameState(state.responsiveFrame),
     backgroundMode: state.backgroundMode,
     backgroundColor: state.backgroundColor,
     backgroundRotation: state.backgroundRotation,
@@ -1661,6 +1725,9 @@ function buildDeletePatch(state: EditorState, id: string) {
     runtime: {
       objectById: runtimeObjectById,
       materialById: runtimeMaterialById,
+      materialEffectPreviewFrameById: Object.fromEntries(
+        Object.entries(state.runtime.materialEffectPreviewFrameById).filter(([materialId]) => materials[materialId]),
+      ),
     },
     selectedObjectId: selectedObjectWasRemoved ? null : state.selectedObjectId,
     selectedAnchorIndex: selectedObjectWasRemoved ? null : state.selectedAnchorIndex,
@@ -1782,6 +1849,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     dofAperture: 2,
     dofManualBlur: 1.2,
   },
+  responsiveFrame: createDefaultResponsiveFrameState(),
   assets: {
     model: null,
     modelUrl: null,
@@ -1814,6 +1882,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   runtime: {
     objectById: {},
     materialById: {},
+    materialEffectPreviewFrameById: {},
   },
   viewportMetrics: {
     fps: 0,
@@ -2418,6 +2487,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             !['cameraPosition', 'orbitTarget', 'resetCameraPosition', 'resetOrbitTarget', 'cameraMode'].includes(key),
         ),
       ),
+    ),
+  setResponsiveFrameEnabled: (value) =>
+    set((state) =>
+      withHistory(state, {
+        responsiveFrame: {
+          ...state.responsiveFrame,
+          enabled: value,
+        },
+      }),
+    ),
+  setResponsiveFramePreset: (kind, patch) =>
+    set((state) =>
+      withHistory(state, {
+        responsiveFrame: {
+          ...state.responsiveFrame,
+          [kind]: {
+            ...state.responsiveFrame[kind],
+            ...patch,
+            cameraPosition: patch.cameraPosition
+              ? [...patch.cameraPosition] as [number, number, number]
+              : state.responsiveFrame[kind].cameraPosition,
+            orbitTarget: patch.orbitTarget
+              ? [...patch.orbitTarget] as [number, number, number]
+              : state.responsiveFrame[kind].orbitTarget,
+          },
+        },
+      }),
+    ),
+  saveCurrentCameraToResponsivePreset: (kind) =>
+    set((state) =>
+      withHistory(state, {
+        responsiveFrame: {
+          ...state.responsiveFrame,
+          [kind]: {
+            ...state.responsiveFrame[kind],
+            cameraPosition: [...state.viewer.cameraPosition],
+            orbitTarget: [...state.viewer.orbitTarget],
+            focalLength: state.viewer.focalLength,
+          },
+        },
+      }),
     ),
   setAssets: (patch) =>
     set((state) => ({
@@ -3055,6 +3165,38 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       }
     }),
+  setMaterialEffectPreviewFrame: (materialId, frame) =>
+    set((state) => {
+      const previousFrame = state.runtime.materialEffectPreviewFrameById[materialId]
+      if (frame == null) {
+        if (previousFrame == null) {
+          return state
+        }
+
+        const nextPreviewFrames = { ...state.runtime.materialEffectPreviewFrameById }
+        delete nextPreviewFrames[materialId]
+        return {
+          runtime: {
+            ...state.runtime,
+            materialEffectPreviewFrameById: nextPreviewFrames,
+          },
+        }
+      }
+
+      if (previousFrame === frame) {
+        return state
+      }
+
+      return {
+        runtime: {
+          ...state.runtime,
+          materialEffectPreviewFrameById: {
+            ...state.runtime.materialEffectPreviewFrameById,
+            [materialId]: frame,
+          },
+        },
+      }
+    }),
   setAtlasTexture: (texture) =>
     set((state) => ({
       runtimeTextures: {
@@ -3254,6 +3396,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           dofAperture: 2,
           dofManualBlur: 1.2,
         },
+        responsiveFrame: createDefaultResponsiveFrameState(),
         hud: {
           orbitEnabled: true,
           fpsEnabled: false,
@@ -3307,6 +3450,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtime: {
           objectById: {},
           materialById: {},
+          materialEffectPreviewFrameById: {},
         },
         viewportMetrics: {
           fps: 0,
@@ -3384,6 +3528,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
         transformSettings: { ...previous.transformSettings },
         viewer: cloneViewerState(previous.viewer),
+        responsiveFrame: cloneResponsiveFrameState(previous.responsiveFrame),
         backgroundMode: previous.backgroundMode,
         backgroundColor: previous.backgroundColor,
         backgroundRotation: previous.backgroundRotation,
@@ -3423,6 +3568,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
         transformSettings: { ...next.transformSettings },
         viewer: cloneViewerState(next.viewer),
+        responsiveFrame: cloneResponsiveFrameState(next.responsiveFrame),
         backgroundMode: next.backgroundMode,
         backgroundColor: next.backgroundColor,
         backgroundRotation: next.backgroundRotation,

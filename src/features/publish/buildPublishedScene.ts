@@ -1,4 +1,11 @@
-import { useEditorStore, type MaterialTextureSlot, type SceneGraphNode } from '../../store/editorStore'
+import {
+  useEditorStore,
+  type FrameAspectPreset,
+  type MaterialTextureSlot,
+  type ResponsiveFramePresetKind,
+  type ResponsiveFrameState,
+  type SceneGraphNode,
+} from '../../store/editorStore'
 import { getPublishNodeId } from './publishNodeIds'
 import { extractMaskContour } from '../stencilVolume/maskContour'
 
@@ -115,7 +122,7 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15
   scene: {
     background: {
       mode: string
@@ -144,6 +151,27 @@ export interface PublishedSceneV2 {
     focalLength: number
     frameAspectPreset: string
     exposure: number
+  }
+  responsiveFrame?: {
+    enabled: boolean
+    landscape: {
+      frameAspectPreset: FrameAspectPreset
+      cameraPosition: [number, number, number]
+      orbitTarget: [number, number, number]
+      focalLength: number
+    }
+    portrait: {
+      frameAspectPreset: FrameAspectPreset
+      cameraPosition: [number, number, number]
+      orbitTarget: [number, number, number]
+      focalLength: number
+    }
+    square: {
+      frameAspectPreset: FrameAspectPreset
+      cameraPosition: [number, number, number]
+      orbitTarget: [number, number, number]
+      focalLength: number
+    }
   }
   viewer: {
     postEffectsEnabled: boolean
@@ -408,6 +436,24 @@ export interface PublishedSceneV2 {
     speed: number
     progress: number
   }>
+}
+
+function buildPublishedResponsiveFrame(
+  responsiveFrame: ResponsiveFrameState,
+): NonNullable<PublishedSceneV2['responsiveFrame']> {
+  const serializePreset = (kind: ResponsiveFramePresetKind) => ({
+    frameAspectPreset: responsiveFrame[kind].frameAspectPreset,
+    cameraPosition: [...responsiveFrame[kind].cameraPosition] as [number, number, number],
+    orbitTarget: [...responsiveFrame[kind].orbitTarget] as [number, number, number],
+    focalLength: responsiveFrame[kind].focalLength,
+  })
+
+  return {
+    enabled: responsiveFrame.enabled,
+    landscape: serializePreset('landscape'),
+    portrait: serializePreset('portrait'),
+    square: serializePreset('square'),
+  }
 }
 
 function downloadJson(filename: string, payload: unknown) {
@@ -717,7 +763,7 @@ async function buildPublishedSceneInternal() {
   }
 
   const scene: PublishedSceneV2 = {
-    version: 14,
+    version: 15,
     scene: {
       background: {
         mode: state.backgroundMode,
@@ -747,6 +793,7 @@ async function buildPublishedSceneInternal() {
       frameAspectPreset: state.viewer.frameAspectPreset,
       exposure: state.viewer.exposure,
     },
+    responsiveFrame: buildPublishedResponsiveFrame(state.responsiveFrame),
     viewer: {
       postEffectsEnabled: state.hud.postEffectsEnabled,
       bloomIntensity: state.viewer.bloomIntensity,

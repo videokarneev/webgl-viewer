@@ -5,6 +5,10 @@ import * as THREE from 'three'
 import { useEditorStore, type SceneConfig } from '../../../store/editorStore'
 import { sanitizeNumber } from './shared'
 
+function isFrameAspectPreset(value: unknown): value is '1:1' | '3:2' | '2:3' | '16:9' | '9:16' {
+  return value === '1:1' || value === '3:2' || value === '2:3' || value === '16:9' || value === '9:16'
+}
+
 export function ConfigController({
   root,
   controlsRef,
@@ -24,6 +28,8 @@ export function ConfigController({
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const setResponsiveFrameEnabled = useEditorStore((state) => state.setResponsiveFrameEnabled)
+  const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
   const setStatus = useEditorStore((state) => state.setStatus)
   const materials = useEditorStore((state) => state.materials)
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
@@ -131,6 +137,49 @@ export function ConfigController({
     if (config.viewer?.frameGuidesEnabled != null) {
       setViewer({ frameGuidesEnabled: Boolean(config.viewer.frameGuidesEnabled) })
     }
+
+    if (config.viewer?.responsiveFrame?.enabled != null) {
+      setResponsiveFrameEnabled(Boolean(config.viewer.responsiveFrame.enabled))
+    }
+
+    const currentResponsiveFrame = useEditorStore.getState().responsiveFrame
+    ;(['landscape', 'portrait', 'square'] as const).forEach((kind) => {
+      const preset = config.viewer?.responsiveFrame?.[kind]
+      if (!preset) {
+        return
+      }
+
+      const currentPreset = currentResponsiveFrame[kind]
+      const patch: Partial<typeof currentPreset> = {}
+
+      if (isFrameAspectPreset(preset.frameAspectPreset)) {
+        patch.frameAspectPreset = preset.frameAspectPreset
+      }
+
+      if (Array.isArray(preset.cameraPosition) && preset.cameraPosition.length === 3) {
+        patch.cameraPosition = [
+          sanitizeNumber(preset.cameraPosition[0], currentPreset.cameraPosition[0]),
+          sanitizeNumber(preset.cameraPosition[1], currentPreset.cameraPosition[1]),
+          sanitizeNumber(preset.cameraPosition[2], currentPreset.cameraPosition[2]),
+        ]
+      }
+
+      if (Array.isArray(preset.orbitTarget) && preset.orbitTarget.length === 3) {
+        patch.orbitTarget = [
+          sanitizeNumber(preset.orbitTarget[0], currentPreset.orbitTarget[0]),
+          sanitizeNumber(preset.orbitTarget[1], currentPreset.orbitTarget[1]),
+          sanitizeNumber(preset.orbitTarget[2], currentPreset.orbitTarget[2]),
+        ]
+      }
+
+      if (preset.focalLength != null) {
+        patch.focalLength = sanitizeNumber(preset.focalLength, currentPreset.focalLength, 1)
+      }
+
+      if (Object.keys(patch).length > 0) {
+        setResponsiveFramePreset(kind, patch)
+      }
+    })
 
     if (config.viewer?.exposure != null) {
       setViewer({
@@ -285,6 +334,8 @@ export function ConfigController({
     rootNodeId,
     setEnvironment,
     setHud,
+    setResponsiveFrameEnabled,
+    setResponsiveFramePreset,
     setSelectedObjectId,
     setStatus,
     setViewer,

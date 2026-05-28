@@ -2890,6 +2890,25 @@ button {
   text-transform: uppercase;
 }
 
+.responsive-camera-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.responsive-camera-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(165, 197, 216, 0.07);
+  background: rgba(11, 15, 19, 0.72);
+}
+
+.responsive-camera-card__save {
+  width: 100%;
+  min-height: 28px;
+  justify-content: center;
+}
+
 .left-controls__value {
   min-height: 24px;
   padding: 5px 8px;
@@ -3393,7 +3412,6 @@ button {
   width: 50px;
   height: 50px;
   transform-style: preserve-3d;
-  transition: transform 120ms ease;
 }
 
 .viewport-orientation__face {

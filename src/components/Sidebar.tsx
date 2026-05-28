@@ -13,6 +13,7 @@ import {
   useEditorStore,
   type ExtraLightState,
   type FrameAspectPreset,
+  type ResponsiveFramePresetKind,
   type RotateAnimationAxis,
   type RotateAnimationPivot,
   type SceneGraphNode,
@@ -56,6 +57,13 @@ const GOD_RAYS_DIRECTION_PRESETS: Array<{ id: GodRaysDirectionPreset; label: str
   { id: 'top', label: 'TOP', direction: [0, 1, 0] },
   { id: 'bottom', label: 'BOTTOM', direction: [0, -1, 0] },
 ]
+
+const RESPONSIVE_FRAME_PRESET_META: Array<{ kind: ResponsiveFramePresetKind; title: string }> = [
+  { kind: 'landscape', title: 'Landscape' },
+  { kind: 'portrait', title: 'Portrait' },
+  { kind: 'square', title: 'Square / Fallback' },
+]
+
 function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
   const dimensions =
     preset === '1:1'
@@ -427,7 +435,11 @@ function SceneTabContent() {
 
 function CameraTabContent() {
   const viewer = useEditorStore((state) => state.viewer)
+  const responsiveFrame = useEditorStore((state) => state.responsiveFrame)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const setResponsiveFrameEnabled = useEditorStore((state) => state.setResponsiveFrameEnabled)
+  const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
+  const saveCurrentCameraToResponsivePreset = useEditorStore((state) => state.saveCurrentCameraToResponsivePreset)
 
   return (
     <div className="settings-tab">
@@ -507,6 +519,53 @@ function CameraTabContent() {
           />
           <span>Show Frame Guides</span>
         </label>
+        <div className="left-controls__group">
+          <span className="left-controls__label">Responsive Camera</span>
+          <label className="left-toggle">
+            <input
+              type="checkbox"
+              checked={responsiveFrame.enabled}
+              onChange={(event) => setResponsiveFrameEnabled(event.currentTarget.checked)}
+            />
+            <span>Enable Responsive Camera</span>
+          </label>
+          {responsiveFrame.enabled ? (
+            <div className="responsive-camera-grid">
+              {RESPONSIVE_FRAME_PRESET_META.map((entry) => {
+                const preset = responsiveFrame[entry.kind]
+                return (
+                  <div key={entry.kind} className="responsive-camera-card">
+                    <span className="sidebar-field-title">{entry.title}</span>
+                    <label className="left-select">
+                      <span>Format</span>
+                      <select
+                        value={preset.frameAspectPreset}
+                        onChange={(event) =>
+                          setResponsiveFramePreset(entry.kind, {
+                            frameAspectPreset: event.currentTarget.value as FrameAspectPreset,
+                          })
+                        }
+                      >
+                        {FRAME_ASPECT_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.value}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="tool-button responsive-camera-card__save"
+                      onClick={() => saveCurrentCameraToResponsivePreset(entry.kind)}
+                    >
+                      Save current camera
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   )

@@ -15,7 +15,9 @@ import {
   getGodRaysDustStrengthValue,
   useEditorStore,
   type ExtraLightType,
+  type FrameAspectPreset,
   type MaterialTextureSlot,
+  type ResponsiveFramePresetKind,
 } from '../store/editorStore'
 import type { PublishedSceneV2 } from '../features/publish/buildPublishedScene'
 
@@ -47,6 +49,66 @@ function getPublishedPlayerBackgroundOverride() {
 
   const normalized = value.startsWith('#') ? value : `#${value}`
   return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : null
+}
+
+type PublishedCameraState = {
+  cameraPosition: [number, number, number]
+  orbitTarget: [number, number, number]
+  focalLength: number
+  frameAspectPreset: FrameAspectPreset
+}
+
+const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameAspectPreset> = {
+  landscape: '16:9',
+  portrait: '9:16',
+  square: '1:1',
+}
+
+function isFrameAspectPreset(value: string | null | undefined): value is FrameAspectPreset {
+  return value === '1:1' || value === '3:2' || value === '2:3' || value === '16:9' || value === '9:16'
+}
+
+function isVector3(value: unknown): value is [number, number, number] {
+  return Array.isArray(value) && value.length === 3 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+}
+
+function resolvePublishedResponsivePresetKind(containerAspect: number): ResponsiveFramePresetKind {
+  if (containerAspect > 1.2) {
+    return 'landscape'
+  }
+
+  if (containerAspect < 0.85) {
+    return 'portrait'
+  }
+
+  return 'square'
+}
+
+function resolvePublishedCameraState(
+  scene: PublishedSceneV2,
+  responsivePresetKind: ResponsiveFramePresetKind | null,
+): PublishedCameraState {
+  const fixedCameraState: PublishedCameraState = {
+    cameraPosition: isVector3(scene.camera.position) ? scene.camera.position : [0, 0, 5],
+    orbitTarget: isVector3(scene.camera.target) ? scene.camera.target : [0, 0, 0],
+    focalLength: Number.isFinite(scene.camera.focalLength) ? scene.camera.focalLength : 20,
+    frameAspectPreset: isFrameAspectPreset(scene.camera.frameAspectPreset) ? scene.camera.frameAspectPreset : '1:1',
+  }
+
+  if (!scene.responsiveFrame?.enabled || !responsivePresetKind) {
+    return fixedCameraState
+  }
+
+  const responsivePreset = scene.responsiveFrame[responsivePresetKind]
+
+  return {
+    cameraPosition: isVector3(responsivePreset?.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
+    orbitTarget: isVector3(responsivePreset?.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
+    focalLength: Number.isFinite(responsivePreset?.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
+    frameAspectPreset: isFrameAspectPreset(responsivePreset?.frameAspectPreset)
+      ? responsivePreset.frameAspectPreset
+      : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
+  }
 }
 
 type RuntimePublishedMaterial = THREE.Material & {
@@ -123,9 +185,11 @@ async function loadPublishedEnvironmentTexture(url: string, label: string | null
 
 function PublishedSceneController({
   scene,
+  publishedCameraState,
   transparentBackground,
 }: {
   scene: PublishedSceneV2
+  publishedCameraState: PublishedCameraState
   transparentBackground: boolean
 }) {
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
@@ -198,12 +262,6 @@ function PublishedSceneController({
     setBackgroundRotation(scene.scene.background.rotation)
     setViewer({
       cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
-      cameraPosition: scene.camera.position,
-      orbitTarget: scene.camera.target,
-      resetCameraPosition: scene.camera.position,
-      resetOrbitTarget: scene.camera.target,
-      focalLength: scene.camera.focalLength,
-      frameAspectPreset: (scene.camera.frameAspectPreset || '1:1') as never,
       frameGuidesEnabled: false,
       exposure: scene.camera.exposure,
       bloomIntensity: scene.viewer.bloomIntensity,
@@ -376,6 +434,18 @@ function PublishedSceneController({
     setViewer,
     transparentBackground,
   ])
+
+  useEffect(() => {
+    setViewer({
+      cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
+      cameraPosition: publishedCameraState.cameraPosition,
+      orbitTarget: publishedCameraState.orbitTarget,
+      resetCameraPosition: publishedCameraState.cameraPosition,
+      resetOrbitTarget: publishedCameraState.orbitTarget,
+      focalLength: publishedCameraState.focalLength,
+      frameAspectPreset: publishedCameraState.frameAspectPreset,
+    })
+  }, [publishedCameraState, scene.camera.mode, setViewer])
 
   useEffect(() => {
     if (requestedRef.current) {
@@ -614,11 +684,12 @@ function PublishedSceneController({
 
       setViewer({
         cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
-        cameraPosition: scene.camera.position,
-        orbitTarget: scene.camera.target,
-        resetCameraPosition: scene.camera.position,
-        resetOrbitTarget: scene.camera.target,
-        focalLength: scene.camera.focalLength,
+        cameraPosition: publishedCameraState.cameraPosition,
+        orbitTarget: publishedCameraState.orbitTarget,
+        resetCameraPosition: publishedCameraState.cameraPosition,
+        resetOrbitTarget: publishedCameraState.orbitTarget,
+        focalLength: publishedCameraState.focalLength,
+        frameAspectPreset: publishedCameraState.frameAspectPreset,
       })
       setSelectedObjectId(null)
       setSelectedMaterialId(null)
@@ -627,7 +698,7 @@ function PublishedSceneController({
       console.error(error)
       setStatus('Failed to apply published scene.')
     })
-  }, [addRotateAnimation, loadedModelCount, materials, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updateRotateAnimation, upsertMaterialEnvironment])
+  }, [addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updateRotateAnimation, upsertMaterialEnvironment])
 
   return null
 }
@@ -698,12 +769,54 @@ export function PublishedPlayerApp() {
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const [scene, setScene] = useState<PublishedSceneV2 | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const containerRef = useRef<HTMLElement | null>(null)
+  const [containerSize, setContainerSize] = useState(() => ({
+    width: Math.max(window.innerWidth, 1),
+    height: Math.max(window.innerHeight, 1),
+  }))
   const transparentBackground = isTransparentPublishedPlayer()
   const transparentCanvasDiagnostic = isTransparentCanvasDiagnostic()
   const transparentDomDiagnostic = isTransparentDomDiagnostic()
   const transparentRawThreeDiagnostic = isTransparentRawThreeDiagnostic()
   const transparentRawWebGlDiagnostic = isTransparentRawWebGlDiagnostic()
   const backgroundOverride = getPublishedPlayerBackgroundOverride()
+  const responsivePresetKind = useMemo(
+    () =>
+      scene?.responsiveFrame?.enabled
+        ? resolvePublishedResponsivePresetKind(containerSize.width / Math.max(containerSize.height, 1))
+        : null,
+    [containerSize.height, containerSize.width, scene],
+  )
+  const publishedCameraState = useMemo(
+    () => (scene ? resolvePublishedCameraState(scene, responsivePresetKind) : null),
+    [responsivePresetKind, scene],
+  )
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) {
+      return
+    }
+
+    const updateSize = () => {
+      const bounds = container.getBoundingClientRect()
+      setContainerSize({
+        width: Math.max(Math.round(bounds.width), 1),
+        height: Math.max(Math.round(bounds.height), 1),
+      })
+    }
+
+    updateSize()
+
+    const observer = new ResizeObserver(() => {
+      updateSize()
+    })
+    observer.observe(container)
+
+    return () => {
+      observer.disconnect()
+    }
+  }, [scene])
 
   useEffect(() => {
     if (transparentCanvasDiagnostic || transparentDomDiagnostic || transparentRawThreeDiagnostic || transparentRawWebGlDiagnostic) {
@@ -759,19 +872,24 @@ export function PublishedPlayerApp() {
 
   if (transparentCanvasDiagnostic) {
     return (
-      <main className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+      <main ref={containerRef} className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
         <TransparentCanvasDiagnostic />
       </main>
     )
   }
 
   if (transparentDomDiagnostic) {
-    return <TransparentDomDiagnostic />
+    return (
+      <main ref={containerRef} className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}>
+        <TransparentDomDiagnostic />
+      </main>
+    )
   }
 
   if (transparentRawThreeDiagnostic) {
     return (
       <main
+        ref={containerRef}
         className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
         style={backgroundOverride ? { background: backgroundOverride } : undefined}
       >
@@ -783,6 +901,7 @@ export function PublishedPlayerApp() {
   if (transparentRawWebGlDiagnostic) {
     return (
       <main
+        ref={containerRef}
         className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
         style={backgroundOverride ? { background: backgroundOverride } : undefined}
       >
@@ -792,17 +911,24 @@ export function PublishedPlayerApp() {
   }
 
   if (!scene) {
-    return <main className="published-player-error">Loading published scene...</main>
+    return <main ref={containerRef} className="published-player-error">Loading published scene...</main>
   }
 
   return (
     <main
+      ref={containerRef}
       className={`published-player-shell${transparentBackground ? ' published-player-shell--transparent' : ''}`}
       style={backgroundOverride ? { background: backgroundOverride } : undefined}
     >
       <AssetController />
       <BackgroundAudioController autoplay />
-      <PublishedSceneController scene={scene} transparentBackground={transparentBackground} />
+      {publishedCameraState ? (
+        <PublishedSceneController
+          scene={scene}
+          publishedCameraState={publishedCameraState}
+          transparentBackground={transparentBackground}
+        />
+      ) : null}
       <Viewport
         showChrome={false}
         allowSelection={false}
