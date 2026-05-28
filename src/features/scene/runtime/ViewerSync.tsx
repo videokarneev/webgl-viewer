@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
@@ -7,6 +7,7 @@ import { useEditorStore } from '../../../store/editorStore'
 export function ViewerSync({ controlsRef }: { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
   const viewer = useEditorStore((state) => state.viewer)
   const setViewer = useEditorStore((state) => state.setViewer)
+  const syncedControlsRef = useRef<OrbitControlsImpl | null>(null)
 
   useEffect(() => {
     if (!controlsRef.current) {
@@ -32,12 +33,18 @@ export function ViewerSync({ controlsRef }: { controlsRef: React.RefObject<Orbit
       perspectiveCamera.position.z,
     ]
 
+    const currentViewer = useEditorStore.getState().viewer
     const controls = controlsRef.current
+    if (controls && syncedControlsRef.current !== controls) {
+      controls.target.set(...currentViewer.orbitTarget)
+      controls.update()
+      syncedControlsRef.current = controls
+    }
+
     const nextOrbitTarget: [number, number, number] = controls
       ? [controls.target.x, controls.target.y, controls.target.z]
-      : [0, 0, 0]
+      : currentViewer.orbitTarget
 
-    const currentViewer = useEditorStore.getState().viewer
     if (
       currentViewer.cameraPosition[0] !== nextCameraPosition[0] ||
       currentViewer.cameraPosition[1] !== nextCameraPosition[1] ||

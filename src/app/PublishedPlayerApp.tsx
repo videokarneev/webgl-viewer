@@ -437,7 +437,23 @@ function PublishedSceneController({
       return
     }
 
-    if (!scene.materials.length || Object.keys(materials).length === 0) {
+    // Scenes that only contain baked effects like Stencil Volume have no model/material payload,
+    // so the published player must not wait forever for runtime materials that will never appear.
+    if (scene.materials.length > 0 && Object.keys(materials).length === 0) {
+      return
+    }
+
+    const allSceneObjectsMapped = scene.objects.every((objectEntry) =>
+      reversePublishIdMap.has(normalizePublishId(objectEntry.id)),
+    )
+    if (!allSceneObjectsMapped) {
+      return
+    }
+
+    const allSceneMaterialsMapped = scene.materials.every((materialEntry) =>
+      reversePublishIdMap.has(normalizePublishId(materialEntry.id)),
+    )
+    if (!allSceneMaterialsMapped) {
       return
     }
 
@@ -596,6 +612,14 @@ function PublishedSceneController({
         })
       }
 
+      setViewer({
+        cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
+        cameraPosition: scene.camera.position,
+        orbitTarget: scene.camera.target,
+        resetCameraPosition: scene.camera.position,
+        resetOrbitTarget: scene.camera.target,
+        focalLength: scene.camera.focalLength,
+      })
       setSelectedObjectId(null)
       setSelectedMaterialId(null)
       setStatus('Published scene ready.')
@@ -603,7 +627,7 @@ function PublishedSceneController({
       console.error(error)
       setStatus('Failed to apply published scene.')
     })
-  }, [addRotateAnimation, loadedModelCount, materials, reversePublishIdMap, scene, setStatus, updateMaterial, updateMaterialEffect, updateObjectTransform, updateRotateAnimation, upsertMaterialEnvironment])
+  }, [addRotateAnimation, loadedModelCount, materials, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updateRotateAnimation, upsertMaterialEnvironment])
 
   return null
 }

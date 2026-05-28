@@ -87,6 +87,12 @@ type ViewOrientationAnimation = {
   toTarget: THREE.Vector3
 }
 
+function unwrapAngleRadians(next: number, previous: number) {
+  const fullTurn = Math.PI * 2
+  const delta = THREE.MathUtils.euclideanModulo(next - previous + Math.PI, fullTurn) - Math.PI
+  return previous + delta
+}
+
 function getViewportFrameRect(width: number, height: number, aspect: number): ViewportFrameRect {
   const safeWidth = Math.max(width, 1)
   const safeHeight = Math.max(height, 1)
@@ -157,6 +163,7 @@ function ViewportOrientationCube({
   onFaceClick: (face: OrientationFace) => void
   onDragRotate: (deltaX: number, deltaY: number) => void
 }) {
+  const displayedEulerRef = useRef<[number, number, number] | null>(null)
   const dragStateRef = useRef<{
     pointerId: number
     x: number
@@ -166,8 +173,18 @@ function ViewportOrientationCube({
   const rotationStyle = useMemo(() => {
     const q = new THREE.Quaternion(quaternion[0], quaternion[1], quaternion[2], quaternion[3])
     const euler = new THREE.Euler().setFromQuaternion(q, 'YXZ')
+    const previousEuler = displayedEulerRef.current
+    const stabilizedEuler: [number, number, number] = previousEuler
+      ? [
+          unwrapAngleRadians(euler.x, previousEuler[0]),
+          unwrapAngleRadians(euler.y, previousEuler[1]),
+          unwrapAngleRadians(euler.z, previousEuler[2]),
+        ]
+      : [euler.x, euler.y, euler.z]
+
+    displayedEulerRef.current = stabilizedEuler
     return {
-      transform: `rotateX(${THREE.MathUtils.radToDeg(euler.x)}deg) rotateY(${THREE.MathUtils.radToDeg(euler.y)}deg) rotateZ(${-THREE.MathUtils.radToDeg(euler.z)}deg)`,
+      transform: `rotateX(${THREE.MathUtils.radToDeg(stabilizedEuler[0])}deg) rotateY(${THREE.MathUtils.radToDeg(stabilizedEuler[1])}deg) rotateZ(${-THREE.MathUtils.radToDeg(stabilizedEuler[2])}deg)`,
     } satisfies CSSProperties
   }, [quaternion])
 
@@ -693,9 +710,15 @@ function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitContr
 
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
+    const orbitTarget = new THREE.Vector3(...viewer.orbitTarget)
     perspectiveCamera.position.set(...viewer.cameraPosition)
+    perspectiveCamera.lookAt(orbitTarget)
     applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
-  }, [camera, viewer.cameraPosition, viewer.focalLength])
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(orbitTarget)
+      controlsRef.current.update()
+    }
+  }, [camera, controlsRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
   return <ViewerSync controlsRef={controlsRef} />
 }
@@ -1892,6 +1915,7 @@ export function Viewport({
   const [isTransformDragging, setIsTransformDragging] = useState(false)
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
+  const effectiveEnforceFrameAspect = enforceFrameAspect || viewer.frameGuidesEnabled
   const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
   const frameRect = useMemo(
     () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
@@ -2072,7 +2096,7 @@ export function Viewport({
       className={`viewport-wrap${transparentBackground ? ' viewport-wrap--transparent' : ''}`}
       style={viewportStyle}
     >
-      {enforceFrameAspect ? (
+      {effectiveEnforceFrameAspect ? (
         <div
           className={`viewport-stage${transparentBackground ? ' viewport-stage--transparent' : ''}`}
           style={frameStyle}
@@ -2174,7 +2198,7 @@ export function Viewport({
           />
         </Canvas>
       )}
-      {!enforceFrameAspect && viewer.frameGuidesEnabled ? (
+      {!effectiveEnforceFrameAspect && viewer.frameGuidesEnabled ? (
         <>
           <div className="viewport-frame-mask viewport-frame-mask--top" style={{ height: `${frameRect.top}px` }} />
           <div

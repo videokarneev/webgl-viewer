@@ -2466,6 +2466,9 @@ export function Sidebar() {
   const requestConfigImport = useEditorStore((state) => state.requestConfigImport)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
+  const setHud = useEditorStore((state) => state.setHud)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
   const [outlinerViewMode, setOutlinerViewMode] = useState<OutlinerViewMode>('layers')
 
@@ -2547,6 +2550,9 @@ export function Sidebar() {
 
   const handleRunPublishedScene = async () => {
     try {
+      setSelectedObjectId(null)
+      setSelectedMaterialId(null)
+      setHud({ transformMode: 'none' })
       const warnings = await openPublishedScenePreview()
       if (warnings.length) {
         setStatus(`Published preview opened with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
@@ -2562,13 +2568,29 @@ export function Sidebar() {
 
   const handleExportWebPackage = async () => {
     try {
-      const { warnings } = await exportWebPackage()
-      if (warnings.length) {
-        setStatus(`Web package exported with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
+      const result = await exportWebPackage()
+      if (result.destination === 'cancelled') {
+        setStatus('Web publish cancelled.')
         return
       }
 
-      setStatus('Web package exported.')
+      const successLabel =
+        result.sceneSlug
+          ? `Scene published to web as ${result.sceneSlug}.`
+          : 'Scene published to web.'
+
+      const warningLabel =
+        result.sceneSlug
+          ? `Scene published to web as ${result.sceneSlug} with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.`
+          : `Scene published to web with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.`
+
+      const { warnings } = result
+      if (warnings.length) {
+        setStatus(warningLabel)
+        return
+      }
+
+      setStatus(successLabel)
     } catch (error) {
       console.error(error)
       setStatus('Failed to export web package.')

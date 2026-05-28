@@ -22,8 +22,19 @@ type PackageAssetRecord = {
   relativePath: string
 }
 
+type PackagedAssetFile = PackageAssetRecord & {
+  blob: Blob
+}
+
 type PackageAssetSource = {
   assetUrl: string | null
+}
+
+type ExportWebPackageResult = {
+  warnings: string[]
+  destination: 'remote' | 'cancelled'
+  sceneSlug: string | null
+  relativeSceneUrl: string | null
 }
 
 function sanitizeSegment(value: string) {
@@ -161,10 +172,10 @@ function collectPackageAssetRequests(scene: PublishedSceneV2) {
 }
 
 async function buildPackageAssetMap(scene: PublishedSceneV2) {
-  const zip = new JSZip()
   const warnings: string[] = []
   const assetMap = new Map<string, string>()
   const usedRelativePaths = new Set<string>()
+  const files: PackagedAssetFile[] = []
   const requests = collectPackageAssetRequests(scene)
 
   for (const request of requests) {
@@ -182,7 +193,11 @@ async function buildPackageAssetMap(scene: PublishedSceneV2) {
 
     try {
       const blob = await fetchAssetBlob(request.url)
-      zip.file(relativePath, blob)
+      files.push({
+        url: request.url,
+        relativePath,
+        blob,
+      })
       assetMap.set(request.url, relativePath)
       usedRelativePaths.add(relativePath)
     } catch (error) {
@@ -191,7 +206,7 @@ async function buildPackageAssetMap(scene: PublishedSceneV2) {
     }
   }
 
-  return { zip, warnings, assetMap }
+  return { warnings, assetMap, files }
 }
 
 function rewriteSceneAssetUrls(scene: PublishedSceneV2, assetMap: Map<string, string>) {
@@ -223,6 +238,7 @@ function buildPackageReadme() {
     '',
     'Contents:',
     '- scene.json',
+    '- index.html',
     '- assets/... referenced by scene.json',
     '',
     'How to host:',
@@ -230,23 +246,91 @@ function buildPackageReadme() {
     '2. Keep scene.json and assets/ together.',
     '3. Open the viewer with:',
     '   https://your-viewer-host.example/?player=1&scene=https://your-cdn.example/path/to/scene.json',
+    '4. Or open the pretty scene URL:',
+    '   https://your-cdn.example/path/to/scene-folder/',
     '',
     'iframe example:',
     '<iframe src="https://your-viewer-host.example/?player=1&scene=https%3A%2F%2Fyour-cdn.example%2Fpath%2Fto%2Fscene.json" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>',
   ].join('\n')
 }
 
-export async function exportWebPackage(filename = 'scene-web-package.zip') {
+function buildPublishedSceneIndexHtml(sceneSlug: string) {
+  const title = `Scene ${sceneSlug}`
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${title}</title>
+    <meta http-equiv="refresh" content="0; url=/?player=1&scene=/scenes/${sceneSlug}/scene.json" />
+    <script>
+      const targetUrl = '/?player=1&scene=/scenes/${sceneSlug}/scene.json'
+      window.location.replace(targetUrl)
+    </script>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0d1116;
+        color: #d8e1ea;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      a { color: #9ecbff; }
+    </style>
+  </head>
+  <body>
+    <p>Opening scene <a href="/?player=1&scene=/scenes/${sceneSlug}/scene.json">${sceneSlug}</a>...</p>
+  </body>
+</html>
+`
+}
+
+async function fetchPublishedSceneCatalog() {
+  const response = await fetch('/__publish/scenes')
+  if (!response.ok) {
+    throw new Error(`Failed to load published scene catalog: ${response.status}`)
+  }
+
+  const payload = (await response.json()) as { scenes?: string[] }
+  return Array.isArray(payload.scenes) ? payload.scenes : []
+}
+
+async function publishWebPackageToRemote(sceneSlug: string, replace: boolean): Promise<ExportWebPackageResult> {
   const { scene, warnings: baseWarnings } = await buildPublishedScene()
   const sceneForPackage = clonePublishedScene(scene)
-  const { zip, warnings: packagingWarnings, assetMap } = await buildPackageAssetMap(sceneForPackage)
-
+  const { warnings: packagingWarnings, assetMap, files } = await buildPackageAssetMap(sceneForPackage)
   rewriteSceneAssetUrls(sceneForPackage, assetMap)
+  const zip = new JSZip()
+
+  files.forEach((file) => {
+    zip.file(file.relativePath, file.blob)
+  })
   zip.file('scene.json', JSON.stringify(sceneForPackage, null, 2))
+  zip.file('index.html', buildPublishedSceneIndexHtml(sceneSlug))
   zip.file('README.txt', buildPackageReadme())
 
   const archive = await zip.generateAsync({ type: 'blob' })
-  downloadBlob(filename, archive)
+  const response = await fetch(`/__publish/web-package?sceneSlug=${encodeURIComponent(sceneSlug)}&replace=${replace ? '1' : '0'}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/zip',
+    },
+    body: archive,
+  })
+
+  const payload = (await response.json().catch(() => null)) as
+    | {
+        message?: string
+        relativeSceneUrl?: string | null
+        pushed?: boolean
+      }
+    | null
+
+  if (!response.ok) {
+    throw new Error(payload?.message ?? `Failed to publish scene: ${response.status}`)
+  }
 
   const filteredBaseWarnings = baseWarnings.filter(
     (warning) => !warning.includes('publish asset packaging is not wired yet'),
@@ -254,5 +338,53 @@ export async function exportWebPackage(filename = 'scene-web-package.zip') {
 
   return {
     warnings: [...filteredBaseWarnings, ...packagingWarnings],
+    destination: 'remote',
+    sceneSlug,
+    relativeSceneUrl: payload?.relativeSceneUrl ?? `/scenes/${sceneSlug}/scene.json`,
   }
+}
+
+async function requestSceneTarget() {
+  const existingScenes = await fetchPublishedSceneCatalog()
+  const rawValue = window.prompt(
+    `Publish scene to GitHub as public/scenes/<name>.\nExisting scenes: ${existingScenes.join(', ') || 'none'}\nEnter a scene name.`,
+    'demo-02',
+  )
+
+  if (rawValue == null) {
+    return null
+  }
+
+  const trimmedValue = rawValue.trim()
+  if (!trimmedValue) {
+    return null
+  }
+
+  const sceneSlug = sanitizeSegment(trimmedValue)
+  const replace = existingScenes.includes(sceneSlug)
+    ? window.confirm(`Scene "${sceneSlug}" already exists on web. Replace it?`)
+    : false
+
+  if (existingScenes.includes(sceneSlug) && !replace) {
+    return null
+  }
+
+  return {
+    sceneSlug,
+    replace,
+  }
+}
+
+export async function exportWebPackage(_filename = 'scene-web-package.zip'): Promise<ExportWebPackageResult> {
+  const target = await requestSceneTarget()
+  if (!target) {
+    return {
+      warnings: [],
+      destination: 'cancelled',
+      sceneSlug: null,
+      relativeSceneUrl: null,
+    }
+  }
+
+  return publishWebPackageToRemote(target.sceneSlug, target.replace)
 }
