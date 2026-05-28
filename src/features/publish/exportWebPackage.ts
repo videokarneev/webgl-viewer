@@ -245,26 +245,44 @@ function buildPackageReadme() {
     '1. Upload the entire unzipped folder to a static host or CDN.',
     '2. Keep scene.json and assets/ together.',
     '3. Open the viewer with:',
-    '   https://your-viewer-host.example/?player=1&scene=https://your-cdn.example/path/to/scene.json',
+    '   https://your-viewer-host.example/?player=1&scene=https://your-cdn.example/path/to/scene.json&transparent=1',
     '4. Or open the pretty scene URL:',
     '   https://your-cdn.example/path/to/scene-folder/',
+    '   The pretty scene URL preserves query params and enables transparent mode automatically inside iframes.',
     '',
     'iframe example:',
-    '<iframe src="https://your-viewer-host.example/?player=1&scene=https%3A%2F%2Fyour-cdn.example%2Fpath%2Fto%2Fscene.json" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>',
+    '<iframe src="https://your-cdn.example/path/to/scene-folder/" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>',
   ].join('\n')
 }
 
 function buildPublishedSceneIndexHtml(sceneSlug: string) {
   const title = `Scene ${sceneSlug}`
+  const sceneUrl = `/scenes/${sceneSlug}/scene.json`
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${title}</title>
-    <meta http-equiv="refresh" content="0; url=/?player=1&scene=/scenes/${sceneSlug}/scene.json" />
+    <meta http-equiv="refresh" content="0; url=/?player=1&scene=${sceneUrl}&transparent=1" />
     <script>
-      const targetUrl = '/?player=1&scene=/scenes/${sceneSlug}/scene.json'
+      const sceneUrl = ${JSON.stringify(sceneUrl)}
+      const params = new URLSearchParams(window.location.search)
+      const isEmbedded = (() => {
+        try {
+          return window.self !== window.top
+        } catch {
+          return true
+        }
+      })()
+
+      params.set('player', '1')
+      params.set('scene', sceneUrl)
+      if (!params.has('transparent') && isEmbedded) {
+        params.set('transparent', '1')
+      }
+
+      const targetUrl = '/?' + params.toString() + window.location.hash
       window.location.replace(targetUrl)
     </script>
     <style>
@@ -281,7 +299,7 @@ function buildPublishedSceneIndexHtml(sceneSlug: string) {
     </style>
   </head>
   <body>
-    <p>Opening scene <a href="/?player=1&scene=/scenes/${sceneSlug}/scene.json">${sceneSlug}</a>...</p>
+    <p>Opening scene <a href="/?player=1&scene=${sceneUrl}&transparent=1">${sceneSlug}</a>...</p>
   </body>
 </html>
 `

@@ -4,9 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Scene demo-02</title>
-    <meta http-equiv="refresh" content="0; url=/?player=1&scene=/scenes/demo-02/scene.json" />
+    <meta http-equiv="refresh" content="0; url=/?player=1&scene=/scenes/demo-02/scene.json&transparent=1" />
     <script>
-      const targetUrl = '/?player=1&scene=/scenes/demo-02/scene.json'
+      const sceneUrl = "/scenes/demo-02/scene.json"
+      const params = new URLSearchParams(window.location.search)
+      const isEmbedded = (() => {
+        try {
+          return window.self !== window.top
+        } catch {
+          return true
+        }
+      })()
+
+      params.set('player', '1')
+      params.set('scene', sceneUrl)
+      if (!params.has('transparent') && isEmbedded) {
+        params.set('transparent', '1')
+      }
+
+      const targetUrl = '/?' + params.toString() + window.location.hash
       window.location.replace(targetUrl)
     </script>
     <style>
@@ -23,6 +39,6 @@
     </style>
   </head>
   <body>
-    <p>Opening scene <a href="/?player=1&scene=/scenes/demo-02/scene.json">demo-02</a>...</p>
+    <p>Opening scene <a href="/?player=1&scene=/scenes/demo-02/scene.json&transparent=1">demo-02</a>...</p>
   </body>
 </html>
