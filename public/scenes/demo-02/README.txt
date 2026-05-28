@@ -2,6 +2,7 @@ Web Package Export
 
 Contents:
 - scene.json
+- index.html
 - assets/... referenced by scene.json
 
 How to host:
@@ -9,6 +10,8 @@ How to host:
 2. Keep scene.json and assets/ together.
 3. Open the viewer with:
    https://your-viewer-host.example/?player=1&scene=https://your-cdn.example/path/to/scene.json
+4. Or open the pretty scene URL:
+   https://your-cdn.example/path/to/scene-folder/
 
 iframe example:
 <iframe src="https://your-viewer-host.example/?player=1&scene=https%3A%2F%2Fyour-cdn.example%2Fpath%2Fto%2Fscene.json" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>
