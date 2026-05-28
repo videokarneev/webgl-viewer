@@ -35,6 +35,42 @@ type ExportWebPackageResult = {
   destination: 'remote' | 'cancelled'
   sceneSlug: string | null
   relativeSceneUrl: string | null
+  prettySceneUrl: string | null
+  publicSceneUrl: string | null
+  deployOrigin: string | null
+  gitCommitSha: string | null
+  pushed: boolean
+}
+
+export type WebPublishDeploymentPhase =
+  | 'preparing'
+  | 'git-pushed'
+  | 'checking'
+  | 'ready'
+  | 'timeout'
+  | 'error'
+
+export type WebPublishDeploymentStatus = {
+  phase: WebPublishDeploymentPhase
+  message: string
+  sceneSlug: string | null
+  prettySceneUrl: string | null
+  publicSceneUrl: string | null
+  deployOrigin: string | null
+  gitCommitSha: string | null
+}
+
+type WebPublishStatusPayload = {
+  status?: 'pending' | 'ready' | 'error'
+  message?: string
+  deployOrigin?: string | null
+  publicSceneUrl?: string | null
+  prettySceneUrl?: string | null
+}
+
+type ExportWebPackageOptions = {
+  onDeploymentStatusChange?: (status: WebPublishDeploymentStatus) => void
+  signal?: AbortSignal
 }
 
 function sanitizeSegment(value: string) {
@@ -315,7 +351,135 @@ async function fetchPublishedSceneCatalog() {
   return Array.isArray(payload.scenes) ? payload.scenes : []
 }
 
-async function publishWebPackageToRemote(sceneSlug: string, replace: boolean): Promise<ExportWebPackageResult> {
+function emitWebPublishDeploymentStatus(
+  options: ExportWebPackageOptions | undefined,
+  status: WebPublishDeploymentStatus,
+) {
+  options?.onDeploymentStatusChange?.(status)
+}
+
+function createDeploymentStatusMessage(
+  phase: WebPublishDeploymentPhase,
+  sceneSlug: string,
+  gitCommitSha: string | null,
+  fallback?: string,
+) {
+  if (fallback) {
+    return fallback
+  }
+
+  if (phase === 'git-pushed') {
+    return gitCommitSha
+      ? `Scene "${sceneSlug}" pushed to GitHub as ${gitCommitSha}. Waiting for Vercel...`
+      : `Scene "${sceneSlug}" pushed to GitHub. Waiting for Vercel...`
+  }
+
+  if (phase === 'checking') {
+    return `Checking Vercel deployment for "${sceneSlug}"...`
+  }
+
+  if (phase === 'ready') {
+    return `Scene "${sceneSlug}" is live on Vercel.`
+  }
+
+  if (phase === 'timeout') {
+    return `Git push succeeded for "${sceneSlug}", but Vercel is still pending. Check Deployments in a minute.`
+  }
+
+  return `Failed to verify Vercel status for "${sceneSlug}".`
+}
+
+async function fetchWebPublishStatus(sceneSlug: string, signal?: AbortSignal) {
+  const response = await fetch(`/__publish/web-package-status?sceneSlug=${encodeURIComponent(sceneSlug)}`, {
+    signal,
+  })
+
+  const payload = (await response.json().catch(() => null)) as WebPublishStatusPayload | null
+  if (!response.ok) {
+    throw new Error(payload?.message ?? `Failed to check web publish status: ${response.status}`)
+  }
+
+  return payload ?? {}
+}
+
+function waitForWebPublishPolling(delayMs: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'))
+      return
+    }
+
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', abortListener)
+      resolve()
+    }, delayMs)
+
+    const abortListener = () => {
+      window.clearTimeout(timeout)
+      reject(new DOMException('Aborted', 'AbortError'))
+    }
+
+    signal?.addEventListener('abort', abortListener, { once: true })
+  })
+}
+
+async function monitorWebPublishDeployment(
+  sceneSlug: string,
+  result: Pick<ExportWebPackageResult, 'prettySceneUrl' | 'publicSceneUrl' | 'deployOrigin' | 'gitCommitSha' | 'pushed'>,
+  options?: ExportWebPackageOptions,
+) {
+  emitWebPublishDeploymentStatus(options, {
+    phase: 'git-pushed',
+    message: createDeploymentStatusMessage('git-pushed', sceneSlug, result.gitCommitSha),
+    sceneSlug,
+    prettySceneUrl: result.prettySceneUrl,
+    publicSceneUrl: result.publicSceneUrl,
+    deployOrigin: result.deployOrigin,
+    gitCommitSha: result.gitCommitSha,
+  })
+
+  const maxAttempts = 18
+  const initialDelayMs = result.pushed ? 2000 : 500
+  const retryDelayMs = 5000
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    await waitForWebPublishPolling(attempt === 0 ? initialDelayMs : retryDelayMs, options?.signal)
+
+    const payload = await fetchWebPublishStatus(sceneSlug, options?.signal)
+    const phase = payload.status === 'ready' ? 'ready' : payload.status === 'error' ? 'error' : 'checking'
+    const message = createDeploymentStatusMessage(phase, sceneSlug, result.gitCommitSha, payload.message)
+    const nextStatus: WebPublishDeploymentStatus = {
+      phase,
+      message,
+      sceneSlug,
+      prettySceneUrl: payload.prettySceneUrl ?? result.prettySceneUrl,
+      publicSceneUrl: payload.publicSceneUrl ?? result.publicSceneUrl,
+      deployOrigin: payload.deployOrigin ?? result.deployOrigin,
+      gitCommitSha: result.gitCommitSha,
+    }
+
+    emitWebPublishDeploymentStatus(options, nextStatus)
+    if (phase === 'ready' || phase === 'error') {
+      return
+    }
+  }
+
+  emitWebPublishDeploymentStatus(options, {
+    phase: 'timeout',
+    message: createDeploymentStatusMessage('timeout', sceneSlug, result.gitCommitSha),
+    sceneSlug,
+    prettySceneUrl: result.prettySceneUrl,
+    publicSceneUrl: result.publicSceneUrl,
+    deployOrigin: result.deployOrigin,
+    gitCommitSha: result.gitCommitSha,
+  })
+}
+
+async function publishWebPackageToRemote(
+  sceneSlug: string,
+  replace: boolean,
+  options?: ExportWebPackageOptions,
+): Promise<ExportWebPackageResult> {
   const { scene, warnings: baseWarnings } = await buildPublishedScene()
   const sceneForPackage = clonePublishedScene(scene)
   const { warnings: packagingWarnings, assetMap, files } = await buildPackageAssetMap(sceneForPackage)
@@ -342,6 +506,10 @@ async function publishWebPackageToRemote(sceneSlug: string, replace: boolean): P
     | {
         message?: string
         relativeSceneUrl?: string | null
+        prettySceneUrl?: string | null
+        publicSceneUrl?: string | null
+        deployOrigin?: string | null
+        gitCommitSha?: string | null
         pushed?: boolean
       }
     | null
@@ -354,12 +522,38 @@ async function publishWebPackageToRemote(sceneSlug: string, replace: boolean): P
     (warning) => !warning.includes('publish asset packaging is not wired yet'),
   )
 
-  return {
+  const result: ExportWebPackageResult = {
     warnings: [...filteredBaseWarnings, ...packagingWarnings],
     destination: 'remote',
     sceneSlug,
     relativeSceneUrl: payload?.relativeSceneUrl ?? `/scenes/${sceneSlug}/scene.json`,
+    prettySceneUrl: payload?.prettySceneUrl ?? null,
+    publicSceneUrl: payload?.publicSceneUrl ?? null,
+    deployOrigin: payload?.deployOrigin ?? null,
+    gitCommitSha: payload?.gitCommitSha ?? null,
+    pushed: payload?.pushed ?? true,
   }
+
+  void monitorWebPublishDeployment(sceneSlug, result, options).catch((error) => {
+    if ((error as { name?: string })?.name === 'AbortError') {
+      return
+    }
+
+    emitWebPublishDeploymentStatus(options, {
+      phase: 'error',
+      message:
+        error instanceof Error
+          ? `Failed to verify Vercel status for "${sceneSlug}": ${error.message}`
+          : `Failed to verify Vercel status for "${sceneSlug}".`,
+      sceneSlug,
+      prettySceneUrl: result.prettySceneUrl,
+      publicSceneUrl: result.publicSceneUrl,
+      deployOrigin: result.deployOrigin,
+      gitCommitSha: result.gitCommitSha,
+    })
+  })
+
+  return result
 }
 
 async function requestSceneTarget() {
@@ -393,7 +587,10 @@ async function requestSceneTarget() {
   }
 }
 
-export async function exportWebPackage(_filename = 'scene-web-package.zip'): Promise<ExportWebPackageResult> {
+export async function exportWebPackage(
+  _filename = 'scene-web-package.zip',
+  options?: ExportWebPackageOptions,
+): Promise<ExportWebPackageResult> {
   const target = await requestSceneTarget()
   if (!target) {
     return {
@@ -401,8 +598,13 @@ export async function exportWebPackage(_filename = 'scene-web-package.zip'): Pro
       destination: 'cancelled',
       sceneSlug: null,
       relativeSceneUrl: null,
+      prettySceneUrl: null,
+      publicSceneUrl: null,
+      deployOrigin: null,
+      gitCommitSha: null,
+      pushed: false,
     }
   }
 
-  return publishWebPackageToRemote(target.sceneSlug, target.replace)
+  return publishWebPackageToRemote(target.sceneSlug, target.replace, options)
 }

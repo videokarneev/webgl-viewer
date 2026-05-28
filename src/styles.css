@@ -1166,6 +1166,76 @@ button {
   overflow: hidden;
 }
 
+.web-publish-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(8, 10, 13, 0.94);
+}
+
+.web-publish-status--preparing,
+.web-publish-status--git-pushed,
+.web-publish-status--checking {
+  border-color: rgba(120, 194, 233, 0.18);
+  background:
+    linear-gradient(180deg, rgba(14, 26, 35, 0.96), rgba(8, 10, 13, 0.94));
+}
+
+.web-publish-status--ready {
+  border-color: rgba(102, 187, 106, 0.22);
+  background:
+    linear-gradient(180deg, rgba(12, 31, 20, 0.96), rgba(8, 10, 13, 0.94));
+}
+
+.web-publish-status--timeout,
+.web-publish-status--error {
+  border-color: rgba(220, 38, 38, 0.2);
+  background:
+    linear-gradient(180deg, rgba(40, 16, 16, 0.96), rgba(8, 10, 13, 0.94));
+}
+
+.web-publish-status__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.web-publish-status__eyebrow,
+.web-publish-status__meta {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(216, 229, 236, 0.62);
+}
+
+.web-publish-status__message {
+  margin: 0;
+  color: rgba(232, 242, 247, 0.86);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.web-publish-status__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.web-publish-status__actions a {
+  color: rgba(158, 203, 255, 0.92);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.web-publish-status__actions a:hover {
+  color: rgba(224, 239, 255, 0.96);
+}
+
 .outliner-panel {
   flex: 0 1 auto;
   min-height: 29vh;

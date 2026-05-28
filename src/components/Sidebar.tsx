@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
 import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
 import { downloadPublishedScene, openPublishedScenePreview } from '../features/publish/buildPublishedScene'
-import { exportWebPackage } from '../features/publish/exportWebPackage'
+import { exportWebPackage, type WebPublishDeploymentStatus } from '../features/publish/exportWebPackage'
 import { STANDARD_ENVIRONMENT_PRESETS } from '../features/environment/standardEnvironmentPresets'
 import {
   DEFAULT_STENCIL_VOLUME,
@@ -2530,6 +2530,9 @@ export function Sidebar() {
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
   const [outlinerViewMode, setOutlinerViewMode] = useState<OutlinerViewMode>('layers')
+  const [isWebPublishSubmitting, setIsWebPublishSubmitting] = useState(false)
+  const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
+  const webPublishAbortRef = useRef<AbortController | null>(null)
 
   const handleSidebarTabChange = (tab: SidebarTab) => {
     setActiveTab(tab)
@@ -2584,6 +2587,12 @@ export function Sidebar() {
     }
   }, [sceneGraph, selectedObjectId])
 
+  useEffect(() => {
+    return () => {
+      webPublishAbortRef.current?.abort()
+    }
+  }, [])
+
   const objectCount = useMemo(
     () => Object.values(sceneGraph).filter((node) => node.type !== 'material').length,
     [sceneGraph],
@@ -2626,33 +2635,68 @@ export function Sidebar() {
   }
 
   const handleExportWebPackage = async () => {
+    webPublishAbortRef.current?.abort()
+    const abortController = new AbortController()
+    webPublishAbortRef.current = abortController
+    setIsWebPublishSubmitting(true)
+    setWebPublishStatus({
+      phase: 'preparing',
+      message: 'Packaging scene for web publish...',
+      sceneSlug: null,
+      prettySceneUrl: null,
+      publicSceneUrl: null,
+      deployOrigin: null,
+      gitCommitSha: null,
+    })
+    setStatus('Packaging scene for web publish...')
+
     try {
-      const result = await exportWebPackage()
+      const result = await exportWebPackage('scene-web-package.zip', {
+        signal: abortController.signal,
+        onDeploymentStatusChange: (nextStatus) => {
+          setWebPublishStatus(nextStatus)
+          setStatus(nextStatus.message)
+        },
+      })
       if (result.destination === 'cancelled') {
+        setWebPublishStatus(null)
         setStatus('Web publish cancelled.')
+        return
+      }
+
+      const { warnings } = result
+      if (warnings.length) {
+        const warningLabel =
+          result.sceneSlug
+            ? `Scene published to web as ${result.sceneSlug} with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}. Waiting for Vercel...`
+            : `Scene published to web with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}. Waiting for Vercel...`
+        setStatus(warningLabel)
         return
       }
 
       const successLabel =
         result.sceneSlug
-          ? `Scene published to web as ${result.sceneSlug}.`
-          : 'Scene published to web.'
-
-      const warningLabel =
-        result.sceneSlug
-          ? `Scene published to web as ${result.sceneSlug} with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.`
-          : `Scene published to web with ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.`
-
-      const { warnings } = result
-      if (warnings.length) {
-        setStatus(warningLabel)
+          ? `Scene published to GitHub as ${result.sceneSlug}. Waiting for Vercel...`
+          : 'Scene published to GitHub. Waiting for Vercel...'
+      setStatus(successLabel)
+    } catch (error) {
+      if ((error as { name?: string })?.name === 'AbortError') {
         return
       }
 
-      setStatus(successLabel)
-    } catch (error) {
       console.error(error)
+      setWebPublishStatus({
+        phase: 'error',
+        message: 'Failed to export web package.',
+        sceneSlug: null,
+        prettySceneUrl: null,
+        publicSceneUrl: null,
+        deployOrigin: null,
+        gitCommitSha: null,
+      })
       setStatus('Failed to export web package.')
+    } finally {
+      setIsWebPublishSubmitting(false)
     }
   }
 
@@ -2720,15 +2764,41 @@ export function Sidebar() {
             <span className="tool-button__glyph">RUN</span>
             <span className="tool-button__label">Local</span>
           </button>
-          <button type="button" className="tool-button" onClick={() => void handleExportWebPackage()}>
+          <button
+            type="button"
+            className="tool-button"
+            onClick={() => void handleExportWebPackage()}
+            disabled={isWebPublishSubmitting}
+          >
             <span className="tool-button__glyph">WEB</span>
-            <span className="tool-button__label">Package</span>
+            <span className="tool-button__label">{isWebPublishSubmitting ? 'Publishing...' : 'Package'}</span>
           </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>
             <span className="tool-button__label">Reset Scene</span>
           </button>
         </section>
+        {webPublishStatus ? (
+          <section
+            className={`web-publish-status web-publish-status--${webPublishStatus.phase}`}
+            aria-live="polite"
+          >
+            <div className="web-publish-status__header">
+              <span className="web-publish-status__eyebrow">WEB Deploy</span>
+              {webPublishStatus.gitCommitSha ? (
+                <span className="web-publish-status__meta">git {webPublishStatus.gitCommitSha}</span>
+              ) : null}
+            </div>
+            <p className="web-publish-status__message">{webPublishStatus.message}</p>
+            {webPublishStatus.prettySceneUrl ? (
+              <div className="web-publish-status__actions">
+                <a href={webPublishStatus.prettySceneUrl} target="_blank" rel="noreferrer">
+                  Open live scene
+                </a>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">

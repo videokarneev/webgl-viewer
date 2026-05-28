@@ -8,6 +8,8 @@ import { defineConfig, type Plugin, type PreviewServer, type ViteDevServer } fro
 import react from '@vitejs/plugin-react'
 
 const execFileAsync = promisify(execFile)
+const DEFAULT_WEB_PUBLISH_DEPLOY_ORIGIN =
+  process.env.WEB_PUBLISH_DEPLOY_ORIGIN?.trim().replace(/\/+$/, '') || 'https://webgl-viewer-jet.vercel.app'
 
 function sanitizeSceneSlug(value: string) {
   return value
@@ -104,6 +106,11 @@ async function getCurrentGitBranch(rootDir: string) {
   return stdout.trim() || 'main'
 }
 
+async function getCurrentGitCommitShortSha(rootDir: string) {
+  const { stdout } = await runGit(rootDir, ['rev-parse', '--short', 'HEAD'])
+  return stdout.trim() || null
+}
+
 async function getStagedFiles(rootDir: string) {
   const { stdout } = await runGit(rootDir, ['diff', '--cached', '--name-only'])
   return stdout
@@ -122,6 +129,125 @@ async function hasStagedChangesForPath(rootDir: string, relativePath: string) {
       return true
     }
     throw error
+  }
+}
+
+function buildDeploySceneUrls(sceneSlug: string, deployOrigin: string) {
+  const normalizedOrigin = deployOrigin.replace(/\/+$/, '')
+  return {
+    deployOrigin: normalizedOrigin,
+    publicSceneUrl: `${normalizedOrigin}/scenes/${sceneSlug}/scene.json`,
+    prettySceneUrl: `${normalizedOrigin}/scenes/${sceneSlug}/`,
+  }
+}
+
+function canonicalizeJsonText(source: string) {
+  try {
+    return JSON.stringify(JSON.parse(source))
+  } catch {
+    return source.replace(/\r\n/g, '\n').trim()
+  }
+}
+
+function getPublishedSceneSchemaVersion(source: string) {
+  try {
+    const payload = JSON.parse(source) as { version?: unknown }
+    return typeof payload.version === 'number' ? payload.version : null
+  } catch {
+    return null
+  }
+}
+
+async function checkPublishedSceneDeployment(rootDir: string, sceneSlug: string, deployOrigin: string) {
+  const localScenePath = path.join(rootDir, 'public', 'scenes', sceneSlug, 'scene.json')
+  const { publicSceneUrl, prettySceneUrl } = buildDeploySceneUrls(sceneSlug, deployOrigin)
+
+  if (!(await pathExists(localScenePath))) {
+    return {
+      status: 'error' as const,
+      message: `Local scene "${sceneSlug}" does not exist.`,
+      deployOrigin,
+      publicSceneUrl,
+      prettySceneUrl,
+      localVersion: null,
+      remoteVersion: null,
+    }
+  }
+
+  const localSceneSource = await fs.readFile(localScenePath, 'utf8')
+  const localVersion = getPublishedSceneSchemaVersion(localSceneSource)
+  const remoteUrl = `${publicSceneUrl}?verify=${Date.now()}`
+
+  try {
+    const remoteResponse = await fetch(remoteUrl, {
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
+
+    if (remoteResponse.status === 404) {
+      return {
+        status: 'pending' as const,
+        message: `Vercel has not published "${sceneSlug}" yet.`,
+        deployOrigin,
+        publicSceneUrl,
+        prettySceneUrl,
+        localVersion,
+        remoteVersion: null,
+      }
+    }
+
+    if (!remoteResponse.ok) {
+      return {
+        status: 'pending' as const,
+        message: `Waiting for Vercel. Production scene check returned HTTP ${remoteResponse.status}.`,
+        deployOrigin,
+        publicSceneUrl,
+        prettySceneUrl,
+        localVersion,
+        remoteVersion: null,
+      }
+    }
+
+    const remoteSceneSource = await remoteResponse.text()
+    const remoteVersion = getPublishedSceneSchemaVersion(remoteSceneSource)
+    const matches = canonicalizeJsonText(localSceneSource) === canonicalizeJsonText(remoteSceneSource)
+
+    if (matches) {
+      return {
+        status: 'ready' as const,
+        message: `Scene "${sceneSlug}" is live on Vercel.`,
+        deployOrigin,
+        publicSceneUrl,
+        prettySceneUrl,
+        localVersion,
+        remoteVersion,
+      }
+    }
+
+    return {
+      status: 'pending' as const,
+      message:
+        remoteVersion == null
+          ? `Vercel is still serving a previous copy of "${sceneSlug}".`
+          : `Vercel is still serving a previous copy of "${sceneSlug}" (remote schema v${remoteVersion}, local v${localVersion ?? '?'}).`,
+      deployOrigin,
+      publicSceneUrl,
+      prettySceneUrl,
+      localVersion,
+      remoteVersion,
+    }
+  } catch {
+    return {
+      status: 'pending' as const,
+      message: `Waiting for Vercel to respond for "${sceneSlug}".`,
+      deployOrigin,
+      publicSceneUrl,
+      prettySceneUrl,
+      localVersion,
+      remoteVersion: null,
+    }
   }
 }
 
@@ -150,6 +276,7 @@ function createWebPublishPlugin(): Plugin {
       const scenesDir = path.join(rootDir, 'public', 'scenes')
       const targetDirectory = path.join(scenesDir, sceneSlug)
       const relativeSceneDirectory = path.posix.join('public', 'scenes', sceneSlug)
+      const deploySceneUrls = buildDeploySceneUrls(sceneSlug, DEFAULT_WEB_PUBLISH_DEPLOY_ORIGIN)
 
       if (!sceneSlug) {
         const result = createJsonResponse(400, { message: 'A scene name is required.' })
@@ -192,10 +319,13 @@ function createWebPublishPlugin(): Plugin {
 
         const hasChanges = await hasStagedChangesForPath(rootDir, relativeSceneDirectory)
         if (!hasChanges) {
+          const gitCommitSha = await getCurrentGitCommitShortSha(rootDir)
           const result = createJsonResponse(200, {
             message: `Scene "${sceneSlug}" is already up to date.`,
             relativeSceneUrl: `/scenes/${sceneSlug}/scene.json`,
             pushed: false,
+            gitCommitSha,
+            ...deploySceneUrls,
           })
           response.statusCode = result.statusCode
           Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
@@ -207,11 +337,14 @@ function createWebPublishPlugin(): Plugin {
         const commitMessage = `${replace ? 'Update' : 'Publish'} scene ${sceneSlug}`
         await runGit(rootDir, ['commit', '-m', commitMessage, '--', relativeSceneDirectory])
         await runGit(rootDir, ['push', 'origin', branch])
+        const gitCommitSha = await getCurrentGitCommitShortSha(rootDir)
 
         const result = createJsonResponse(200, {
           message: `Scene "${sceneSlug}" published to GitHub.`,
           relativeSceneUrl: `/scenes/${sceneSlug}/scene.json`,
           pushed: true,
+          gitCommitSha,
+          ...deploySceneUrls,
         })
         response.statusCode = result.statusCode
         Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
@@ -220,6 +353,37 @@ function createWebPublishPlugin(): Plugin {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Failed to publish scene.'
         const result = createJsonResponse(500, { message })
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      }
+    }
+
+    if (request.method === 'GET' && requestUrl.pathname === '/__publish/web-package-status') {
+      const rawSceneSlug = requestUrl.searchParams.get('sceneSlug') ?? ''
+      const sceneSlug = sanitizeSceneSlug(rawSceneSlug)
+
+      if (!sceneSlug) {
+        const result = createJsonResponse(400, { message: 'A scene name is required.' })
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      }
+
+      try {
+        const result = createJsonResponse(
+          200,
+          await checkPublishedSceneDeployment(rootDir, sceneSlug, DEFAULT_WEB_PUBLISH_DEPLOY_ORIGIN),
+        )
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to check Vercel publish status.'
+        const result = createJsonResponse(500, { status: 'error', message })
         response.statusCode = result.statusCode
         Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
         response.end(result.body)
