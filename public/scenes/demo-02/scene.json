@@ -24,14 +24,14 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.0026707040376091596,
-      4.530487193647097,
-      1.010295235152626
+      3.1899877663366674,
+      3.4983563470392425,
+      5.348995978707122
     ],
     "target": [
-      0.0006148678005601299,
-      0.9044170971614292,
-      0.844114152601981
+      -0.8100122336633337,
+      0.49835634703924303,
+      0.34899597870712196
     ],
     "focalLength": 20,
     "frameAspectPreset": "1:1",
@@ -137,7 +137,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [
     {
-      "id": "effect:stencil-volume:1:1780007306451",
+      "id": "effect:stencil-volume:1:1780008478380",
       "label": "Stencil Volume",
       "visible": true,
       "transform": {
@@ -2697,7 +2697,7 @@
   "model": null,
   "objects": [
     {
-      "id": "root:effect:stencil-volume:1:1780007306451",
+      "id": "root:effect:stencil-volume:1:1780008478380",
       "parentId": null,
       "type": "effect",
       "label": "Stencil Volume",
