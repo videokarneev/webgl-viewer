@@ -24,60 +24,60 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -0.015698247202933762,
-      1.6053371328178418,
-      2.9941986856536094
+      -0.07342836516999837,
+      1.4781838950110633,
+      4.731875792180395
     ],
     "target": [
-      -0.01569824720293379,
-      1.6053371328178416,
-      -0.28176501944857785
+      -0.07342836516999837,
+      1.478183895011063,
+      -0.20611458405328809
     ],
-    "focalLength": 20,
+    "focalLength": 50,
     "frameAspectPreset": "1:1",
     "exposure": 1
   },
   "responsiveFrame": {
-    "enabled": true,
+    "enabled": false,
     "landscape": {
       "frameAspectPreset": "16:9",
       "cameraPosition": [
-        0.0870717388185755,
-        1.5850926648762829,
-        3.5391578032395
+        4,
+        3,
+        5
       ],
       "orbitTarget": [
-        0.08707173881857547,
-        1.5850926648762826,
-        -0.28176501944857785
+        0,
+        0,
+        0
       ],
       "focalLength": 20
     },
     "portrait": {
       "frameAspectPreset": "9:16",
       "cameraPosition": [
-        -0.015698247202933762,
-        1.5329839440491317,
-        3.9519444793747738
+        4,
+        3,
+        5
       ],
       "orbitTarget": [
-        -0.01569824720293379,
-        1.5329839440491315,
-        -0.28176501944857785
+        0,
+        0,
+        0
       ],
       "focalLength": 20
     },
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        -0.015698247202933762,
-        1.6053371328178418,
-        2.9941986856536094
+        4,
+        3,
+        5
       ],
       "orbitTarget": [
-        -0.01569824720293379,
-        1.6053371328178416,
-        -0.28176501944857785
+        0,
+        0,
+        0
       ],
       "focalLength": 20
     }
@@ -137,7 +137,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [
     {
-      "id": "effect:stencil-volume:1:1780003909565",
+      "id": "effect:stencil-volume:1:1780007135718",
       "label": "Stencil Volume",
       "visible": true,
       "transform": {
@@ -2697,7 +2697,7 @@
   "model": null,
   "objects": [
     {
-      "id": "root:effect:stencil-volume:1:1780003909565",
+      "id": "root:effect:stencil-volume:1:1780007135718",
       "parentId": null,
       "type": "effect",
       "label": "Stencil Volume",
