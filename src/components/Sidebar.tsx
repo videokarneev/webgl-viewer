@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
-import { readSceneConfigFile } from '../features/config/readSceneConfigFile'
-import { downloadPublishedScene, openPublishedScenePreview } from '../features/publish/buildPublishedScene'
-import { exportWebPackage, type WebPublishDeploymentStatus } from '../features/publish/exportWebPackage'
+import { openPublishedScenePreview } from '../features/publish/buildPublishedScene'
+import {
+  exportWebPackage,
+  WEB_PUBLISH_STATUS_EVENT,
+  type WebPublishDeploymentStatus,
+} from '../features/publish/exportWebPackage'
 import { STANDARD_ENVIRONMENT_PRESETS } from '../features/environment/standardEnvironmentPresets'
 import {
   DEFAULT_STENCIL_VOLUME,
@@ -46,6 +49,7 @@ const FRAME_ASPECT_OPTIONS: Array<{ value: FrameAspectPreset; label: string }> =
   { value: '3:2', label: '3:2 Landscape' },
   { value: '2:3', label: '2:3 Portrait' },
   { value: '16:9', label: '16:9 Widescreen' },
+  { value: '21:9', label: '21:9 Cinema' },
   { value: '9:16', label: '9:16 Portrait' },
 ]
 const FOCAL_LENGTH_PRESETS = [10, 16, 20, 28, 35, 50, 85, 105]
@@ -64,6 +68,10 @@ const RESPONSIVE_FRAME_PRESET_META: Array<{ kind: ResponsiveFramePresetKind; tit
   { kind: 'square', title: 'Square / Fallback' },
 ]
 
+function broadcastWebPublishStatus(status: WebPublishDeploymentStatus | null) {
+  window.dispatchEvent(new CustomEvent<WebPublishDeploymentStatus | null>(WEB_PUBLISH_STATUS_EVENT, { detail: status }))
+}
+
 function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
   const dimensions =
     preset === '1:1'
@@ -74,7 +82,9 @@ function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
           ? { width: 12, height: 18 }
         : preset === '16:9'
           ? { width: 18, height: 10 }
-          : { width: 10, height: 18 }
+          : preset === '21:9'
+            ? { width: 18, height: 8 }
+            : { width: 10, height: 18 }
 
   const offsetX = (18 - dimensions.width) / 2
   const offsetY = (18 - dimensions.height) / 2
@@ -116,6 +126,18 @@ function getEnvironmentDisplayName(value: string | null | undefined, fallback: s
 
 function formatNumber(value: number, digits = 2) {
   return value.toFixed(digits)
+}
+
+function areNumbersClose(left: number, right: number, epsilon = 0.0001) {
+  return Math.abs(left - right) <= epsilon
+}
+
+function areVector3Close(left: [number, number, number], right: [number, number, number], epsilon = 0.0001) {
+  return (
+    areNumbersClose(left[0], right[0], epsilon) &&
+    areNumbersClose(left[1], right[1], epsilon) &&
+    areNumbersClose(left[2], right[2], epsilon)
+  )
 }
 
 function parseNumberInput(value: string) {
@@ -437,7 +459,6 @@ function CameraTabContent() {
   const viewer = useEditorStore((state) => state.viewer)
   const responsiveFrame = useEditorStore((state) => state.responsiveFrame)
   const setViewer = useEditorStore((state) => state.setViewer)
-  const setResponsiveFrameEnabled = useEditorStore((state) => state.setResponsiveFrameEnabled)
   const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
   const saveCurrentCameraToResponsivePreset = useEditorStore((state) => state.saveCurrentCameraToResponsivePreset)
 
@@ -520,51 +541,45 @@ function CameraTabContent() {
           <span>Show Frame Guides</span>
         </label>
         <div className="left-controls__group">
-          <span className="left-controls__label">Responsive Camera</span>
-          <label className="left-toggle">
-            <input
-              type="checkbox"
-              checked={responsiveFrame.enabled}
-              onChange={(event) => setResponsiveFrameEnabled(event.currentTarget.checked)}
-            />
-            <span>Enable Responsive Camera</span>
-          </label>
-          {responsiveFrame.enabled ? (
-            <div className="responsive-camera-grid">
-              {RESPONSIVE_FRAME_PRESET_META.map((entry) => {
-                const preset = responsiveFrame[entry.kind]
-                return (
-                  <div key={entry.kind} className="responsive-camera-card">
-                    <span className="sidebar-field-title">{entry.title}</span>
-                    <label className="left-select">
-                      <span>Format</span>
-                      <select
-                        value={preset.frameAspectPreset}
-                        onChange={(event) =>
-                          setResponsiveFramePreset(entry.kind, {
-                            frameAspectPreset: event.currentTarget.value as FrameAspectPreset,
-                          })
-                        }
-                      >
-                        {FRAME_ASPECT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="tool-button responsive-camera-card__save"
-                      onClick={() => saveCurrentCameraToResponsivePreset(entry.kind)}
+          <div className="responsive-camera-grid">
+            {RESPONSIVE_FRAME_PRESET_META.map((entry) => {
+              const preset = responsiveFrame[entry.kind]
+              const isCurrentViewSaved =
+                viewer.frameAspectPreset === preset.frameAspectPreset &&
+                areNumbersClose(viewer.focalLength, preset.focalLength) &&
+                areVector3Close(viewer.cameraPosition, preset.cameraPosition) &&
+                areVector3Close(viewer.orbitTarget, preset.orbitTarget)
+              return (
+                <div key={entry.kind} className="responsive-camera-card">
+                  <span className="sidebar-field-title">{entry.title}</span>
+                  <label className="left-select">
+                    <span>Format</span>
+                    <select
+                      value={preset.frameAspectPreset}
+                      onChange={(event) =>
+                        setResponsiveFramePreset(entry.kind, {
+                          frameAspectPreset: event.currentTarget.value as FrameAspectPreset,
+                        })
+                      }
                     >
-                      Save current camera
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
+                      {FRAME_ASPECT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className={`tool-button responsive-camera-card__save${isCurrentViewSaved ? ' is-saved' : ''}`}
+                    onClick={() => saveCurrentCameraToResponsivePreset(entry.kind)}
+                  >
+                    Save current camera
+                  </button>
+                </div>
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>
@@ -2522,7 +2537,6 @@ export function Sidebar() {
   const materials = useEditorStore((state) => state.materials)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
-  const requestConfigImport = useEditorStore((state) => state.requestConfigImport)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
   const setHud = useEditorStore((state) => state.setHud)
@@ -2531,7 +2545,6 @@ export function Sidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
   const [outlinerViewMode, setOutlinerViewMode] = useState<OutlinerViewMode>('layers')
   const [isWebPublishSubmitting, setIsWebPublishSubmitting] = useState(false)
-  const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
   const webPublishAbortRef = useRef<AbortController | null>(null)
 
   const handleSidebarTabChange = (tab: SidebarTab) => {
@@ -2599,22 +2612,6 @@ export function Sidebar() {
   )
 
   const glbInputRef = useRef<HTMLInputElement | null>(null)
-  const configInputRef = useRef<HTMLInputElement | null>(null)
-
-  const handlePublishScene = async () => {
-    try {
-      const warnings = await downloadPublishedScene()
-      if (warnings.length) {
-        setStatus(`Scene published with ${warnings.length} warning${warnings.length === 1 ? '' : 's'}.`)
-        return
-      }
-
-      setStatus('Scene JSON published.')
-    } catch (error) {
-      console.error(error)
-      setStatus('Failed to publish scene JSON.')
-    }
-  }
 
   const handleRunPublishedScene = async () => {
     try {
@@ -2639,7 +2636,7 @@ export function Sidebar() {
     const abortController = new AbortController()
     webPublishAbortRef.current = abortController
     setIsWebPublishSubmitting(true)
-    setWebPublishStatus({
+    broadcastWebPublishStatus({
       phase: 'preparing',
       message: 'Packaging scene for web publish...',
       sceneSlug: null,
@@ -2654,12 +2651,12 @@ export function Sidebar() {
       const result = await exportWebPackage('scene-web-package.zip', {
         signal: abortController.signal,
         onDeploymentStatusChange: (nextStatus) => {
-          setWebPublishStatus(nextStatus)
+          broadcastWebPublishStatus(nextStatus)
           setStatus(nextStatus.message)
         },
       })
       if (result.destination === 'cancelled') {
-        setWebPublishStatus(null)
+        broadcastWebPublishStatus(null)
         setStatus('Web publish cancelled.')
         return
       }
@@ -2685,16 +2682,17 @@ export function Sidebar() {
       }
 
       console.error(error)
-      setWebPublishStatus({
+      const message = error instanceof Error ? error.message : 'Failed to export web package.'
+      broadcastWebPublishStatus({
         phase: 'error',
-        message: 'Failed to export web package.',
+        message,
         sceneSlug: null,
         prettySceneUrl: null,
         publicSceneUrl: null,
         deployOrigin: null,
         gitCommitSha: null,
       })
-      setStatus('Failed to export web package.')
+      setStatus(message)
     } finally {
       setIsWebPublishSubmitting(false)
     }
@@ -2729,36 +2727,9 @@ export function Sidebar() {
               event.currentTarget.value = ''
             }}
           />
-          <input
-            ref={configInputRef}
-            className="hidden-input"
-            type="file"
-            accept=".json,application/json"
-            onChange={async (event) => {
-              const file = event.currentTarget.files?.[0]
-              if (!file) return
-              try {
-                const config = await readSceneConfigFile(file)
-                requestConfigImport({ config, label: file.name })
-              } catch (error) {
-                console.error(error)
-                setStatus(`Failed to import config: ${file.name}`)
-              } finally {
-                event.currentTarget.value = ''
-              }
-            }}
-          />
           <button type="button" className="tool-button" onClick={() => glbInputRef.current?.click()}>
             <span className="tool-button__glyph">GLB</span>
             <span className="tool-button__label">load GLB</span>
-          </button>
-          <button type="button" className="tool-button" onClick={() => configInputRef.current?.click()}>
-            <span className="tool-button__glyph">LOAD</span>
-            <span className="tool-button__label">config</span>
-          </button>
-          <button type="button" className="tool-button" onClick={handlePublishScene}>
-            <span className="tool-button__glyph">PUB</span>
-            <span className="tool-button__label">Publish</span>
           </button>
           <button type="button" className="tool-button" onClick={handleRunPublishedScene}>
             <span className="tool-button__glyph">RUN</span>
@@ -2778,27 +2749,6 @@ export function Sidebar() {
             <span className="tool-button__label">Reset Scene</span>
           </button>
         </section>
-        {webPublishStatus ? (
-          <section
-            className={`web-publish-status web-publish-status--${webPublishStatus.phase}`}
-            aria-live="polite"
-          >
-            <div className="web-publish-status__header">
-              <span className="web-publish-status__eyebrow">WEB Deploy</span>
-              {webPublishStatus.gitCommitSha ? (
-                <span className="web-publish-status__meta">git {webPublishStatus.gitCommitSha}</span>
-              ) : null}
-            </div>
-            <p className="web-publish-status__message">{webPublishStatus.message}</p>
-            {webPublishStatus.prettySceneUrl ? (
-              <div className="web-publish-status__actions">
-                <a href={webPublishStatus.prettySceneUrl} target="_blank" rel="noreferrer">
-                  Open live scene
-                </a>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
         <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">

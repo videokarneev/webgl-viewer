@@ -100,18 +100,19 @@ function applyFlipbookSlotOverride(
   atlasTexture: THREE.Texture | null,
   atlasFrameTexture: THREE.Texture | null,
 ) {
+  if (!materialState.effect.isAdded || !materialState.effect.enabled || !atlasTexture) {
+    restoreMaterialTextureSelections(material, materialState)
+    material.needsUpdate = true
+    return
+  }
+
+  if (!atlasFrameTexture) {
+    return
+  }
+
   restoreMaterialTextureSelections(material, materialState)
 
-  if (!materialState.effect.isAdded || !materialState.effect.enabled || !atlasTexture) {
-    material.needsUpdate = true
-    return
-  }
-
-  const overrideTexture = atlasFrameTexture ?? atlasTexture
-  if (!overrideTexture) {
-    material.needsUpdate = true
-    return
-  }
+  const overrideTexture = atlasFrameTexture
 
   if (materialState.effect.targetSlot === 'baseColor') {
     material.map = overrideTexture
@@ -130,6 +131,33 @@ function applyFlipbookSlotOverride(
   }
 
   material.needsUpdate = true
+}
+
+function hasFlipbookSlotOverride(
+  material: RuntimeMaterial,
+  materialState: {
+    effect: {
+      isAdded: boolean
+      enabled: boolean
+      targetSlot: 'emissive' | 'baseColor'
+    }
+  },
+  atlasTexture: THREE.Texture | null,
+  atlasFrameTexture: THREE.Texture | null,
+) {
+  if (!materialState.effect.isAdded || !materialState.effect.enabled || !atlasTexture) {
+    return false
+  }
+
+  if (!atlasFrameTexture) {
+    return false
+  }
+
+  const overrideTexture = atlasFrameTexture
+
+  return materialState.effect.targetSlot === 'baseColor'
+    ? material.map === overrideTexture
+    : material.emissiveMap === overrideTexture
 }
 
 export function MaterialEffectController() {
@@ -194,6 +222,17 @@ export function MaterialEffectController() {
     const material = store.runtime.materialById[activeMaterialId] as RuntimeMaterial | undefined
 
     if (!materialState || !material) {
+      return
+    }
+
+    if (
+      hasFlipbookSlotOverride(
+        material,
+        materialState,
+        store.runtimeTextures.atlasTexture,
+        store.runtimeTextures.atlasFrameTexture,
+      )
+    ) {
       return
     }
 

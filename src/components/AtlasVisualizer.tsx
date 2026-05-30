@@ -5,6 +5,7 @@ export function AtlasVisualizer({ materialId, embedded = false }: { materialId: 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const atlasTexture = useEditorStore((state) => state.runtimeTextures.atlasTexture)
   const effect = useEditorStore((state) => state.materials[materialId]?.effect)
+  const previewFrame = useEditorStore((state) => state.runtime.materialEffectPreviewFrameById[materialId] ?? null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -37,8 +38,9 @@ export function AtlasVisualizer({ materialId, embedded = false }: { materialId: 
     const rows = Math.max(1, effect.gridY)
     const cellWidth = width / columns
     const cellHeight = height / rows
+    const displayedFrame = effect.play ? (previewFrame ?? effect.currentFrame) : effect.currentFrame
     const activeFrame = Math.min(
-      Math.max(0, effect.currentFrame),
+      Math.max(0, displayedFrame),
       Math.max(0, Math.min(effect.frameCount, columns * rows) - 1),
     )
     const activeColumn =
@@ -70,7 +72,7 @@ export function AtlasVisualizer({ materialId, embedded = false }: { materialId: 
     ctx.strokeStyle = '#9bd3f0'
     ctx.lineWidth = 2
     ctx.strokeRect(activeColumn * cellWidth + 1, activeRow * cellHeight + 1, cellWidth - 2, cellHeight - 2)
-  }, [atlasTexture, effect])
+  }, [atlasTexture, effect, previewFrame])
 
   if (!effect || !atlasTexture) {
     return null
@@ -82,7 +84,7 @@ export function AtlasVisualizer({ materialId, embedded = false }: { materialId: 
         <div>
           {!embedded ? <p className="atlas-visualizer__eyebrow">Animated Overlay</p> : null}
           <p className="atlas-visualizer__meta">
-            Frame {effect.currentFrame + 1} / {Math.max(1, effect.frameCount)}
+            Frame {(effect.play ? (previewFrame ?? effect.currentFrame) : effect.currentFrame) + 1} / {Math.max(1, effect.frameCount)}
           </p>
         </div>
       </div>

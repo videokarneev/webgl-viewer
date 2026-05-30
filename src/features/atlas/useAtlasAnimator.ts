@@ -4,6 +4,16 @@ import * as THREE from 'three'
 import { useEditorStore } from '../../store/editorStore'
 import { ensureFrameTextureOptions } from './atlasTextureOptions'
 
+type RuntimeFlipbookMaterial = THREE.Material & {
+  needsUpdate: boolean
+  map?: THREE.Texture | null
+  emissiveMap?: THREE.Texture | null
+  emissive?: THREE.Color
+  userData: THREE.Material['userData'] & {
+    flipbookOriginalEmissiveHex?: number
+  }
+}
+
 function getFrameCoordinates(index: number, gridX: number, gridY: number, order: 'row' | 'column') {
   const columns = Math.max(1, gridX)
   const rows = Math.max(1, gridY)
@@ -28,14 +38,48 @@ function getFrameCellSize(imageWidth: number, imageHeight: number, columns: numb
   }
 }
 
+function syncRuntimeFlipbookTexture(materialId: string, targetSlot: 'emissive' | 'baseColor', texture: THREE.Texture) {
+  const material = useEditorStore.getState().runtime.materialById[materialId] as RuntimeFlipbookMaterial | undefined
+  if (!material) {
+    return
+  }
+
+  if (targetSlot === 'baseColor') {
+    if (material.map !== texture) {
+      material.map = texture
+      material.needsUpdate = true
+    }
+    return
+  }
+
+  if (material.emissive) {
+    if (material.userData.flipbookOriginalEmissiveHex == null) {
+      material.userData.flipbookOriginalEmissiveHex = material.emissive.getHex()
+    }
+
+    if (material.emissive.getHex() === 0x000000) {
+      material.emissive.setHex(0xffffff)
+    }
+  }
+
+  if (material.emissiveMap !== texture) {
+    material.emissiveMap = texture
+    material.needsUpdate = true
+  }
+}
+
 export function useAtlasAnimator(materialId: string | null) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const frameTextureRef = useRef<THREE.CanvasTexture | null>(null)
+  const lastAtlasTextureRef = useRef<THREE.Texture | null>(null)
   const lastFrameRef = useRef(-1)
   const playbackFrameRef = useRef(0)
+  const lastCommittedFrameRef = useRef<number | null>(null)
   const accumulatedTimeRef = useRef(0)
   const wasPlayingRef = useRef(false)
+  const atlasTexture = useEditorStore((state) => state.runtimeTextures.atlasTexture)
   const setAtlasFrameTexture = useEditorStore((state) => state.setAtlasFrameTexture)
+  const setMaterialEffectPreviewFrame = useEditorStore((state) => state.setMaterialEffectPreviewFrame)
 
   const refresh = useMemo(
     () => (requestedFrame?: number) => {
@@ -78,8 +122,23 @@ export function useAtlasAnimator(materialId: string | null) {
       }
 
       const canvas = canvasRef.current
-      canvas.width = outputWidth
-      canvas.height = outputHeight
+      const frameTextureNeedsRecreate =
+        Boolean(frameTextureRef.current) && (canvas.width !== outputWidth || canvas.height !== outputHeight)
+
+      if (frameTextureNeedsRecreate && frameTextureRef.current) {
+        if (store.runtimeTextures.atlasFrameTexture === frameTextureRef.current) {
+          setAtlasFrameTexture(null)
+        }
+        frameTextureRef.current.dispose()
+        frameTextureRef.current = null
+      }
+
+      if (canvas.width !== outputWidth) {
+        canvas.width = outputWidth
+      }
+      if (canvas.height !== outputHeight) {
+        canvas.height = outputHeight
+      }
 
       const ctx = canvas.getContext('2d')
       if (!ctx) {
@@ -107,15 +166,11 @@ export function useAtlasAnimator(materialId: string | null) {
       }
 
       if (effectOpacity < 0.999) {
-        const imageData = ctx.getImageData(0, 0, outputWidth, outputHeight)
-        const { data } = imageData
-        for (let index = 0; index < data.length; index += 4) {
-          data[index] = Math.round(data[index] * effectOpacity)
-          data[index + 1] = Math.round(data[index + 1] * effectOpacity)
-          data[index + 2] = Math.round(data[index + 2] * effectOpacity)
-          data[index + 3] = Math.round(data[index + 3] * effectOpacity)
-        }
-        ctx.putImageData(imageData, 0, 0)
+        ctx.save()
+        ctx.globalCompositeOperation = 'destination-in'
+        ctx.globalAlpha = effectOpacity
+        ctx.fillRect(0, 0, outputWidth, outputHeight)
+        ctx.restore()
       }
 
       if (!frameTextureRef.current) {
@@ -124,20 +179,37 @@ export function useAtlasAnimator(materialId: string | null) {
 
       ensureFrameTextureOptions(frameTextureRef.current, effect.wrapMode)
       frameTextureRef.current.needsUpdate = true
-      setAtlasFrameTexture(frameTextureRef.current)
+      if (store.runtimeTextures.atlasFrameTexture !== frameTextureRef.current) {
+        setAtlasFrameTexture(frameTextureRef.current)
+      }
+      syncRuntimeFlipbookTexture(materialId, effect.targetSlot, frameTextureRef.current)
       return frameTextureRef.current
     },
     [materialId, setAtlasFrameTexture],
   )
 
   useEffect(() => {
-    refresh()
-    return () => {
-      frameTextureRef.current?.dispose()
+    if (lastAtlasTextureRef.current !== atlasTexture) {
       frameTextureRef.current = null
       setAtlasFrameTexture(null)
+      lastAtlasTextureRef.current = atlasTexture
     }
-  }, [refresh, setAtlasFrameTexture])
+
+    refresh()
+  }, [atlasTexture, refresh, setAtlasFrameTexture])
+
+  useEffect(() => {
+    return () => {
+      if (frameTextureRef.current) {
+        frameTextureRef.current.dispose()
+        frameTextureRef.current = null
+      }
+      setAtlasFrameTexture(null)
+      if (materialId) {
+        setMaterialEffectPreviewFrame(materialId, null)
+      }
+    }
+  }, [materialId, refresh, setAtlasFrameTexture, setMaterialEffectPreviewFrame])
 
   useFrame((_, delta) => {
     if (!materialId) {
@@ -185,15 +257,23 @@ export function useAtlasAnimator(materialId: string | null) {
           : Math.min(playbackFrameRef.current + blendAlpha, frameCount - 1)
         : playbackFrameRef.current
 
-      const nextDiscreteFrame = Math.floor(playbackFrameRef.current)
-      if (nextDiscreteFrame !== lastFrameRef.current) {
-        lastFrameRef.current = nextDiscreteFrame
-        useEditorStore.getState().updateMaterialEffect(materialId, { currentFrame: nextDiscreteFrame })
-      }
+      const nextPreviewFrame = Math.floor(playbackFrameRef.current)
+      lastFrameRef.current = nextPreviewFrame
+      setMaterialEffectPreviewFrame(materialId, nextPreviewFrame)
     } else {
+      if (wasPlayingRef.current) {
+        const committedFrame = Math.floor(playbackFrameRef.current)
+        if (committedFrame !== lastCommittedFrameRef.current) {
+          lastCommittedFrameRef.current = committedFrame
+          useEditorStore.getState().updateMaterialEffect(materialId, { currentFrame: committedFrame })
+        }
+      }
+
       playbackFrameRef.current = effect.currentFrame
       accumulatedTimeRef.current = 0
       lastFrameRef.current = effect.currentFrame
+      lastCommittedFrameRef.current = effect.currentFrame
+      setMaterialEffectPreviewFrame(materialId, effect.currentFrame)
     }
 
     wasPlayingRef.current = effect.play

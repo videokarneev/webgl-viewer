@@ -6,7 +6,6 @@ import * as THREE from 'three'
 import { useEditorStore } from '../../../store/editorStore'
 
 const gltfLoader = new GLTFLoader()
-const textureLoader = new THREE.TextureLoader()
 const rgbeLoader = new RGBELoader()
 const exrLoader = new EXRLoader()
 
@@ -18,7 +17,47 @@ export function loadGltf(url: string) {
 
 export function loadTexture(url: string) {
   return new Promise<THREE.Texture>((resolve, reject) => {
-    textureLoader.load(url, resolve, undefined, reject)
+    const image = new Image()
+    let settled = false
+
+    const finalize = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      const texture = new THREE.Texture(image)
+      texture.needsUpdate = true
+      resolve(texture)
+    }
+
+    image.decoding = 'async'
+    if (!url.startsWith('blob:') && !url.startsWith('data:')) {
+      image.crossOrigin = 'anonymous'
+    }
+
+    image.onload = () => {
+      if (typeof image.decode === 'function') {
+        image
+          .decode()
+          .catch(() => {})
+          .finally(finalize)
+        return
+      }
+
+      finalize()
+    }
+
+    image.onerror = () => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      reject(new Error(`Failed to load texture: ${url}`))
+    }
+
+    image.src = url
   })
 }
 
