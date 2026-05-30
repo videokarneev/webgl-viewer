@@ -19,6 +19,7 @@ import { MaterialEffectController } from './MaterialEffectController'
 import { SceneAnimationController } from './SceneAnimationController'
 import { TransformToolbar } from './TransformToolbar'
 import { ViewportHud } from './ViewportHud'
+import { WEB_PUBLISH_STATUS_EVENT, type WebPublishDeploymentStatus } from '../features/publish/exportWebPackage'
 import { GodRaysBoxes } from './viewport/effects/GodRaysBoxes'
 import { StencilVolumes } from './viewport/effects/StencilVolumes'
 import { FlightController } from './viewport/FlightController'
@@ -67,6 +68,27 @@ const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
   '16:9': 16 / 9,
   '21:9': 21 / 9,
   '9:16': 9 / 16,
+}
+
+function buildIframeEmbedCode(url: string) {
+  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>`
+}
+
+async function copyTextToClipboard(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+    return
+  }
+
+  const textArea = document.createElement('textarea')
+  textArea.value = value
+  textArea.setAttribute('readonly', 'true')
+  textArea.style.position = 'fixed'
+  textArea.style.opacity = '0'
+  document.body.appendChild(textArea)
+  textArea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textArea)
 }
 
 type ViewportFrameRect = {
@@ -1916,6 +1938,8 @@ export function Viewport({
   const [isTransformDragging, setIsTransformDragging] = useState(false)
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
+  const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
+  const [webPublishCopyFeedback, setWebPublishCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle')
   const effectiveEnforceFrameAspect = enforceFrameAspect || viewer.frameGuidesEnabled
   const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
   const frameRect = useMemo(
@@ -1948,6 +1972,23 @@ export function Viewport({
     [transparentBackground],
   )
   const clearColor = showChrome ? EDITOR_CLEAR_COLOR : 0x000000
+  const webPublishEmbedUrl = webPublishStatus?.prettySceneUrl ?? webPublishStatus?.publicSceneUrl ?? null
+  const webPublishIframeCode = webPublishEmbedUrl ? buildIframeEmbedCode(webPublishEmbedUrl) : null
+
+  useEffect(() => {
+    const handleWebPublishStatus = (event: Event) => {
+      setWebPublishStatus((event as CustomEvent<WebPublishDeploymentStatus | null>).detail ?? null)
+    }
+
+    window.addEventListener(WEB_PUBLISH_STATUS_EVENT, handleWebPublishStatus as EventListener)
+    return () => {
+      window.removeEventListener(WEB_PUBLISH_STATUS_EVENT, handleWebPublishStatus as EventListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    setWebPublishCopyFeedback('idle')
+  }, [webPublishIframeCode])
 
   useEffect(() => {
     setIsTransformDragging(false)
@@ -2235,6 +2276,70 @@ export function Viewport({
       ) : null}
       {showChrome ? <PerformanceStats /> : null}
       {showChrome ? <ViewportHud onResetCamera={() => resetCameraRef.current()} /> : null}
+      {showChrome && webPublishStatus ? (
+        <div className="viewport-web-publish-layer" onPointerDown={() => setWebPublishStatus(null)}>
+          <section
+            className={`web-publish-status web-publish-status--${webPublishStatus.phase} web-publish-status--floating`}
+            aria-live="polite"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="web-publish-status__header">
+              <span className="web-publish-status__eyebrow">WEB Deploy</span>
+              <div className="web-publish-status__header-right">
+                {webPublishStatus.gitCommitSha ? (
+                  <span className="web-publish-status__meta">git {webPublishStatus.gitCommitSha}</span>
+                ) : null}
+                <button
+                  type="button"
+                  className="web-publish-status__close"
+                  aria-label="Close web deploy status"
+                  onClick={() => setWebPublishStatus(null)}
+                >
+                  x
+                </button>
+              </div>
+            </div>
+            <p className="web-publish-status__message">{webPublishStatus.message}</p>
+            {webPublishStatus.prettySceneUrl ? (
+              <div className="web-publish-status__actions">
+                <a href={webPublishStatus.prettySceneUrl} target="_blank" rel="noreferrer">
+                  Open live scene
+                </a>
+              </div>
+            ) : null}
+            {webPublishIframeCode ? (
+              <div className="web-publish-status__embed">
+                <div className="web-publish-status__embed-header">
+                  <span className="web-publish-status__eyebrow">Iframe</span>
+                  <button
+                    type="button"
+                    className="web-publish-status__copy"
+                    onClick={() => {
+                      void copyTextToClipboard(webPublishIframeCode)
+                        .then(() => {
+                          setWebPublishCopyFeedback('copied')
+                        })
+                        .catch(() => {
+                          setWebPublishCopyFeedback('error')
+                        })
+                    }}
+                  >
+                    {webPublishCopyFeedback === 'copied'
+                      ? 'Copied'
+                      : webPublishCopyFeedback === 'error'
+                        ? 'Copy failed'
+                        : 'Copy iframe'}
+                  </button>
+                </div>
+                <pre className="web-publish-status__code">
+                  <code>{webPublishIframeCode}</code>
+                </pre>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
       {!isZenMode && showChrome ? (
         <div className="viewport-toggle-bar">
           {!hud.sidebarVisible ? (
