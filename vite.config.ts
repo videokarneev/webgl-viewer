@@ -11,6 +11,19 @@ const execFileAsync = promisify(execFile)
 const DEFAULT_WEB_PUBLISH_DEPLOY_ORIGIN =
   process.env.WEB_PUBLISH_DEPLOY_ORIGIN?.trim().replace(/\/+$/, '') || 'https://webgl-viewer-jet.vercel.app'
 
+function getNpmExecutable() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+}
+
+function summarizeCommandOutput(output: string, maxLines = 18) {
+  return output
+    .split(/\r?\n/)
+    .map((line: string) => line.trimEnd())
+    .filter(Boolean)
+    .slice(-maxLines)
+    .join('\n')
+}
+
 function sanitizeSceneSlug(value: string) {
   return value
     .toLowerCase()
@@ -99,6 +112,22 @@ async function unzipIntoDirectory(zipBuffer: Buffer, targetDirectory: string) {
 
 async function runGit(rootDir: string, args: string[]) {
   return execFileAsync('git', args, { cwd: rootDir })
+}
+
+async function runProductionBuildCheck(rootDir: string) {
+  try {
+    await execFileAsync(getNpmExecutable(), ['run', 'build'], { cwd: rootDir })
+  } catch (error) {
+    const failure = error as { stdout?: string; stderr?: string; message?: string }
+    const details = summarizeCommandOutput(`${failure.stdout ?? ''}\n${failure.stderr ?? ''}`)
+    throw new Error(
+      details
+        ? `WEB publish stopped because production build failed.\n${details}`
+        : failure.message
+          ? `WEB publish stopped because production build failed.\n${failure.message}`
+          : 'WEB publish stopped because production build failed.',
+    )
+  }
 }
 
 async function getCurrentGitBranch(rootDir: string) {
@@ -287,6 +316,8 @@ function createWebPublishPlugin(): Plugin {
       }
 
       try {
+        await runProductionBuildCheck(rootDir)
+
         const exists = await pathExists(targetDirectory)
         if (exists && !replace) {
           const result = createJsonResponse(409, {
