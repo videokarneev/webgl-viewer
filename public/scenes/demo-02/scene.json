@@ -26,7 +26,7 @@
     "position": [
       -0.002041188227824348,
       1.5817127430588735,
-      9.496630971633605
+      11.09680866495035
     ],
     "target": [
       -0.002041188227824348,
@@ -34,7 +34,7 @@
       -0.12266683595583627
     ],
     "focalLength": 85,
-    "frameAspectPreset": "9:16",
+    "frameAspectPreset": "21:9",
     "exposure": 1
   },
   "responsiveFrame": {
@@ -43,7 +43,7 @@
       "cameraPosition": [
         -0.002041188227824348,
         1.5817127430588735,
-        10.535834889905047
+        11.09680866495035
       ],
       "orbitTarget": [
         -0.002041188227824348,
@@ -2660,7 +2660,7 @@
         "endScaleY": 1
       },
       "rays": {
-        "color": "#ff0000",
+        "color": "#0008ff",
         "intensity": 1.2,
         "falloff": 1.4,
         "edgeFade": 0.22,
@@ -2680,7 +2680,7 @@
         "sizeMax": 0.05,
         "speed": 0.01,
         "colorLinked": true,
-        "color": "#ff0000",
+        "color": "#0008ff",
         "strength": 0.54,
         "directionMode": "global",
         "directionLocal": [
