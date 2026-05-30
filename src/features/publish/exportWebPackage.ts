@@ -1,6 +1,8 @@
 import JSZip from 'jszip'
 import { buildPublishedScene, type PublishedSceneV2 } from './buildPublishedScene'
 
+export const WEB_PUBLISH_STATUS_EVENT = 'web-publish-status'
+
 type AssetFolder =
   | 'model'
   | 'atlas'
