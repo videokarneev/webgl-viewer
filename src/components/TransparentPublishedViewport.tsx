@@ -16,6 +16,7 @@ const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
   '3:2': 3 / 2,
   '2:3': 2 / 3,
   '16:9': 16 / 9,
+  '21:9': 21 / 9,
   '9:16': 9 / 16,
 }
 

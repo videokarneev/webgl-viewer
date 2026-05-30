@@ -153,7 +153,6 @@ export interface PublishedSceneV2 {
     exposure: number
   }
   responsiveFrame?: {
-    enabled: boolean
     landscape: {
       frameAspectPreset: FrameAspectPreset
       cameraPosition: [number, number, number]
@@ -449,7 +448,6 @@ function buildPublishedResponsiveFrame(
   })
 
   return {
-    enabled: responsiveFrame.enabled,
     landscape: serializePreset('landscape'),
     portrait: serializePreset('portrait'),
     square: serializePreset('square'),

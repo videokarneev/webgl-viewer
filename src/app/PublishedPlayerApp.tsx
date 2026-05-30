@@ -65,7 +65,14 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
 }
 
 function isFrameAspectPreset(value: string | null | undefined): value is FrameAspectPreset {
-  return value === '1:1' || value === '3:2' || value === '2:3' || value === '16:9' || value === '9:16'
+  return (
+    value === '1:1' ||
+    value === '3:2' ||
+    value === '2:3' ||
+    value === '16:9' ||
+    value === '21:9' ||
+    value === '9:16'
+  )
 }
 
 function isVector3(value: unknown): value is [number, number, number] {
@@ -95,7 +102,7 @@ function resolvePublishedCameraState(
     frameAspectPreset: isFrameAspectPreset(scene.camera.frameAspectPreset) ? scene.camera.frameAspectPreset : '1:1',
   }
 
-  if (!scene.responsiveFrame?.enabled || !responsivePresetKind) {
+  if (!scene.responsiveFrame || !responsivePresetKind) {
     return fixedCameraState
   }
 
@@ -782,7 +789,7 @@ export function PublishedPlayerApp() {
   const backgroundOverride = getPublishedPlayerBackgroundOverride()
   const responsivePresetKind = useMemo(
     () =>
-      scene?.responsiveFrame?.enabled
+      scene?.responsiveFrame
         ? resolvePublishedResponsivePresetKind(containerSize.width / Math.max(containerSize.height, 1))
         : null,
     [containerSize.height, containerSize.width, scene],

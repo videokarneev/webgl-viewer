@@ -5,8 +5,15 @@ import * as THREE from 'three'
 import { useEditorStore, type SceneConfig } from '../../../store/editorStore'
 import { sanitizeNumber } from './shared'
 
-function isFrameAspectPreset(value: unknown): value is '1:1' | '3:2' | '2:3' | '16:9' | '9:16' {
-  return value === '1:1' || value === '3:2' || value === '2:3' || value === '16:9' || value === '9:16'
+function isFrameAspectPreset(value: unknown): value is '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16' {
+  return (
+    value === '1:1' ||
+    value === '3:2' ||
+    value === '2:3' ||
+    value === '16:9' ||
+    value === '21:9' ||
+    value === '9:16'
+  )
 }
 
 export function ConfigController({
@@ -28,7 +35,6 @@ export function ConfigController({
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
   const setViewer = useEditorStore((state) => state.setViewer)
-  const setResponsiveFrameEnabled = useEditorStore((state) => state.setResponsiveFrameEnabled)
   const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
   const setStatus = useEditorStore((state) => state.setStatus)
   const materials = useEditorStore((state) => state.materials)
@@ -129,6 +135,7 @@ export function ConfigController({
       config.viewer?.frameAspectPreset === '3:2' ||
       config.viewer?.frameAspectPreset === '2:3' ||
       config.viewer?.frameAspectPreset === '16:9' ||
+      config.viewer?.frameAspectPreset === '21:9' ||
       config.viewer?.frameAspectPreset === '9:16'
     ) {
       setViewer({ frameAspectPreset: config.viewer.frameAspectPreset })
@@ -136,10 +143,6 @@ export function ConfigController({
 
     if (config.viewer?.frameGuidesEnabled != null) {
       setViewer({ frameGuidesEnabled: Boolean(config.viewer.frameGuidesEnabled) })
-    }
-
-    if (config.viewer?.responsiveFrame?.enabled != null) {
-      setResponsiveFrameEnabled(Boolean(config.viewer.responsiveFrame.enabled))
     }
 
     const currentResponsiveFrame = useEditorStore.getState().responsiveFrame
@@ -334,7 +337,6 @@ export function ConfigController({
     rootNodeId,
     setEnvironment,
     setHud,
-    setResponsiveFrameEnabled,
     setResponsiveFramePreset,
     setSelectedObjectId,
     setStatus,

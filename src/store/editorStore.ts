@@ -15,7 +15,7 @@ export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metaln
 export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
-export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '9:16'
+export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16'
 export type ResponsiveFramePresetKind = 'landscape' | 'portrait' | 'square'
 export type GodRaysDirectionSpace = 'local' | 'global'
 export type StencilContourMode = 'silhouette'
@@ -195,7 +195,6 @@ export interface ResponsiveFramePresetState {
 }
 
 export interface ResponsiveFrameState {
-  enabled: boolean
   landscape: ResponsiveFramePresetState
   portrait: ResponsiveFramePresetState
   square: ResponsiveFramePresetState
@@ -212,7 +211,6 @@ function createDefaultResponsiveFramePreset(frameAspectPreset: FrameAspectPreset
 
 export function createDefaultResponsiveFrameState(): ResponsiveFrameState {
   return {
-    enabled: false,
     landscape: createDefaultResponsiveFramePreset('16:9'),
     portrait: createDefaultResponsiveFramePreset('9:16'),
     square: createDefaultResponsiveFramePreset('1:1'),
@@ -400,7 +398,6 @@ function cloneResponsiveFramePresetState(entry: ResponsiveFramePresetState): Res
 
 function cloneResponsiveFrameState(responsiveFrame: ResponsiveFrameState): ResponsiveFrameState {
   return {
-    enabled: responsiveFrame.enabled,
     landscape: cloneResponsiveFramePresetState(responsiveFrame.landscape),
     portrait: cloneResponsiveFramePresetState(responsiveFrame.portrait),
     square: cloneResponsiveFramePresetState(responsiveFrame.square),
@@ -937,7 +934,6 @@ interface EditorState {
   setHud: (patch: Partial<ViewportHudState>) => void
   setTransformSettings: (patch: Partial<TransformSettingsState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
-  setResponsiveFrameEnabled: (value: boolean) => void
   setResponsiveFramePreset: (kind: ResponsiveFramePresetKind, patch: Partial<ResponsiveFramePresetState>) => void
   saveCurrentCameraToResponsivePreset: (kind: ResponsiveFramePresetKind) => void
   setAssets: (patch: Partial<AssetSourceState>) => void
@@ -2487,15 +2483,6 @@ export const useEditorStore = create<EditorState>((set, get) => ({
             !['cameraPosition', 'orbitTarget', 'resetCameraPosition', 'resetOrbitTarget', 'cameraMode'].includes(key),
         ),
       ),
-    ),
-  setResponsiveFrameEnabled: (value) =>
-    set((state) =>
-      withHistory(state, {
-        responsiveFrame: {
-          ...state.responsiveFrame,
-          enabled: value,
-        },
-      }),
     ),
   setResponsiveFramePreset: (kind, patch) =>
     set((state) =>
