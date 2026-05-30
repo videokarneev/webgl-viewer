@@ -24,60 +24,60 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.16387127209240362,
-      5.503871630689903,
-      1.141815931157935
+      -0.03908224076418953,
+      1.56671255998343,
+      2.9565572438547116
     ],
     "target": [
-      0.16387127209240362,
-      0.5658812544587241,
-      1.1418109923998963
+      -0.039082240764189556,
+      1.5667125599834297,
+      -9.728777269139202e-17
     ],
     "focalLength": 20,
     "frameAspectPreset": "1:1",
     "exposure": 1
   },
   "responsiveFrame": {
-    "enabled": false,
+    "enabled": true,
     "landscape": {
-      "frameAspectPreset": "16:9",
+      "frameAspectPreset": "21:9",
       "cameraPosition": [
-        4,
-        3,
-        5
+        0.14483690067310573,
+        1.5997238318508078,
+        4.233709498823336
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        0.1448369006731057,
+        1.5997238318508076,
+        -1.0071344181133234e-16
       ],
       "focalLength": 20
     },
     "portrait": {
       "frameAspectPreset": "9:16",
       "cameraPosition": [
-        4,
-        3,
-        5
+        -0.03908224076418953,
+        1.56671255998343,
+        3.6298766815536556
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        -0.039082240764189556,
+        1.5667125599834297,
+        -9.728777269139202e-17
       ],
       "focalLength": 20
     },
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        4,
-        3,
-        5
+        -0.03908224076418953,
+        1.56671255998343,
+        2.9565572438547116
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        -0.039082240764189556,
+        1.5667125599834297,
+        -9.728777269139202e-17
       ],
       "focalLength": 20
     }
@@ -137,7 +137,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [
     {
-      "id": "effect:stencil-volume:1:1780066557822",
+      "id": "effect:stencil-volume:1:1780176313819",
       "label": "Stencil Volume",
       "visible": true,
       "transform": {
@@ -2661,7 +2661,7 @@
         "endScaleY": 1
       },
       "rays": {
-        "color": "#0400ff",
+        "color": "#fff4cf",
         "intensity": 1.2,
         "falloff": 1.4,
         "edgeFade": 0.22,
@@ -2681,7 +2681,7 @@
         "sizeMax": 0.05,
         "speed": 0.01,
         "colorLinked": true,
-        "color": "#0400ff",
+        "color": "#fff4cf",
         "strength": 0.54,
         "directionMode": "global",
         "directionLocal": [
@@ -2697,7 +2697,7 @@
   "model": null,
   "objects": [
     {
-      "id": "root:effect:stencil-volume:1:1780066557822",
+      "id": "root:effect:stencil-volume:1:1780176313819",
       "parentId": null,
       "type": "effect",
       "label": "Stencil Volume",
