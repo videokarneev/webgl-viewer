@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scene demo-03</title>
+    <meta http-equiv="refresh" content="0; url=/?player=1&scene=/scenes/demo-03/scene.json&transparent=1" />
+    <script>
+      const sceneUrl = "/scenes/demo-03/scene.json"
+      const params = new URLSearchParams(window.location.search)
+      const isEmbedded = (() => {
+        try {
+          return window.self !== window.top
+        } catch {
+          return true
+        }
+      })()
+
+      params.set('player', '1')
+      params.set('scene', sceneUrl)
+      if (!params.has('transparent') && isEmbedded) {
+        params.set('transparent', '1')
+      }
+
+      const targetUrl = '/?' + params.toString() + window.location.hash
+      window.location.replace(targetUrl)
+    </script>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0d1116;
+        color: #d8e1ea;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      a { color: #9ecbff; }
+    </style>
+  </head>
+  <body>
+    <p>Opening scene <a href="/?player=1&scene=/scenes/demo-03/scene.json&transparent=1">demo-03</a>...</p>
+  </body>
+</html>
