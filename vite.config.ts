@@ -11,8 +11,8 @@ const execFileAsync = promisify(execFile)
 const DEFAULT_WEB_PUBLISH_DEPLOY_ORIGIN =
   process.env.WEB_PUBLISH_DEPLOY_ORIGIN?.trim().replace(/\/+$/, '') || 'https://webgl-viewer-jet.vercel.app'
 
-function getNpmExecutable() {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm'
+function getViteCliEntry(rootDir: string) {
+  return path.join(rootDir, 'node_modules', 'vite', 'bin', 'vite.js')
 }
 
 function summarizeCommandOutput(output: string, maxLines = 18) {
@@ -116,7 +116,10 @@ async function runGit(rootDir: string, args: string[]) {
 
 async function runProductionBuildCheck(rootDir: string) {
   try {
-    await execFileAsync(getNpmExecutable(), ['run', 'build'], { cwd: rootDir })
+    await execFileAsync(process.execPath, [getViteCliEntry(rootDir), 'build'], {
+      cwd: rootDir,
+      maxBuffer: 10 * 1024 * 1024,
+    })
   } catch (error) {
     const failure = error as { stdout?: string; stderr?: string; message?: string }
     const details = summarizeCommandOutput(`${failure.stdout ?? ''}\n${failure.stderr ?? ''}`)
