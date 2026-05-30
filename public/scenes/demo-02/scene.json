@@ -25,60 +25,60 @@
     "mode": "orbit",
     "position": [
       -0.002041188227824348,
-      1.581712743058873,
-      3.1532968691465286
+      1.5817127430588735,
+      9.496630971633605
     ],
     "target": [
       -0.002041188227824348,
       1.5817127430588729,
       -0.12266683595583627
     ],
-    "focalLength": 20,
-    "frameAspectPreset": "1:1",
+    "focalLength": 85,
+    "frameAspectPreset": "9:16",
     "exposure": 1
   },
   "responsiveFrame": {
     "landscape": {
       "frameAspectPreset": "21:9",
       "cameraPosition": [
-        2.3688243462229157,
-        3.171778020170846,
-        3.552792617169167
-      ],
-      "orbitTarget": [
-        -0.5715432162770874,
-        0.9665023482958428,
-        -0.12266683595583627
-      ],
-      "focalLength": 20
-    },
-    "portrait": {
-      "frameAspectPreset": "9:16",
-      "cameraPosition": [
-        -0.02390773939187399,
-        1.5963020449518583,
-        3.698255986732445
-      ],
-      "orbitTarget": [
-        -0.02390773939187399,
-        1.5963020449518581,
-        -0.12266683595583627
-      ],
-      "focalLength": 20
-    },
-    "square": {
-      "frameAspectPreset": "1:1",
-      "cameraPosition": [
         -0.002041188227824348,
-        1.581712743058873,
-        3.1532968691465277
+        1.5817127430588735,
+        10.535834889905047
       ],
       "orbitTarget": [
         -0.002041188227824348,
         1.5817127430588729,
         -0.12266683595583627
       ],
-      "focalLength": 20
+      "focalLength": 85
+    },
+    "portrait": {
+      "frameAspectPreset": "9:16",
+      "cameraPosition": [
+        -0.002041188227824348,
+        1.5817127430588735,
+        9.496630971633605
+      ],
+      "orbitTarget": [
+        -0.002041188227824348,
+        1.5817127430588729,
+        -0.12266683595583627
+      ],
+      "focalLength": 85
+    },
+    "square": {
+      "frameAspectPreset": "1:1",
+      "cameraPosition": [
+        -0.002041188227824348,
+        1.5817127430588733,
+        7.320562439692424
+      ],
+      "orbitTarget": [
+        -0.002041188227824348,
+        1.5817127430588729,
+        -0.12266683595583627
+      ],
+      "focalLength": 85
     }
   },
   "viewer": {
@@ -2660,7 +2660,7 @@
         "endScaleY": 1
       },
       "rays": {
-        "color": "#d1ffd6",
+        "color": "#ff0000",
         "intensity": 1.2,
         "falloff": 1.4,
         "edgeFade": 0.22,
@@ -2680,7 +2680,7 @@
         "sizeMax": 0.05,
         "speed": 0.01,
         "colorLinked": true,
-        "color": "#d1ffd6",
+        "color": "#ff0000",
         "strength": 0.54,
         "directionMode": "global",
         "directionLocal": [
