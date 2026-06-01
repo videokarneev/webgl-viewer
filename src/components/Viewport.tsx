@@ -3,8 +3,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls, TransformControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
+import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
+import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
 import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
+import { useShowcaseMotionSensor } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
@@ -35,6 +38,10 @@ const EnvironmentManager = lazy(() =>
     default: module.EnvironmentManager,
   })),
 )
+
+function supportsGyroShowcaseInput(mode: string) {
+  return mode === 'gyro' || mode === 'mouse+gyro'
+}
 const LightRig = lazy(() =>
   import('./viewport/LightRig').then((module) => ({
     default: module.LightRig,
@@ -72,6 +79,15 @@ const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
 
 function buildIframeEmbedCode(url: string) {
   return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>`
+}
+
+function buildPublishedPlayerUrl(sceneUrl: string, deployOrigin: string) {
+  const normalizedOrigin = deployOrigin.replace(/\/+$/, '')
+  const params = new URLSearchParams()
+  params.set('player', '1')
+  params.set('scene', sceneUrl)
+  params.set('transparent', '1')
+  return `${normalizedOrigin}/?${params.toString()}`
 }
 
 async function copyTextToClipboard(value: string) {
@@ -727,7 +743,15 @@ function getGeometryStats(object: THREE.Object3D | null): GeometryStats {
   }
 }
 
-function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+function CameraBridge({
+  controlsRef,
+  cameraOffsetRef,
+  targetOffsetRef,
+}: {
+  controlsRef: React.RefObject<OrbitControlsImpl | null>
+  cameraOffsetRef: React.MutableRefObject<THREE.Vector3>
+  targetOffsetRef: React.MutableRefObject<THREE.Vector3>
+}) {
   const { camera } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
 
@@ -738,12 +762,12 @@ function CameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitContr
     perspectiveCamera.lookAt(orbitTarget)
     applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
     if (controlsRef.current) {
-      controlsRef.current.target.copy(orbitTarget)
+      controlsRef.current.target.copy(orbitTarget).add(targetOffsetRef.current)
       controlsRef.current.update()
     }
-  }, [camera, controlsRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
+  }, [camera, controlsRef, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
-  return <ViewerSync controlsRef={controlsRef} />
+  return <ViewerSync controlsRef={controlsRef} cameraOffsetRef={cameraOffsetRef} targetOffsetRef={targetOffsetRef} />
 }
 
 function RendererBridge({
@@ -1584,6 +1608,7 @@ function ViewportScene({
   autoFrameOnLoad,
   transparentBackground,
   clearColor,
+  gyroSampleRef,
 }: {
   onStats: (stats: PerformanceSnapshot) => void
   registerResetCamera: (handler: () => void) => void
@@ -1596,8 +1621,11 @@ function ViewportScene({
   autoFrameOnLoad: boolean
   transparentBackground: boolean
   clearColor: number
+  gyroSampleRef: React.MutableRefObject<{ x: number; y: number; active: boolean }>
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
+  const showcaseCameraOffsetRef = useRef(new THREE.Vector3())
+  const showcaseTargetOffsetRef = useRef(new THREE.Vector3())
   const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
   const hud = useEditorStore((state) => state.hud)
@@ -1779,13 +1807,24 @@ function ViewportScene({
   return (
     <>
       <RendererBridge transparentBackground={transparentBackground} clearColor={clearColor} />
-      <CameraBridge controlsRef={controlsRef} />
+      <CameraBridge
+        controlsRef={controlsRef}
+        cameraOffsetRef={showcaseCameraOffsetRef}
+        targetOffsetRef={showcaseTargetOffsetRef}
+      />
       <OrientationTracker onChange={onCameraQuaternionChange} />
       <PerformanceProbe onSample={onStats} />
       <Suspense fallback={null}>
         {transparentBackground ? <TransparentEnvironmentBridge /> : <EnvironmentManager />}
         <LightRig />
         <SceneBridge allowSelection={allowSelection} />
+        <CustomSceneBoxes selectable={allowSelection} />
+        <ShowcaseInteractionController
+          controlsRef={controlsRef}
+          cameraOffsetRef={showcaseCameraOffsetRef}
+          targetOffsetRef={showcaseTargetOffsetRef}
+          gyroSampleRef={gyroSampleRef}
+        />
         <StencilVolumes />
         <GodRaysBoxes />
         {allowSelection ? <SelectionHighlight /> : null}
@@ -1905,6 +1944,39 @@ function PerformanceStats() {
   )
 }
 
+function ViewportMotionToggle({
+  enabled,
+  permissionState,
+  onToggle,
+}: {
+  enabled: boolean
+  permissionState: 'unsupported' | 'idle' | 'granted' | 'denied'
+  onToggle: () => void
+}) {
+  const label =
+    permissionState === 'denied'
+      ? 'Motion Blocked'
+      : enabled
+        ? 'Motion On'
+        : permissionState === 'granted'
+          ? 'Motion Off'
+          : 'Enable Motion'
+
+  return (
+    <button
+      type="button"
+      className={`viewport-motion-toggle${enabled ? ' is-active' : ''}${permissionState === 'denied' ? ' is-blocked' : ''}`}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle()
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
 export function Viewport({
   showChrome = true,
   allowSelection = true,
@@ -1929,7 +2001,10 @@ export function Viewport({
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setZenMode = useEditorStore((state) => state.setZenMode)
   const setViewportMetrics = useEditorStore((state) => state.setViewportMetrics)
+  const phoneScreenBoxes = useEditorStore((state) => state.phoneScreenBoxes)
+  const objects = useEditorStore((state) => state.objects)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const showcaseMotion = useShowcaseMotionSensor()
   const containerRef = useRef<HTMLElement | null>(null)
   const resetCameraRef = useRef<() => void>(() => {})
   const applyViewDirectionRef = useRef<(direction: OrientationFace) => void>(() => {})
@@ -1971,8 +2046,21 @@ export function Viewport({
     () => (transparentBackground ? ({ background: 'transparent' } as CSSProperties) : undefined),
     [transparentBackground],
   )
+  const showMotionToggle = useMemo(
+    () =>
+      showcaseMotion.supported &&
+      phoneScreenBoxes.some(
+        (entry) =>
+          supportsGyroShowcaseInput(entry.interaction.inputMode) &&
+          (objects[entry.id]?.visible ?? false),
+      ),
+    [objects, phoneScreenBoxes, showcaseMotion.supported],
+  )
   const clearColor = showChrome ? EDITOR_CLEAR_COLOR : 0x000000
-  const webPublishEmbedUrl = webPublishStatus?.prettySceneUrl ?? webPublishStatus?.publicSceneUrl ?? null
+  const webPublishEmbedUrl =
+    webPublishStatus?.deployOrigin && webPublishStatus.publicSceneUrl
+      ? buildPublishedPlayerUrl(webPublishStatus.publicSceneUrl, webPublishStatus.deployOrigin)
+      : webPublishStatus?.prettySceneUrl ?? webPublishStatus?.publicSceneUrl ?? null
   const webPublishIframeCode = webPublishEmbedUrl ? buildIframeEmbedCode(webPublishEmbedUrl) : null
 
   useEffect(() => {
@@ -2174,6 +2262,7 @@ export function Viewport({
               allowSelection={allowSelection}
               autoFrameOnLoad={autoFrameOnLoad}
               clearColor={clearColor}
+              gyroSampleRef={showcaseMotion.sampleRef}
               onCameraQuaternionChange={setCameraQuaternion}
               onStats={setViewportMetrics}
               onTransformDraggingChange={setIsTransformDragging}
@@ -2223,6 +2312,7 @@ export function Viewport({
             allowSelection={allowSelection}
             autoFrameOnLoad={autoFrameOnLoad}
             clearColor={clearColor}
+            gyroSampleRef={showcaseMotion.sampleRef}
             onCameraQuaternionChange={setCameraQuaternion}
             onStats={setViewportMetrics}
             onTransformDraggingChange={setIsTransformDragging}
@@ -2276,6 +2366,15 @@ export function Viewport({
       ) : null}
       {showChrome ? <PerformanceStats /> : null}
       {showChrome ? <ViewportHud onResetCamera={() => resetCameraRef.current()} /> : null}
+      {showMotionToggle ? (
+        <ViewportMotionToggle
+          enabled={showcaseMotion.enabled}
+          permissionState={showcaseMotion.permissionState}
+          onToggle={() => {
+            void showcaseMotion.toggle()
+          }}
+        />
+      ) : null}
       {showChrome && webPublishStatus ? (
         <div className="viewport-web-publish-layer" onPointerDown={() => setWebPublishStatus(null)}>
           <section

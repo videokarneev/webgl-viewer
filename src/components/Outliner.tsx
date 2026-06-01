@@ -237,12 +237,34 @@ export function Outliner({
   }
 
   const rootModels = useMemo(
-    () =>
-      loadedModels.filter((model) => sceneGraph[model.rootNodeId]).length
-        ? loadedModels.filter((model) => sceneGraph[model.rootNodeId])
-        : rootNodeId && loadedFileName && sceneGraph[rootNodeId]
-          ? [{ rootNodeId, label: loadedFileName }]
-          : [],
+    () => {
+      const loadedRootEntries =
+        loadedModels.filter((model) => sceneGraph[model.rootNodeId]).length
+          ? loadedModels.filter((model) => sceneGraph[model.rootNodeId])
+          : rootNodeId && loadedFileName && sceneGraph[rootNodeId]
+            ? [{ rootNodeId, label: loadedFileName }]
+            : []
+
+      const knownRootIds = new Set(loadedRootEntries.map((entry) => entry.rootNodeId))
+      const standaloneRootEntries = Object.values(sceneGraph)
+        .filter((node) => {
+          if (knownRootIds.has(node.id)) {
+            return false
+          }
+
+          if (node.parentId != null) {
+            return false
+          }
+
+          return node.type === 'mesh' || node.type === 'group' || node.type === 'scene'
+        })
+        .map((node) => ({
+          rootNodeId: node.id,
+          label: node.label || 'Scene Object',
+        }))
+
+      return [...loadedRootEntries, ...standaloneRootEntries]
+    },
     [loadedFileName, loadedModels, rootNodeId, sceneGraph],
   )
 

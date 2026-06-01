@@ -3044,34 +3044,58 @@ button {
   text-transform: uppercase;
 }
 
-.responsive-camera-grid {
-  display: grid;
-  gap: 8px;
+.frame-aspect-button.is-saved {
+  border-color: rgba(74, 196, 122, 0.24);
+  background: rgba(25, 62, 38, 0.34);
 }
 
-.responsive-camera-card {
-  display: grid;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid rgba(165, 197, 216, 0.07);
-  background: rgba(11, 15, 19, 0.72);
+.frame-aspect-button.is-saved .frame-aspect-button__label,
+.frame-aspect-button.is-saved .frame-aspect-button__icon {
+  color: rgba(232, 248, 237, 0.94);
 }
 
-.responsive-camera-card__save {
-  width: 100%;
-  min-height: 28px;
+.frame-aspect-button.is-saved.is-active {
+  border-color: rgba(97, 221, 147, 0.38);
+  background: rgba(33, 92, 52, 0.5);
+}
+
+.frame-aspect-choice {
+  display: grid;
+  gap: 4px;
+}
+
+.frame-aspect-choice__assignment {
+  min-height: 18px;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
-.responsive-camera-card__save.is-saved {
-  border-color: rgba(74, 196, 122, 0.34);
-  background: rgba(33, 92, 52, 0.44);
-  color: rgba(232, 248, 237, 0.96);
+.frame-aspect-assignment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(181, 202, 214, 0.62);
+  cursor: pointer;
+  user-select: none;
 }
 
-.responsive-camera-card__save.is-saved:hover {
-  border-color: rgba(97, 221, 147, 0.42);
-  color: rgba(241, 252, 244, 0.98);
+.frame-aspect-assignment input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  accent-color: rgb(108, 166, 255);
+}
+
+.frame-aspect-assignment.is-active {
+  color: rgba(231, 241, 246, 0.9);
+}
+
+.frame-aspect-assignment--locked {
+  cursor: default;
 }
 
 .left-controls__value {
@@ -3550,6 +3574,46 @@ button {
 .viewport-hud button:hover {
   border-color: rgba(120, 194, 233, 0.18);
   color: rgba(234, 243, 248, 0.9);
+}
+
+.viewport-motion-toggle {
+  position: absolute;
+  top: 44px;
+  right: 18px;
+  z-index: 34;
+  min-height: 28px;
+  border: 1px solid rgba(165, 197, 216, 0.1);
+  border-radius: 999px;
+  background: rgba(10, 14, 18, 0.86);
+  color: rgba(209, 224, 232, 0.78);
+  padding: 0 12px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.viewport-motion-toggle:hover {
+  border-color: rgba(120, 194, 233, 0.22);
+  color: rgba(234, 243, 248, 0.92);
+}
+
+.viewport-motion-toggle.is-active {
+  background: rgba(74, 119, 145, 0.24);
+  border-color: rgba(120, 194, 233, 0.22);
+  color: rgba(234, 243, 248, 0.94);
+}
+
+.viewport-motion-toggle.is-blocked {
+  border-color: rgba(214, 109, 109, 0.28);
+  color: rgba(236, 183, 183, 0.88);
 }
 
 .viewport-orientation {

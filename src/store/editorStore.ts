@@ -17,6 +17,11 @@ export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
 export type FrameAspectPreset = '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16'
 export type ResponsiveFramePresetKind = 'landscape' | 'portrait' | 'square'
+export type PhoneScreenBoxBindingMode = 'fixed' | 'viewport' | 'responsivePreset' | 'phonePortrait'
+export type PhoneScreenBoxDepthScaleMode = 'fixed' | 'shortEdge' | 'longEdge'
+export type PhoneScreenBoxInputMode = 'none' | 'mouse' | 'gyro' | 'mouse+gyro'
+export type PhoneScreenBoxContentFramingMode = 'manual' | 'fitScene'
+export type PhoneScreenBoxResponsivePresetKind = ResponsiveFramePresetKind | 'auto'
 export type GodRaysDirectionSpace = 'local' | 'global'
 export type StencilContourMode = 'silhouette'
 
@@ -30,6 +35,10 @@ export function getGodRaysDirectionArrowId(effectId: string) {
 
 export function getStencilVolumeEndHandleId(effectId: string) {
   return `${STENCIL_VOLUME_END_HANDLE_PREFIX}${effectId}`
+}
+
+export function getPhoneScreenBoxMaterialId(boxId: string) {
+  return `material:phone-box:${boxId}`
 }
 
 export function getGodRaysDirectionQuaternion(direction: [number, number, number]) {
@@ -214,6 +223,73 @@ export function createDefaultResponsiveFrameState(): ResponsiveFrameState {
     landscape: createDefaultResponsiveFramePreset('16:9'),
     portrait: createDefaultResponsiveFramePreset('9:16'),
     square: createDefaultResponsiveFramePreset('1:1'),
+  }
+}
+
+export function createDefaultPhoneScreenBoxGeometryState(): PhoneScreenBoxGeometryState {
+  return {
+    baseLongEdge: 0.16,
+    aspectPreset: '9:16',
+    depth: 0.05,
+    wallThickness: 0.004,
+    openTop: true,
+  }
+}
+
+export function createDefaultPhoneScreenBoxScreenBindingState(): PhoneScreenBoxScreenBindingState {
+  return {
+    mode: 'responsivePreset',
+    responsivePresetKind: 'auto',
+    margin: 0,
+    depthScaleMode: 'fixed',
+    lockToFrame: true,
+  }
+}
+
+export function createDefaultPhoneScreenBoxContentState(): PhoneScreenBoxContentState {
+  return {
+    anchor: [0, -0.025, 0],
+    framingMode: 'manual',
+  }
+}
+
+export function createDefaultPhoneScreenBoxInteractionState(): PhoneScreenBoxInteractionState {
+  return {
+    enabled: true,
+    inputMode: 'mouse+gyro',
+    maxOffsetX: 0.012,
+    maxOffsetY: 0.018,
+    smoothing: 0.14,
+  }
+}
+
+function createLegacyPhoneScreenBoxInteractionState(): PhoneScreenBoxInteractionState {
+  return {
+    enabled: false,
+    inputMode: 'mouse',
+    maxOffsetX: 0.012,
+    maxOffsetY: 0.018,
+    smoothing: 0.14,
+  }
+}
+
+function createLegacyPhoneScreenBoxGeometryState(): PhoneScreenBoxGeometryState {
+  return {
+    baseLongEdge: 0.16,
+    aspectPreset: '16:9',
+    depth: 0.05,
+    wallThickness: 0.004,
+    openTop: true,
+  }
+}
+
+function createLegacyPhoneScreenBoxScreenBindingState(): PhoneScreenBoxScreenBindingState {
+  return {
+    mode: 'fixed',
+    responsivePresetKind: 'auto',
+    margin: 0,
+    depthScaleMode: 'fixed',
+    lockToFrame: false,
   }
 }
 
@@ -436,6 +512,53 @@ export interface ExtraLightState {
   targetPosition: [number, number, number]
   visible: boolean
 }
+
+export interface PhoneScreenBoxGeometryState {
+  baseLongEdge: number
+  aspectPreset: FrameAspectPreset
+  depth: number
+  wallThickness: number
+  openTop: boolean
+}
+
+export interface PhoneScreenBoxScreenBindingState {
+  mode: PhoneScreenBoxBindingMode
+  responsivePresetKind: PhoneScreenBoxResponsivePresetKind
+  margin: number
+  depthScaleMode: PhoneScreenBoxDepthScaleMode
+  lockToFrame: boolean
+}
+
+export interface PhoneScreenBoxContentState {
+  anchor: [number, number, number]
+  framingMode: PhoneScreenBoxContentFramingMode
+}
+
+export interface PhoneScreenBoxInteractionState {
+  enabled: boolean
+  inputMode: PhoneScreenBoxInputMode
+  maxOffsetX: number
+  maxOffsetY: number
+  smoothing: number
+}
+
+export interface PhoneScreenBoxState {
+  id: string
+  materialId: string
+  geometry: PhoneScreenBoxGeometryState
+  screenBinding: PhoneScreenBoxScreenBindingState
+  content: PhoneScreenBoxContentState
+  interaction: PhoneScreenBoxInteractionState
+}
+
+export interface PhoneScreenBoxPatch {
+  geometry?: Partial<PhoneScreenBoxGeometryState>
+  screenBinding?: Partial<PhoneScreenBoxScreenBindingState>
+  content?: Partial<PhoneScreenBoxContentState>
+  interaction?: Partial<PhoneScreenBoxInteractionState>
+}
+
+export type PhoneScreenBoxEntryInput = Pick<PhoneScreenBoxState, 'id' | 'materialId'> & Partial<PhoneScreenBoxState>
 
 export interface RuntimeTextureState {
   atlasTexture: THREE.Texture | null
@@ -828,6 +951,7 @@ interface HistorySnapshot {
   backgroundColor: string
   backgroundRotation: number
   extraLights: ExtraLightState[]
+  phoneScreenBoxes: PhoneScreenBoxState[]
   godRaysBoxes: GodRaysBoxState[]
   stencilVolumes: StencilVolumeState[]
   godRaysGlobalNoise: GodRaysGlobalNoiseState
@@ -874,6 +998,7 @@ interface EditorState {
   responsiveFrame: ResponsiveFrameState
   assets: AssetSourceState
   extraLights: ExtraLightState[]
+  phoneScreenBoxes: PhoneScreenBoxState[]
   godRaysBoxes: GodRaysBoxState[]
   stencilVolumes: StencilVolumeState[]
   godRaysGlobalNoise: GodRaysGlobalNoiseState
@@ -942,6 +1067,11 @@ interface EditorState {
   updateExtraLight: (id: string, patch: Partial<ExtraLightState>) => void
   replaceExtraLights: (lights: ExtraLightState[]) => void
   duplicateExtraLight: (id: string, options?: { selectDuplicate?: boolean }) => string | null
+  addPhoneScreenBox: () => void
+  updatePhoneScreenBox: (id: string, patch: PhoneScreenBoxPatch) => void
+  replacePhoneScreenBoxes: (
+    entries: Array<PhoneScreenBoxEntryInput & { label: string; visible: boolean; transform: ObjectTransformState }>,
+  ) => void
   addGodRaysBox: () => void
   removeGodRaysBox: (id: string) => void
   updateGodRaysBox: (id: string, patch: Partial<Omit<GodRaysBoxState, 'id'>>) => void
@@ -1191,6 +1321,167 @@ function createEmptyMaterialTextureSlots() {
   ) as Record<MaterialTextureSlot, MaterialTextureSlotState>
 }
 
+function getIndexedPhoneScreenBoxLabel(index: number) {
+  return index <= 1 ? 'Phone Box' : `Phone Box ${index}`
+}
+
+function createDefaultPhoneScreenBoxMaterialState(materialId: string, meshId: string): PbrMaterialState {
+  return {
+    id: materialId,
+    name: 'Standard Material',
+    type: 'MeshStandardMaterial',
+    meshIds: [meshId],
+    environmentOverrideId: null,
+    environmentRotation: 0,
+    useSystemMaterial: false,
+    color: '#000000',
+    emissive: '#000000',
+    metalness: 0,
+    roughness: 0.68,
+    envMapIntensity: 1.2,
+    emissiveIntensity: 1,
+    clearcoat: 0,
+    hasMaps: {
+      baseColor: false,
+      emissive: false,
+      normal: false,
+      ao: false,
+      roughness: false,
+      metalness: false,
+    },
+    textureSlots: createEmptyMaterialTextureSlots(),
+    effect: { ...DEFAULT_ATLAS_EFFECT },
+  }
+}
+
+export function normalizePhoneScreenBoxState(
+  entry: Partial<PhoneScreenBoxState> & Pick<PhoneScreenBoxState, 'id' | 'materialId'>,
+): PhoneScreenBoxState {
+  const hasGeometry = Boolean(entry.geometry)
+  const baseGeometry = hasGeometry ? createDefaultPhoneScreenBoxGeometryState() : createLegacyPhoneScreenBoxGeometryState()
+  const baseScreenBinding = hasGeometry
+    ? createDefaultPhoneScreenBoxScreenBindingState()
+    : createLegacyPhoneScreenBoxScreenBindingState()
+  const baseInteraction = hasGeometry
+    ? createDefaultPhoneScreenBoxInteractionState()
+    : createLegacyPhoneScreenBoxInteractionState()
+  const defaultContent = createDefaultPhoneScreenBoxContentState()
+
+  const shouldUpgradeDefaultMouseInput =
+    hasGeometry &&
+    entry.interaction?.inputMode === 'mouse' &&
+    (entry.interaction.enabled ?? true) &&
+    (entry.interaction.maxOffsetX ?? 0.012) === 0.012 &&
+    (entry.interaction.maxOffsetY ?? 0.018) === 0.018 &&
+    (entry.interaction.smoothing ?? 0.14) === 0.14
+
+  return {
+    id: entry.id,
+    materialId: entry.materialId,
+    geometry: {
+      ...baseGeometry,
+      ...entry.geometry,
+    },
+    screenBinding: {
+      ...baseScreenBinding,
+      ...entry.screenBinding,
+    },
+    content: {
+      ...defaultContent,
+      ...entry.content,
+      anchor: [...(entry.content?.anchor ?? defaultContent.anchor)] as [number, number, number],
+    },
+    interaction: {
+      ...baseInteraction,
+      ...entry.interaction,
+      inputMode: shouldUpgradeDefaultMouseInput ? 'mouse+gyro' : (entry.interaction?.inputMode ?? baseInteraction.inputMode),
+    },
+  }
+}
+
+function applyPhoneScreenBoxPatch(current: PhoneScreenBoxState, patch: PhoneScreenBoxPatch): PhoneScreenBoxState {
+  return {
+    ...current,
+    geometry: patch.geometry
+      ? {
+          ...current.geometry,
+          ...patch.geometry,
+        }
+      : current.geometry,
+    screenBinding: patch.screenBinding
+      ? {
+          ...current.screenBinding,
+          ...patch.screenBinding,
+        }
+      : current.screenBinding,
+    content: patch.content
+      ? {
+          ...current.content,
+          ...patch.content,
+          anchor: patch.content.anchor
+            ? ([...patch.content.anchor] as [number, number, number])
+            : current.content.anchor,
+        }
+      : current.content,
+    interaction: patch.interaction
+      ? {
+          ...current.interaction,
+          ...patch.interaction,
+        }
+      : current.interaction,
+  }
+}
+
+function mergePhoneScreenBoxesIntoState(
+  state: Pick<EditorState, 'phoneScreenBoxes' | 'sceneGraph' | 'objects' | 'materials'>,
+  sceneGraph: Record<string, SceneGraphNode>,
+  objects: Record<string, ObjectTransformState>,
+  materials: Record<string, PbrMaterialState>,
+) {
+  const nextSceneGraph = { ...sceneGraph }
+  const nextObjects = { ...objects }
+  const nextMaterials = { ...materials }
+
+  state.phoneScreenBoxes.map((entry) => normalizePhoneScreenBoxState(entry)).forEach((box, index) => {
+    const objectState = state.objects[box.id]
+    const sceneNode = state.sceneGraph[box.id]
+    const materialState = state.materials[box.materialId]
+    const materialNode = state.sceneGraph[box.materialId]
+
+    nextSceneGraph[box.id] = {
+      id: box.id,
+      parentId: null,
+      children: [box.materialId],
+      type: 'mesh',
+      label: sceneNode?.label ?? getIndexedPhoneScreenBoxLabel(index + 1),
+      objectUuid: box.id,
+      visible: sceneNode?.visible ?? objectState?.visible ?? true,
+    }
+    nextObjects[box.id] = objectState ?? {
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      visible: true,
+    }
+    nextSceneGraph[box.materialId] = {
+      id: box.materialId,
+      parentId: box.id,
+      children: [],
+      type: 'material',
+      label: materialNode?.label ?? 'Standard Material',
+      materialUuid: box.materialId,
+      visible: true,
+    }
+    nextMaterials[box.materialId] = materialState ?? createDefaultPhoneScreenBoxMaterialState(box.materialId, box.id)
+  })
+
+  return {
+    sceneGraph: nextSceneGraph,
+    objects: nextObjects,
+    materials: nextMaterials,
+  }
+}
+
 function disposeCustomRuntimeTextures(material: THREE.Material) {
   const runtimeLike = material as THREE.Material & {
     userData: THREE.Material['userData'] & {
@@ -1270,6 +1561,22 @@ function cloneExtraLightsState(extraLights: ExtraLightState[]) {
     position: [...light.position] as [number, number, number],
     targetPosition: [...light.targetPosition] as [number, number, number],
   }))
+}
+
+function clonePhoneScreenBoxesState(phoneScreenBoxes: PhoneScreenBoxState[]) {
+  return phoneScreenBoxes.map((entry) => {
+    const normalized = normalizePhoneScreenBoxState(entry)
+    return {
+      ...normalized,
+      geometry: { ...normalized.geometry },
+      screenBinding: { ...normalized.screenBinding },
+      content: {
+        ...normalized.content,
+        anchor: [...normalized.content.anchor] as [number, number, number],
+      },
+      interaction: { ...normalized.interaction },
+    }
+  })
 }
 
 function cloneGodRaysBoxesState(godRaysBoxes: GodRaysBoxState[]) {
@@ -1362,6 +1669,7 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     backgroundColor: state.backgroundColor,
     backgroundRotation: state.backgroundRotation,
     extraLights: cloneExtraLightsState(state.extraLights),
+    phoneScreenBoxes: clonePhoneScreenBoxesState(state.phoneScreenBoxes),
     godRaysBoxes: cloneGodRaysBoxesState(state.godRaysBoxes),
     stencilVolumes: cloneStencilVolumesState(state.stencilVolumes),
     godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(state.godRaysGlobalNoise),
@@ -1731,6 +2039,9 @@ function buildDeletePatch(state: EditorState, id: string) {
       selectedObjectWasRemoved || selectedMaterialWasRemoved
         ? null
         : resolveSelectedMaterialId(state.selectedObjectId, sceneGraph),
+    phoneScreenBoxes: state.phoneScreenBoxes.filter(
+      (entry) => !removedMeshIds.has(entry.id) && !idsToRemove.has(entry.materialId),
+    ),
     godRaysBoxes: state.godRaysBoxes.filter((entry) => !idsToRemove.has(entry.id)),
     stencilVolumes: state.stencilVolumes.filter((entry) => !idsToRemove.has(entry.id)),
     hud: activeGodRaysDirectionWasRemoved || activeStencilVolumeEndWasRemoved
@@ -1861,6 +2172,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     fileSize: null,
   },
   extraLights: [],
+  phoneScreenBoxes: [],
   godRaysBoxes: [],
   stencilVolumes: [],
   godRaysGlobalNoise: DEFAULT_GOD_RAYS_GLOBAL_NOISE,
@@ -1949,8 +2261,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   setSelectedAnchorIndex: (index) => set({ selectedAnchorIndex: index }),
   setSceneGraph: (sceneGraph, objects, materials, rootNodeId, selectedObjectId, loadedModelLabel) =>
     set((state) => {
-      const nextSceneGraph = { ...sceneGraph }
-      const nextObjects = { ...objects }
+      let nextSceneGraph = { ...sceneGraph }
+      let nextObjects = { ...objects }
+      let nextMaterials = { ...materials }
 
       state.extraLights.forEach((light) => {
         nextSceneGraph[light.id] = {
@@ -2010,12 +2323,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         }
       })
 
+      ;({ sceneGraph: nextSceneGraph, objects: nextObjects, materials: nextMaterials } =
+        mergePhoneScreenBoxesIntoState(state, nextSceneGraph, nextObjects, nextMaterials))
+
       const nextSelectedObjectId = selectedObjectId === undefined ? rootNodeId : selectedObjectId
 
       return {
         sceneGraph: nextSceneGraph,
         objects: nextObjects,
-        materials,
+        materials: nextMaterials,
         rootNodeId,
         rootNodeIds: rootNodeId ? [rootNodeId] : [],
         loadedModels: rootNodeId && loadedModelLabel ? [{ rootNodeId, label: loadedModelLabel }] : [],
@@ -2029,15 +2345,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     }),
   addLoadedModel: (sceneGraph, objects, materials, rootNodeId, loadedModelLabel, selectedObjectId) =>
     set((state) => {
-      const nextSceneGraph = {
+      let nextSceneGraph = {
         ...state.sceneGraph,
         ...sceneGraph,
       }
-      const nextObjects = {
+      let nextObjects = {
         ...state.objects,
         ...objects,
       }
-      const nextMaterials = {
+      let nextMaterials = {
         ...state.materials,
         ...materials,
       }
@@ -2082,6 +2398,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           visible: true,
         }
       })
+
+      ;({ sceneGraph: nextSceneGraph, objects: nextObjects, materials: nextMaterials } =
+        mergePhoneScreenBoxesIntoState(state, nextSceneGraph, nextObjects, nextMaterials))
 
       return {
         sceneGraph: nextSceneGraph,
@@ -2759,6 +3078,132 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     return nextId
   },
+  addPhoneScreenBox: () =>
+    set((state) => {
+      const nextIndex = state.phoneScreenBoxes.length + 1
+      const id = `mesh:phone-box:${nextIndex}:${Date.now()}`
+      const materialId = getPhoneScreenBoxMaterialId(id)
+      const label = getIndexedPhoneScreenBoxLabel(nextIndex)
+      const nextEntry = normalizePhoneScreenBoxState({
+        id,
+        materialId,
+        geometry: createDefaultPhoneScreenBoxGeometryState(),
+        screenBinding: createDefaultPhoneScreenBoxScreenBindingState(),
+        content: createDefaultPhoneScreenBoxContentState(),
+        interaction: createDefaultPhoneScreenBoxInteractionState(),
+      })
+
+      return {
+        phoneScreenBoxes: [...state.phoneScreenBoxes, nextEntry],
+        sceneGraph: {
+          ...state.sceneGraph,
+          [id]: {
+            id,
+            parentId: null,
+            children: [materialId],
+            type: 'mesh',
+            label,
+            objectUuid: id,
+            visible: true,
+          },
+          [materialId]: {
+            id: materialId,
+            parentId: id,
+            children: [],
+            type: 'material',
+            label: 'Standard Material',
+            materialUuid: materialId,
+            visible: true,
+          },
+        },
+        objects: {
+          ...state.objects,
+          [id]: {
+            position: [0, 0, 0],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+            visible: true,
+          },
+        },
+        materials: {
+          ...state.materials,
+          [materialId]: createDefaultPhoneScreenBoxMaterialState(materialId, id),
+        },
+        selectedObjectId: id,
+        selectedAnchorIndex: null,
+        selectedMaterialId: materialId,
+        history: clearHistory(),
+      }
+    }),
+  updatePhoneScreenBox: (id, patch) =>
+    set((state) => {
+      const current = state.phoneScreenBoxes.find((entry) => entry.id === id)
+      if (!current) {
+        return state
+      }
+
+      return withHistory(state, {
+        phoneScreenBoxes: state.phoneScreenBoxes.map((entry) =>
+          entry.id === id ? applyPhoneScreenBoxPatch(normalizePhoneScreenBoxState(entry), patch) : entry,
+        ),
+      })
+    }),
+  replacePhoneScreenBoxes: (entries) =>
+    set((state) => {
+      const nextSceneGraph = { ...state.sceneGraph }
+      const nextObjects = { ...state.objects }
+      const nextMaterials = { ...state.materials }
+      const nextIds = new Set(entries.map((entry) => entry.id))
+
+      state.phoneScreenBoxes.forEach((entry) => {
+        if (nextIds.has(entry.id)) {
+          return
+        }
+
+        delete nextSceneGraph[entry.id]
+        delete nextObjects[entry.id]
+        delete nextSceneGraph[entry.materialId]
+        delete nextMaterials[entry.materialId]
+      })
+
+      entries.forEach((entry) => {
+        nextSceneGraph[entry.id] = {
+          id: entry.id,
+          parentId: null,
+          children: [entry.materialId],
+          type: 'mesh',
+          label: entry.label,
+          objectUuid: entry.id,
+          visible: entry.visible,
+        }
+        nextSceneGraph[entry.materialId] = {
+          id: entry.materialId,
+          parentId: entry.id,
+          children: [],
+          type: 'material',
+          label: 'Standard Material',
+          materialUuid: entry.materialId,
+          visible: true,
+        }
+        nextObjects[entry.id] = {
+          position: [...entry.transform.position] as [number, number, number],
+          rotation: [...entry.transform.rotation] as [number, number, number],
+          scale: [...entry.transform.scale] as [number, number, number],
+          visible: entry.visible,
+        }
+        nextMaterials[entry.materialId] =
+          state.materials[entry.materialId] ?? createDefaultPhoneScreenBoxMaterialState(entry.materialId, entry.id)
+      })
+
+      return {
+        phoneScreenBoxes: entries.map(({ label: _label, visible: _visible, transform: _transform, ...entry }) =>
+          normalizePhoneScreenBoxState(entry),
+        ),
+        sceneGraph: nextSceneGraph,
+        objects: nextObjects,
+        materials: nextMaterials,
+      }
+    }),
   addGodRaysBox: () =>
     set((state) => {
       const nextIndex = state.godRaysBoxes.length + 1
@@ -3421,6 +3866,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           fileSize: null,
         },
         extraLights: [],
+        phoneScreenBoxes: [],
         godRaysBoxes: [],
         stencilVolumes: [],
         godRaysGlobalNoise: { ...DEFAULT_GOD_RAYS_GLOBAL_NOISE },
@@ -3520,6 +3966,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         backgroundColor: previous.backgroundColor,
         backgroundRotation: previous.backgroundRotation,
         extraLights: cloneExtraLightsState(previous.extraLights),
+        phoneScreenBoxes: clonePhoneScreenBoxesState(previous.phoneScreenBoxes),
         godRaysBoxes: cloneGodRaysBoxesState(previous.godRaysBoxes),
         stencilVolumes: cloneStencilVolumesState(previous.stencilVolumes),
         godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(previous.godRaysGlobalNoise),
@@ -3560,6 +4007,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         backgroundColor: next.backgroundColor,
         backgroundRotation: next.backgroundRotation,
         extraLights: cloneExtraLightsState(next.extraLights),
+        phoneScreenBoxes: clonePhoneScreenBoxesState(next.phoneScreenBoxes),
         godRaysBoxes: cloneGodRaysBoxesState(next.godRaysBoxes),
         stencilVolumes: cloneStencilVolumesState(next.stencilVolumes),
         godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(next.godRaysGlobalNoise),

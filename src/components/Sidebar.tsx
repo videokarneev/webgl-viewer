@@ -52,6 +52,8 @@ const FRAME_ASPECT_OPTIONS: Array<{ value: FrameAspectPreset; label: string }> =
   { value: '21:9', label: '21:9 Cinema' },
   { value: '9:16', label: '9:16 Portrait' },
 ]
+const LANDSCAPE_FRAME_ASPECTS: FrameAspectPreset[] = ['3:2', '16:9', '21:9']
+const PORTRAIT_FRAME_ASPECTS: FrameAspectPreset[] = ['2:3', '9:16']
 const FOCAL_LENGTH_PRESETS = [10, 16, 20, 28, 35, 50, 85, 105]
 const GOD_RAYS_DIRECTION_PRESETS: Array<{ id: GodRaysDirectionPreset; label: string; direction: [number, number, number] }> = [
   { id: 'front', label: 'FRONT', direction: [0, 0, 1] },
@@ -60,12 +62,6 @@ const GOD_RAYS_DIRECTION_PRESETS: Array<{ id: GodRaysDirectionPreset; label: str
   { id: 'right', label: 'RIGHT', direction: [1, 0, 0] },
   { id: 'top', label: 'TOP', direction: [0, 1, 0] },
   { id: 'bottom', label: 'BOTTOM', direction: [0, -1, 0] },
-]
-
-const RESPONSIVE_FRAME_PRESET_META: Array<{ kind: ResponsiveFramePresetKind; title: string }> = [
-  { kind: 'landscape', title: 'Landscape' },
-  { kind: 'portrait', title: 'Portrait' },
-  { kind: 'square', title: 'Square / Fallback' },
 ]
 
 function broadcastWebPublishStatus(status: WebPublishDeploymentStatus | null) {
@@ -138,6 +134,22 @@ function areVector3Close(left: [number, number, number], right: [number, number,
     areNumbersClose(left[1], right[1], epsilon) &&
     areNumbersClose(left[2], right[2], epsilon)
   )
+}
+
+function getResponsiveFrameGroupKind(frameAspectPreset: FrameAspectPreset): ResponsiveFramePresetKind {
+  if (frameAspectPreset === '1:1') {
+    return 'square'
+  }
+
+  return LANDSCAPE_FRAME_ASPECTS.includes(frameAspectPreset) ? 'landscape' : 'portrait'
+}
+
+function getResponsiveFrameGroupLabel(kind: ResponsiveFramePresetKind) {
+  return kind === 'landscape' ? 'L' : kind === 'portrait' ? 'P' : 'S'
+}
+
+function getResponsiveFrameGroupTitle(kind: ResponsiveFramePresetKind) {
+  return kind === 'landscape' ? 'Landscape' : kind === 'portrait' ? 'Portrait' : 'Square'
 }
 
 function parseNumberInput(value: string) {
@@ -352,6 +364,7 @@ function SceneTabContent() {
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
   const backgroundColor = useEditorStore((state) => state.backgroundColor)
   const backgroundRotation = useEditorStore((state) => state.backgroundRotation)
+  const addPhoneScreenBox = useEditorStore((state) => state.addPhoneScreenBox)
   const setBackgroundMode = useEditorStore((state) => state.setBackgroundMode)
   const setBackgroundColor = useEditorStore((state) => state.setBackgroundColor)
   const setBackgroundPanoramaUrl = useEditorStore((state) => state.setBackgroundPanoramaUrl)
@@ -375,6 +388,15 @@ function SceneTabContent() {
 
   return (
     <div className="settings-tab">
+      <div className="left-controls__group">
+        <span className="left-controls__label">Primitives</span>
+        <button type="button" className="tool-button" onClick={() => addPhoneScreenBox()}>
+          <span className="tool-button__glyph">BOX</span>
+          <span className="tool-button__label">Add Phone Showcase</span>
+        </button>
+        <p className="settings-note">Responsive portrait showcase box with open top and screen-bound sizing.</p>
+      </div>
+
       <div className="left-controls__group">
         <span className="left-controls__label">Background</span>
         <label className="left-select">
@@ -461,6 +483,60 @@ function CameraTabContent() {
   const setViewer = useEditorStore((state) => state.setViewer)
   const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
   const saveCurrentCameraToResponsivePreset = useEditorStore((state) => state.saveCurrentCameraToResponsivePreset)
+  const getAssignedResponsivePresetKind = (frameAspectPreset: FrameAspectPreset) =>
+    frameAspectPreset === '1:1'
+      ? 'square'
+      : responsiveFrame.landscape.frameAspectPreset === frameAspectPreset
+        ? 'landscape'
+        : responsiveFrame.portrait.frameAspectPreset === frameAspectPreset
+          ? 'portrait'
+          : null
+  const assignedResponsivePresetKind = getAssignedResponsivePresetKind(viewer.frameAspectPreset)
+  const handleFrameAspectSelect = (frameAspectPreset: FrameAspectPreset) => {
+    if (viewer.frameAspectPreset === frameAspectPreset) {
+      return
+    }
+
+    if (assignedResponsivePresetKind) {
+      saveCurrentCameraToResponsivePreset(assignedResponsivePresetKind)
+    }
+
+    const nextAssignedResponsivePresetKind = getAssignedResponsivePresetKind(frameAspectPreset)
+    const nextAssignedResponsivePreset = nextAssignedResponsivePresetKind ? responsiveFrame[nextAssignedResponsivePresetKind] : null
+
+    if (nextAssignedResponsivePreset) {
+      setViewer({
+        frameAspectPreset,
+        cameraPosition: [...nextAssignedResponsivePreset.cameraPosition],
+        orbitTarget: [...nextAssignedResponsivePreset.orbitTarget],
+        resetCameraPosition: [...nextAssignedResponsivePreset.cameraPosition],
+        resetOrbitTarget: [...nextAssignedResponsivePreset.orbitTarget],
+        focalLength: nextAssignedResponsivePreset.focalLength,
+      })
+      return
+    }
+
+    setViewer({ frameAspectPreset })
+  }
+
+  const handleResponsiveAssignmentChange = (kind: ResponsiveFramePresetKind, frameAspectPreset: FrameAspectPreset) => {
+    const patch: Partial<{
+      frameAspectPreset: FrameAspectPreset
+      cameraPosition: [number, number, number]
+      orbitTarget: [number, number, number]
+      focalLength: number
+    }> = {
+      frameAspectPreset,
+    }
+
+    if (viewer.frameAspectPreset === frameAspectPreset || assignedResponsivePresetKind === kind) {
+      patch.cameraPosition = [...viewer.cameraPosition]
+      patch.orbitTarget = [...viewer.orbitTarget]
+      patch.focalLength = viewer.focalLength
+    }
+
+    setResponsiveFramePreset(kind, patch)
+  }
 
   return (
     <div className="settings-tab">
@@ -518,17 +594,56 @@ function CameraTabContent() {
           <span className="left-controls__label">Frame Format</span>
           <div className="frame-aspect-grid" role="group" aria-label="Frame format presets">
             {FRAME_ASPECT_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`tool-button mode-button frame-aspect-button${viewer.frameAspectPreset === option.value ? ' is-active' : ''}`}
-                aria-pressed={viewer.frameAspectPreset === option.value}
-                title={option.label}
-                onClick={() => setViewer({ frameAspectPreset: option.value })}
-              >
-                <FrameAspectIcon preset={option.value} />
-                <span className="frame-aspect-button__label">{option.value}</span>
-              </button>
+              <div key={option.value} className="frame-aspect-choice">
+                {(() => {
+                  const kind = getResponsiveFrameGroupKind(option.value)
+                  const preset = responsiveFrame[kind]
+                  const isLocked = kind === 'square'
+                  const isAssigned = isLocked || preset.frameAspectPreset === option.value
+                  const isCurrent = viewer.frameAspectPreset === option.value
+                  const isSaved =
+                    isAssigned &&
+                    (!isCurrent ||
+                      (areNumbersClose(viewer.focalLength, preset.focalLength) &&
+                        areVector3Close(viewer.cameraPosition, preset.cameraPosition) &&
+                        areVector3Close(viewer.orbitTarget, preset.orbitTarget)))
+
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        className={`tool-button mode-button frame-aspect-button${isCurrent ? ' is-active' : ''}${isSaved ? ' is-saved' : ''}`}
+                        aria-pressed={isCurrent}
+                        title={option.label}
+                        onClick={() => handleFrameAspectSelect(option.value)}
+                      >
+                        <FrameAspectIcon preset={option.value} />
+                        <span className="frame-aspect-button__label">{option.value}</span>
+                      </button>
+                      <div className="frame-aspect-choice__assignment">
+                        <label
+                          className={`frame-aspect-assignment${isAssigned ? ' is-active' : ''}${isLocked ? ' frame-aspect-assignment--locked' : ''}`}
+                          title={`${getResponsiveFrameGroupTitle(kind)} responsive format`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isAssigned}
+                            disabled={isLocked}
+                            onChange={(event) => {
+                              if (!event.currentTarget.checked || isLocked) {
+                                return
+                              }
+
+                              handleResponsiveAssignmentChange(kind, option.value)
+                            }}
+                          />
+                          <span>{getResponsiveFrameGroupLabel(kind)}</span>
+                        </label>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
             ))}
           </div>
         </div>
@@ -540,47 +655,7 @@ function CameraTabContent() {
           />
           <span>Show Frame Guides</span>
         </label>
-        <div className="left-controls__group">
-          <div className="responsive-camera-grid">
-            {RESPONSIVE_FRAME_PRESET_META.map((entry) => {
-              const preset = responsiveFrame[entry.kind]
-              const isCurrentViewSaved =
-                viewer.frameAspectPreset === preset.frameAspectPreset &&
-                areNumbersClose(viewer.focalLength, preset.focalLength) &&
-                areVector3Close(viewer.cameraPosition, preset.cameraPosition) &&
-                areVector3Close(viewer.orbitTarget, preset.orbitTarget)
-              return (
-                <div key={entry.kind} className="responsive-camera-card">
-                  <span className="sidebar-field-title">{entry.title}</span>
-                  <label className="left-select">
-                    <span>Format</span>
-                    <select
-                      value={preset.frameAspectPreset}
-                      onChange={(event) =>
-                        setResponsiveFramePreset(entry.kind, {
-                          frameAspectPreset: event.currentTarget.value as FrameAspectPreset,
-                        })
-                      }
-                    >
-                      {FRAME_ASPECT_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className={`tool-button responsive-camera-card__save${isCurrentViewSaved ? ' is-saved' : ''}`}
-                    onClick={() => saveCurrentCameraToResponsivePreset(entry.kind)}
-                  >
-                    Save current camera
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <p className="settings-note">Checked L / P / S formats auto-save their camera when you switch to another format.</p>
       </div>
     </div>
   )

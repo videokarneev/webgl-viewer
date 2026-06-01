@@ -7,17 +7,26 @@ import { TransparentDomDiagnostic } from '../components/TransparentDomDiagnostic
 import { TransparentRawThreeDiagnostic } from '../components/TransparentRawThreeDiagnostic'
 import { TransparentRawWebGlDiagnostic } from '../components/TransparentRawWebGlDiagnostic'
 import { Viewport } from '../components/Viewport'
+import { resolvePhoneScreenBoxCameraFrame } from '../features/scene/runtime/phoneScreenBoxRuntime'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
 import { buildPublishIdMap } from '../features/publish/publishNodeIds'
 import {
+  createDefaultResponsiveFrameState,
+  DEFAULT_VIEWER_CAMERA_FOV,
+  DEFAULT_VIEWER_CAMERA_POSITION,
+  DEFAULT_VIEWER_FOCAL_LENGTH,
+  DEFAULT_VIEWER_ORBIT_TARGET,
   DEFAULT_GOD_RAYS_GLOBAL_DIRECTION,
   DEFAULT_GOD_RAYS_GLOBAL_NOISE,
   getGodRaysDustStrengthValue,
+  getPhoneScreenBoxMaterialId,
+  normalizePhoneScreenBoxState,
   useEditorStore,
   type ExtraLightType,
   type FrameAspectPreset,
   type MaterialTextureSlot,
   type ResponsiveFramePresetKind,
+  type ResponsiveFrameState,
 } from '../store/editorStore'
 import type { PublishedSceneV2 } from '../features/publish/buildPublishedScene'
 
@@ -79,6 +88,104 @@ function isVector3(value: unknown): value is [number, number, number] {
   return Array.isArray(value) && value.length === 3 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
 }
 
+function areNumbersClose(left: number, right: number, tolerance = 0.0001) {
+  return Math.abs(left - right) <= tolerance
+}
+
+function areVector3sClose(left: [number, number, number], right: [number, number, number], tolerance = 0.0001) {
+  return (
+    areNumbersClose(left[0], right[0], tolerance) &&
+    areNumbersClose(left[1], right[1], tolerance) &&
+    areNumbersClose(left[2], right[2], tolerance)
+  )
+}
+
+function isPublishedCameraPoseDefault(cameraState: PublishedCameraState) {
+  return (
+    areVector3sClose(cameraState.cameraPosition, DEFAULT_VIEWER_CAMERA_POSITION) &&
+    areVector3sClose(cameraState.orbitTarget, DEFAULT_VIEWER_ORBIT_TARGET) &&
+    areNumbersClose(cameraState.focalLength, DEFAULT_VIEWER_FOCAL_LENGTH)
+  )
+}
+
+function resolvePublishedResponsiveFrameState(scene: PublishedSceneV2): ResponsiveFrameState {
+  const defaults = createDefaultResponsiveFrameState()
+  if (!scene.responsiveFrame) {
+    return defaults
+  }
+
+  return {
+    landscape: {
+      ...defaults.landscape,
+      frameAspectPreset: isFrameAspectPreset(scene.responsiveFrame.landscape?.frameAspectPreset)
+        ? scene.responsiveFrame.landscape.frameAspectPreset
+        : defaults.landscape.frameAspectPreset,
+    },
+    portrait: {
+      ...defaults.portrait,
+      frameAspectPreset: isFrameAspectPreset(scene.responsiveFrame.portrait?.frameAspectPreset)
+        ? scene.responsiveFrame.portrait.frameAspectPreset
+        : defaults.portrait.frameAspectPreset,
+    },
+    square: {
+      ...defaults.square,
+      frameAspectPreset: isFrameAspectPreset(scene.responsiveFrame.square?.frameAspectPreset)
+        ? scene.responsiveFrame.square.frameAspectPreset
+        : defaults.square.frameAspectPreset,
+    },
+  }
+}
+
+function resolveShowcaseFallbackCameraState(
+  scene: PublishedSceneV2,
+  baseCameraState: PublishedCameraState,
+  containerAspect: number,
+): PublishedCameraState | null {
+  const visiblePhoneScreenBox = (scene.phoneScreenBoxes ?? []).find((entry) => entry.visible)
+  if (!visiblePhoneScreenBox) {
+    return null
+  }
+
+  if (scene.model?.assetUrl && scene.model.visible !== false) {
+    return null
+  }
+
+  const boxState = normalizePhoneScreenBoxState({
+    id: visiblePhoneScreenBox.id,
+    materialId: getPhoneScreenBoxMaterialId(visiblePhoneScreenBox.id),
+    geometry: visiblePhoneScreenBox.geometry,
+    screenBinding: visiblePhoneScreenBox.screenBinding,
+    content: visiblePhoneScreenBox.content,
+    interaction: visiblePhoneScreenBox.interaction,
+  })
+  const responsiveFrame = resolvePublishedResponsiveFrameState(scene)
+  const previewCamera = new THREE.PerspectiveCamera(
+    DEFAULT_VIEWER_CAMERA_FOV,
+    Math.max(containerAspect, 0.0001),
+    0.1,
+    2000,
+  )
+  previewCamera.setFocalLength(baseCameraState.focalLength)
+  previewCamera.updateProjectionMatrix()
+  const frame = resolvePhoneScreenBoxCameraFrame(
+    boxState,
+    visiblePhoneScreenBox.transform,
+    responsiveFrame,
+    containerAspect,
+    previewCamera.aspect,
+    previewCamera.fov,
+  )
+
+  return {
+    cameraPosition: frame.position,
+    orbitTarget: frame.target,
+    focalLength: baseCameraState.focalLength,
+    frameAspectPreset: boxState.screenBinding.mode === 'viewport'
+      ? baseCameraState.frameAspectPreset
+      : (frame.dimensions.frameAspectPreset ?? baseCameraState.frameAspectPreset),
+  }
+}
+
 function resolvePublishedResponsivePresetKind(containerAspect: number): ResponsiveFramePresetKind {
   if (containerAspect > 1.2) {
     return 'landscape'
@@ -94,6 +201,7 @@ function resolvePublishedResponsivePresetKind(containerAspect: number): Responsi
 function resolvePublishedCameraState(
   scene: PublishedSceneV2,
   responsivePresetKind: ResponsiveFramePresetKind | null,
+  containerAspect: number,
 ): PublishedCameraState {
   const fixedCameraState: PublishedCameraState = {
     cameraPosition: isVector3(scene.camera.position) ? scene.camera.position : [0, 0, 5],
@@ -103,12 +211,15 @@ function resolvePublishedCameraState(
   }
 
   if (!scene.responsiveFrame || !responsivePresetKind) {
-    return fixedCameraState
+    return (
+      (isPublishedCameraPoseDefault(fixedCameraState)
+        ? resolveShowcaseFallbackCameraState(scene, fixedCameraState, containerAspect)
+        : null) ?? fixedCameraState
+    )
   }
 
   const responsivePreset = scene.responsiveFrame[responsivePresetKind]
-
-  return {
+  const responsiveCameraState: PublishedCameraState = {
     cameraPosition: isVector3(responsivePreset?.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
     orbitTarget: isVector3(responsivePreset?.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
     focalLength: Number.isFinite(responsivePreset?.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
@@ -116,6 +227,19 @@ function resolvePublishedCameraState(
       ? responsivePreset.frameAspectPreset
       : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
   }
+  const effectiveCameraState =
+    isPublishedCameraPoseDefault(responsiveCameraState) && !isPublishedCameraPoseDefault(fixedCameraState)
+      ? {
+          ...fixedCameraState,
+          frameAspectPreset: responsiveCameraState.frameAspectPreset,
+        }
+      : responsiveCameraState
+
+  return (
+    (isPublishedCameraPoseDefault(effectiveCameraState)
+      ? resolveShowcaseFallbackCameraState(scene, effectiveCameraState, containerAspect)
+      : null) ?? effectiveCameraState
+  )
 }
 
 type RuntimePublishedMaterial = THREE.Material & {
@@ -208,6 +332,7 @@ function PublishedSceneController({
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const setLights = useEditorStore((state) => state.setLights)
   const replaceExtraLights = useEditorStore((state) => state.replaceExtraLights)
+  const replacePhoneScreenBoxes = useEditorStore((state) => state.replacePhoneScreenBoxes)
   const replaceGodRaysBoxes = useEditorStore((state) => state.replaceGodRaysBoxes)
   const replaceStencilVolumes = useEditorStore((state) => state.replaceStencilVolumes)
   const setGodRaysGlobalNoise = useEditorStore((state) => state.setGodRaysGlobalNoise)
@@ -296,6 +421,27 @@ function PublishedSceneController({
         type: light.type as ExtraLightType,
         id: `published:${light.id}`,
       })),
+    )
+    replacePhoneScreenBoxes(
+      (scene.phoneScreenBoxes ?? []).map((entry, index) => {
+        const id = `published:${entry.id}`
+        return {
+          id,
+          materialId: getPhoneScreenBoxMaterialId(id),
+          geometry: entry.geometry,
+          screenBinding: entry.screenBinding,
+          content: entry.content,
+          interaction: entry.interaction,
+          label: entry.label || (index === 0 ? 'Phone Box' : `Phone Box ${index + 1}`),
+          visible: entry.visible,
+          transform: {
+            position: [...entry.transform.position] as [number, number, number],
+            rotation: [...entry.transform.rotation] as [number, number, number],
+            scale: [...entry.transform.scale] as [number, number, number],
+            visible: entry.visible,
+          },
+        }
+      }),
     )
     replaceGodRaysBoxes(
       (scene.godRaysBoxes ?? []).map((entry, index) => ({
@@ -426,6 +572,7 @@ function PublishedSceneController({
     })
   }, [
     replaceExtraLights,
+    replacePhoneScreenBoxes,
     replaceGodRaysBoxes,
     replaceStencilVolumes,
     scene,
@@ -726,9 +873,17 @@ async function loadPublishedSceneFromLocation() {
     throw new Error('No published scene source provided.')
   }
 
+  const resolvedSceneUrl = (() => {
+    try {
+      return new URL(sceneUrl, window.location.href).toString()
+    } catch {
+      return sceneUrl
+    }
+  })()
+
   const response = await fetch(sceneUrl)
   if (!response.ok) {
-    throw new Error(`Failed to load published scene: ${response.status}`)
+    throw new Error(`Failed to load published scene: ${response.status} (${resolvedSceneUrl})`)
   }
 
   const scene = (await response.json()) as PublishedSceneV2
@@ -795,8 +950,11 @@ export function PublishedPlayerApp() {
     [containerSize.height, containerSize.width, scene],
   )
   const publishedCameraState = useMemo(
-    () => (scene ? resolvePublishedCameraState(scene, responsivePresetKind) : null),
-    [responsivePresetKind, scene],
+    () =>
+      scene
+        ? resolvePublishedCameraState(scene, responsivePresetKind, containerSize.width / Math.max(containerSize.height, 1))
+        : null,
+    [containerSize.height, containerSize.width, responsivePresetKind, scene],
   )
 
   useEffect(() => {

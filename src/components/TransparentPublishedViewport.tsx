@@ -3,8 +3,11 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
+import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
+import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
 import { applyViewerCameraOptics } from '../features/scene/runtime/shared'
+import { useShowcaseMotionSensor } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import { DEFAULT_VIEWER_CAMERA_FOV, type FrameAspectPreset, useEditorStore } from '../store/editorStore'
 import { MaterialEffectController } from './MaterialEffectController'
@@ -96,7 +99,15 @@ function TransparentEnvironmentBridge() {
   return null
 }
 
-function TransparentCameraBridge({ controlsRef }: { controlsRef: React.RefObject<OrbitControlsImpl | null> }) {
+function TransparentCameraBridge({
+  controlsRef,
+  cameraOffsetRef,
+  targetOffsetRef,
+}: {
+  controlsRef: React.RefObject<OrbitControlsImpl | null>
+  cameraOffsetRef: React.MutableRefObject<THREE.Vector3>
+  targetOffsetRef: React.MutableRefObject<THREE.Vector3>
+}) {
   const { camera } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
 
@@ -106,12 +117,14 @@ function TransparentCameraBridge({ controlsRef }: { controlsRef: React.RefObject
     applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
 
     if (controlsRef.current) {
-      controlsRef.current.target.set(...viewer.orbitTarget)
+      controlsRef.current.target
+        .set(...viewer.orbitTarget)
+        .add(targetOffsetRef.current)
       controlsRef.current.update()
     }
-  }, [camera, controlsRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
+  }, [camera, controlsRef, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
-  return <ViewerSync controlsRef={controlsRef} />
+  return <ViewerSync controlsRef={controlsRef} cameraOffsetRef={cameraOffsetRef} targetOffsetRef={targetOffsetRef} />
 }
 
 function TransparentSceneBridge() {
@@ -143,16 +156,30 @@ function TransparentSceneBridge() {
 
 function TransparentPublishedScene() {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
+  const showcaseCameraOffsetRef = useRef(new THREE.Vector3())
+  const showcaseTargetOffsetRef = useRef(new THREE.Vector3())
+  const showcaseMotion = useShowcaseMotionSensor()
   const viewer = useEditorStore((state) => state.viewer)
 
   return (
     <>
       <TransparentRendererBridge />
       <TransparentEnvironmentBridge />
-      <TransparentCameraBridge controlsRef={controlsRef} />
+      <TransparentCameraBridge
+        controlsRef={controlsRef}
+        cameraOffsetRef={showcaseCameraOffsetRef}
+        targetOffsetRef={showcaseTargetOffsetRef}
+      />
       <Suspense fallback={null}>
         <LightRig />
         <TransparentSceneBridge />
+        <CustomSceneBoxes selectable={false} />
+        <ShowcaseInteractionController
+          controlsRef={controlsRef}
+          cameraOffsetRef={showcaseCameraOffsetRef}
+          targetOffsetRef={showcaseTargetOffsetRef}
+          gyroSampleRef={showcaseMotion.sampleRef}
+        />
         <MaterialEffectController />
         <SceneAnimationController />
       </Suspense>

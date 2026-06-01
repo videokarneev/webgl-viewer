@@ -1,11 +1,14 @@
 import {
+  normalizePhoneScreenBoxState,
   useEditorStore,
   type FrameAspectPreset,
   type MaterialTextureSlot,
+  type PhoneScreenBoxState,
   type ResponsiveFramePresetKind,
   type ResponsiveFrameState,
   type SceneGraphNode,
 } from '../../store/editorStore'
+import { getStandardEnvironmentPresetByUrl } from '../environment/standardEnvironmentPresets'
 import { getPublishNodeId } from './publishNodeIds'
 import { extractMaskContour } from '../stencilVolume/maskContour'
 
@@ -122,7 +125,7 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16
   scene: {
     background: {
       mode: string
@@ -222,6 +225,20 @@ export interface PublishedSceneV2 {
       targetPosition: [number, number, number]
     }>
   }
+  phoneScreenBoxes?: Array<{
+    id: string
+    label: string
+    visible: boolean
+    geometry?: PhoneScreenBoxState['geometry']
+    screenBinding?: PhoneScreenBoxState['screenBinding']
+    content?: PhoneScreenBoxState['content']
+    interaction?: PhoneScreenBoxState['interaction']
+    transform: {
+      position: [number, number, number]
+      rotation: [number, number, number]
+      scale: [number, number, number]
+    }
+  }>
   godRaysGlobals?: {
     noise?: {
       enabled?: boolean
@@ -598,6 +615,42 @@ async function buildPublishedSceneInternal() {
     }
   })
 
+  const phoneScreenBoxes: NonNullable<PublishedSceneV2['phoneScreenBoxes']> = state.phoneScreenBoxes
+    .map((entry) => {
+      const objectState = state.objects[entry.id]
+      const node = state.sceneGraph[entry.id]
+      if (!objectState || !node) {
+        return null
+      }
+
+      const normalizedEntry = normalizePhoneScreenBoxState(entry)
+
+      return {
+        id: normalizedEntry.id,
+        label: node.label,
+        visible: objectState.visible,
+        geometry: {
+          ...normalizedEntry.geometry,
+        },
+        screenBinding: {
+          ...normalizedEntry.screenBinding,
+        },
+        content: {
+          ...normalizedEntry.content,
+          anchor: [...normalizedEntry.content.anchor] as [number, number, number],
+        },
+        interaction: {
+          ...normalizedEntry.interaction,
+        },
+        transform: {
+          position: [...objectState.position] as [number, number, number],
+          rotation: [...objectState.rotation] as [number, number, number],
+          scale: [...objectState.scale] as [number, number, number],
+        },
+      }
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+
   const godRaysBoxes: PublishedSceneV2['godRaysBoxes'] = state.godRaysBoxes
     .map((entry) => {
       const objectState = state.objects[entry.id]
@@ -760,8 +813,15 @@ async function buildPublishedSceneInternal() {
     })
   }
 
+  const publishedEnvironmentAssetUrl = state.environment.isEnvironmentEnabled
+    ? state.assets.reflectionsUrl ?? state.environment.customHdriUrl ?? state.defaultEnvUrl
+    : null
+  const publishedEnvironmentPreset = getStandardEnvironmentPresetByUrl(publishedEnvironmentAssetUrl)
+  const publishedEnvironmentAssetLabel =
+    state.assets.reflections ?? state.environment.source ?? publishedEnvironmentPreset?.label ?? null
+
   const scene: PublishedSceneV2 = {
-    version: 15,
+    version: 16,
     scene: {
       background: {
         mode: state.backgroundMode,
@@ -771,8 +831,8 @@ async function buildPublishedSceneInternal() {
       environment: {
         enabled: state.environment.isEnvironmentEnabled,
         kind: state.environment.kind,
-        assetLabel: state.assets.reflections,
-        assetUrl: state.assets.reflectionsUrl ?? null,
+        assetLabel: publishedEnvironmentAssetLabel,
+        assetUrl: publishedEnvironmentAssetUrl,
         intensity: state.environment.intensity,
         rotation: state.environment.rotation,
         backgroundMode: state.environment.background,
@@ -842,6 +902,7 @@ async function buildPublishedSceneInternal() {
         targetPosition: [...light.targetPosition] as [number, number, number],
       })),
     },
+    phoneScreenBoxes,
     godRaysGlobals: {
       noise: {
         amount: state.godRaysGlobalNoise.rayNoiseAmount,
