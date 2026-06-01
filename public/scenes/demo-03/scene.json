@@ -9,8 +9,8 @@
     "environment": {
       "enabled": true,
       "kind": "hdri",
-      "assetLabel": null,
-      "assetUrl": null,
+      "assetLabel": "Studio",
+      "assetUrl": "assets/environment/scene-environment-studio.exr",
       "intensity": 1.5,
       "rotation": 0,
       "backgroundMode": "color",
@@ -24,16 +24,16 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      7.292101543587195e-162,
-      0.6955275689208864,
-      0.061512648764646814
+      0,
+      0.18984645157226507,
+      0.018168552991908553
     ],
     "target": [
       0,
       -0.025,
       0
     ],
-    "focalLength": 85,
+    "focalLength": 20,
     "frameAspectPreset": "1:1",
     "exposure": 1
   },
@@ -118,7 +118,7 @@
   },
   "phoneScreenBoxes": [
     {
-      "id": "mesh:phone-box:1:1780294325150",
+      "id": "mesh:phone-box:1:1780294640170",
       "label": "Phone Box",
       "visible": true,
       "geometry": {
@@ -191,7 +191,7 @@
   "model": null,
   "objects": [
     {
-      "id": "root:mesh:phone-box:1:1780294325150",
+      "id": "root:mesh:phone-box:1:1780294640170",
       "parentId": null,
       "type": "mesh",
       "label": "Phone Box",
@@ -217,7 +217,7 @@
   ],
   "materials": [
     {
-      "id": "root:mesh:phone-box:1:1780294325150/material:0",
+      "id": "root:mesh:phone-box:1:1780294640170/material:0",
       "name": "Standard Material",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
