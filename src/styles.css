@@ -3578,8 +3578,8 @@ button {
 
 .viewport-motion-toggle {
   position: absolute;
-  top: 44px;
-  right: 18px;
+  top: calc(env(safe-area-inset-top, 0px) + 72px);
+  right: calc(env(safe-area-inset-right, 0px) + 18px);
   z-index: 34;
   min-height: 28px;
   border: 1px solid rgba(165, 197, 216, 0.1);

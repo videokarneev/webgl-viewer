@@ -206,13 +206,14 @@ export function resolvePhoneScreenBoxCameraFrame(
   ].map((corner) => corner.applyMatrix4(transformMatrix))
   const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(boxQuaternion).normalize()
   const depthAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(boxQuaternion).normalize()
-  const viewDirection = upAxis.clone().multiplyScalar(1.32).addScaledVector(depthAxis, 0.14).normalize()
+  const viewDirection = upAxis.clone()
   const cameraForward = viewDirection.clone().negate()
-  const screenRight = new THREE.Vector3().crossVectors(cameraForward, depthAxis).normalize()
-  const screenUp = new THREE.Vector3().crossVectors(screenRight, cameraForward).normalize()
+  const screenUp = depthAxis.clone()
+  const screenRight = new THREE.Vector3().crossVectors(screenUp, cameraForward).normalize()
   const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
   const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
-  const fitFraction = THREE.MathUtils.clamp(0.96 - box.screenBinding.margin * 0.35, 0.8, 0.96)
+  const baseFitFraction = cameraAspect < 0.85 ? 0.74 : cameraAspect < 1.2 ? 0.8 : 0.86
+  const fitFraction = THREE.MathUtils.clamp(baseFitFraction - box.screenBinding.margin * 0.35, 0.7, 0.9)
   const halfHorizontalFovTangent = Math.max(Math.tan(horizontalFov / 2), 0.0001)
   const halfVerticalFovTangent = Math.max(Math.tan(verticalFov / 2), 0.0001)
   const requiredDistance = corners.reduce((maxDistance, corner) => {
@@ -224,15 +225,17 @@ export function resolvePhoneScreenBoxCameraFrame(
     const verticalDistance = y / (halfVerticalFovTangent * fitFraction) - z
     return Math.max(maxDistance, horizontalDistance, verticalDistance)
   }, 0)
-  const minimumDistance = Math.max(dimensions.boxHeight * 1.18, dimensions.footprintDepth * 0.5, 0.08)
+  const minimumDistance = Math.max(dimensions.boxHeight * 1.35, dimensions.footprintDepth * 0.65, 0.1)
   const distance = Math.max(requiredDistance, minimumDistance)
+  const safeTargetOffset = screenUp.clone().multiplyScalar(-dimensions.footprintDepth * (cameraAspect < 0.85 ? 0.06 : 0.03))
   const cameraPosition = targetVector
     .clone()
+    .add(safeTargetOffset)
     .addScaledVector(viewDirection, distance)
-    .addScaledVector(upAxis, dimensions.boxHeight * 0.03)
+  const framedTarget = targetVector.clone().add(safeTargetOffset)
 
   return {
-    target: [targetVector.x, targetVector.y, targetVector.z],
+    target: [framedTarget.x, framedTarget.y, framedTarget.z],
     position: [cameraPosition.x, cameraPosition.y, cameraPosition.z],
     dimensions,
   }
