@@ -78,7 +78,7 @@ const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
 }
 
 function buildIframeEmbedCode(url: string) {
-  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>`
+  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen; accelerometer; gyroscope"></iframe>`
 }
 
 function buildPublishedPlayerUrl(sceneUrl: string, deployOrigin: string) {
