@@ -204,21 +204,32 @@ export function resolvePhoneScreenBoxCameraFrame(
     new THREE.Vector3(halfWidth, bottomY, -halfDepth),
     new THREE.Vector3(halfWidth, bottomY, halfDepth),
   ].map((corner) => corner.applyMatrix4(transformMatrix))
-  const radius = Math.max(
-    corners.reduce((maxDistance, corner) => Math.max(maxDistance, corner.distanceTo(targetVector)), 0),
-    0.05,
-  )
-  const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
-  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
-  const limitingFov = Math.max(Math.min(verticalFov, horizontalFov), 0.001)
-  const distance = (radius / Math.sin(limitingFov / 2)) * 1.08
   const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(boxQuaternion).normalize()
   const depthAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(boxQuaternion).normalize()
-  const viewDirection = upAxis.clone().multiplyScalar(1.4).addScaledVector(depthAxis, 0.12).normalize()
+  const viewDirection = upAxis.clone().multiplyScalar(1.32).addScaledVector(depthAxis, 0.14).normalize()
+  const cameraForward = viewDirection.clone().negate()
+  const screenRight = new THREE.Vector3().crossVectors(cameraForward, depthAxis).normalize()
+  const screenUp = new THREE.Vector3().crossVectors(screenRight, cameraForward).normalize()
+  const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
+  const fitFraction = THREE.MathUtils.clamp(0.96 - box.screenBinding.margin * 0.35, 0.8, 0.96)
+  const halfHorizontalFovTangent = Math.max(Math.tan(horizontalFov / 2), 0.0001)
+  const halfVerticalFovTangent = Math.max(Math.tan(verticalFov / 2), 0.0001)
+  const requiredDistance = corners.reduce((maxDistance, corner) => {
+    const offset = corner.clone().sub(targetVector)
+    const x = Math.abs(offset.dot(screenRight))
+    const y = Math.abs(offset.dot(screenUp))
+    const z = offset.dot(cameraForward)
+    const horizontalDistance = x / (halfHorizontalFovTangent * fitFraction) - z
+    const verticalDistance = y / (halfVerticalFovTangent * fitFraction) - z
+    return Math.max(maxDistance, horizontalDistance, verticalDistance)
+  }, 0)
+  const minimumDistance = Math.max(dimensions.boxHeight * 1.18, dimensions.footprintDepth * 0.5, 0.08)
+  const distance = Math.max(requiredDistance, minimumDistance)
   const cameraPosition = targetVector
     .clone()
     .addScaledVector(viewDirection, distance)
-    .addScaledVector(upAxis, dimensions.boxHeight * 0.04)
+    .addScaledVector(upAxis, dimensions.boxHeight * 0.03)
 
   return {
     target: [targetVector.x, targetVector.y, targetVector.z],
