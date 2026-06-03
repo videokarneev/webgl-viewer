@@ -86,9 +86,9 @@ function applyPortalDepthDeformation(
     const baseZ = basePositions[offset + 2] ?? 0
     const depthRatio = THREE.MathUtils.clamp(-baseY / safeHeight, 0, 1)
     const easedDepthRatio = depthRatio * depthRatio * depthRatio
-    const frontLock = THREE.MathUtils.clamp((-baseZ + 0.0001) / Math.max(Math.abs(baseZ) * 2, 0.0001), 0, 1)
+    const frontLock = THREE.MathUtils.clamp((-baseZ + safeHeight * 0.08) / Math.max(Math.abs(baseZ) * 1.35, 0.0001), 0, 1)
     const sideBias = THREE.MathUtils.clamp(Math.abs(baseX) / Math.max(Math.abs(baseZ), 0.0001), 0, 1)
-    const wallTaper = 1 - sideBias * 0.1
+    const wallTaper = 1 - sideBias * 0.06
     const influence = easedDepthRatio * frontLock * wallTaper
     const nextX = baseX + shiftX * influence
     const nextZ = baseZ + shiftZ * influence
@@ -266,8 +266,8 @@ export function ShowcaseInteractionController({
         store.responsiveFrame,
         state.size.width / Math.max(state.size.height, 1),
       )
-      const localShiftX = pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.006) * 0.55
-      const localShiftZ = -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.009) * 0.55
+      const localShiftX = pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * 6.5
+      const localShiftZ = -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * 6.5
       applyPortalDepthDeformation(
         runtimeMesh,
         localShiftX,
