@@ -13,6 +13,8 @@ How to host:
 4. Or open the pretty scene URL:
    https://your-cdn.example/path/to/scene-folder/
    The pretty scene URL preserves query params and enables transparent mode automatically inside iframes.
+   If you want phone tilt / gyroscope interaction inside an iframe, keep accelerometer, gyroscope, and magnetometer in the allow list.
+   If a sticky site header overlays the top of the iframe, add frameInsetTop=auto or exact frameInsetTopDesktop / frameInsetTopMobile values to pin the portal below it.
 
 iframe example:
-<iframe src="https://your-cdn.example/path/to/scene-folder/" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen"></iframe>
+<iframe src="https://your-cdn.example/path/to/scene-folder/?frameInsetTop=auto" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer"></iframe>
