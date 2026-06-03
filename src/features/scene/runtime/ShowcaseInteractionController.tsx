@@ -1,8 +1,8 @@
 import { useFrame } from '@react-three/fiber'
-import type { MutableRefObject, RefObject } from 'react'
+import { useRef, type MutableRefObject, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { useEditorStore } from '../../../store/editorStore'
+import { useEditorStore, type ObjectTransformState } from '../../../store/editorStore'
 import { resolvePhoneScreenBoxCameraFrame } from './phoneScreenBoxRuntime'
 import type { ShowcaseMotionSample } from './useShowcaseMotionSensor'
 
@@ -107,19 +107,135 @@ function applyPortalDepthShear(mesh: THREE.Mesh, shiftX: number, shiftZ: number,
   }
 }
 
+function restoreRuntimeObjectTransform(object: THREE.Object3D, objectState: ObjectTransformState) {
+  object.position.set(...objectState.position)
+  object.rotation.set(objectState.rotation[0], objectState.rotation[1], objectState.rotation[2])
+  object.scale.set(...objectState.scale)
+  object.visible = objectState.visible
+  object.updateMatrixWorld(true)
+}
+
+const attachedWorldPosition = new THREE.Vector3()
+const attachedBoxLocalPosition = new THREE.Vector3()
+const attachedWorldOffset = new THREE.Vector3()
+const attachedDesiredWorldPosition = new THREE.Vector3()
+const attachedBoxInverseMatrix = new THREE.Matrix4()
+const attachedWorldQuaternion = new THREE.Quaternion()
+const attachedTiltQuaternionX = new THREE.Quaternion()
+const attachedTiltQuaternionY = new THREE.Quaternion()
+const attachedNextWorldQuaternion = new THREE.Quaternion()
+const attachedParentWorldQuaternion = new THREE.Quaternion()
+const attachedParentInverseQuaternion = new THREE.Quaternion()
+
+const ATTACHED_CONTENT_MIN_DEPTH_RATIO = 0.42
+const ATTACHED_CONTENT_PARALLAX_SCALE = 1.4
+const ATTACHED_CONTENT_TILT_X = 0.92
+const ATTACHED_CONTENT_TILT_Y = 0.62
+
+function resolveAttachedObjectIds(
+  boxAttachedObjectIds: string[],
+  store: ReturnType<typeof useEditorStore.getState>,
+  lockOnlyWhenSelected: boolean,
+) {
+  const resolvedIds = boxAttachedObjectIds.filter((objectId) => Boolean(store.runtime.objectById[objectId]))
+  if (resolvedIds.length || lockOnlyWhenSelected) {
+    return resolvedIds
+  }
+
+  const visibleModelRootIds = store.loadedModels
+    .map((model) => model.rootNodeId)
+    .filter((objectId) => Boolean(store.runtime.objectById[objectId] && store.objects[objectId]?.visible))
+
+  return visibleModelRootIds.length === 1 ? visibleModelRootIds : resolvedIds
+}
+
+function applyPortalDepthOffsetToObject({
+  object,
+  objectState,
+  boxObject,
+  boxHeight,
+  rightAxis,
+  screenUpAxis,
+  shiftX,
+  shiftZ,
+  pointerX,
+  pointerY,
+}: {
+  object: THREE.Object3D
+  objectState: ObjectTransformState
+  boxObject: THREE.Object3D
+  boxHeight: number
+  rightAxis: THREE.Vector3
+  screenUpAxis: THREE.Vector3
+  shiftX: number
+  shiftZ: number
+  pointerX: number
+  pointerY: number
+}) {
+  restoreRuntimeObjectTransform(object, objectState)
+  if (!object.visible) {
+    return
+  }
+
+  boxObject.updateWorldMatrix(true, false)
+  object.updateWorldMatrix(true, true)
+  object.getWorldPosition(attachedWorldPosition)
+  attachedBoxInverseMatrix.copy(boxObject.matrixWorld).invert()
+  attachedBoxLocalPosition.copy(attachedWorldPosition).applyMatrix4(attachedBoxInverseMatrix)
+
+  const rawDepthRatio = THREE.MathUtils.clamp(-attachedBoxLocalPosition.y / Math.max(boxHeight, 0.0001), 0, 1)
+  const depthRatio = Math.max(rawDepthRatio, ATTACHED_CONTENT_MIN_DEPTH_RATIO)
+
+  attachedWorldOffset
+    .copy(rightAxis)
+    .multiplyScalar(shiftX * depthRatio * ATTACHED_CONTENT_PARALLAX_SCALE)
+    .addScaledVector(screenUpAxis, shiftZ * depthRatio * ATTACHED_CONTENT_PARALLAX_SCALE)
+  attachedDesiredWorldPosition.copy(attachedWorldPosition).add(attachedWorldOffset)
+
+  if (object.parent) {
+    object.parent.updateWorldMatrix(true, false)
+    object.position.copy(object.parent.worldToLocal(attachedDesiredWorldPosition))
+  } else {
+    object.position.copy(attachedDesiredWorldPosition)
+  }
+
+  object.getWorldQuaternion(attachedWorldQuaternion)
+  attachedTiltQuaternionX.setFromAxisAngle(screenUpAxis, -pointerX * ATTACHED_CONTENT_TILT_X * depthRatio)
+  attachedTiltQuaternionY.setFromAxisAngle(rightAxis, pointerY * ATTACHED_CONTENT_TILT_Y * depthRatio)
+  attachedNextWorldQuaternion
+    .copy(attachedTiltQuaternionX)
+    .multiply(attachedTiltQuaternionY)
+    .multiply(attachedWorldQuaternion)
+
+  if (object.parent) {
+    object.parent.getWorldQuaternion(attachedParentWorldQuaternion)
+    attachedParentInverseQuaternion.copy(attachedParentWorldQuaternion).invert()
+    object.quaternion.copy(attachedParentInverseQuaternion.multiply(attachedNextWorldQuaternion))
+  } else {
+    object.quaternion.copy(attachedNextWorldQuaternion)
+  }
+
+  object.updateMatrixWorld(true)
+}
+
 export function ShowcaseInteractionController({
   controlsRef,
   cameraOffsetRef,
   targetOffsetRef,
   gyroSampleRef,
+  lockOnlyWhenSelected = false,
+  transformDragging = false,
 }: {
   controlsRef: RefObject<OrbitControlsImpl | null>
   cameraOffsetRef: MutableRefObject<THREE.Vector3>
   targetOffsetRef: MutableRefObject<THREE.Vector3>
   gyroSampleRef: MutableRefObject<ShowcaseMotionSample>
+  lockOnlyWhenSelected?: boolean
+  transformDragging?: boolean
 }) {
   const smoothedOffsetRef = cameraOffsetRef
   const smoothedTargetOffsetRef = targetOffsetRef
+  const lastPortalObjectIdsRef = useRef<Set<string>>(new Set())
   const baseCameraPositionRef = new THREE.Vector3()
   const baseTargetRef = new THREE.Vector3()
   const desiredOffsetRef = new THREE.Vector3()
@@ -155,12 +271,30 @@ export function ShowcaseInteractionController({
       return selectedBox
     }
 
+    if (lockOnlyWhenSelected) {
+      return null
+    }
+
     return visibleBoxes.find((entry) => entry.screenBinding.lockToFrame || entry.interaction.enabled) ?? visibleBoxes[0] ?? null
   }
 
   useFrame((state, delta) => {
     const store = useEditorStore.getState()
     const activeBox = resolveActiveBox()
+    const attachedObjectIds = new Set(lastPortalObjectIdsRef.current)
+    store.phoneScreenBoxes.forEach((entry) => {
+      entry.content.attachedObjectIds.forEach((objectId) => {
+        attachedObjectIds.add(objectId)
+      })
+    })
+    lastPortalObjectIdsRef.current.clear()
+    attachedObjectIds.forEach((objectId) => {
+      const object = store.runtime.objectById[objectId]
+      const objectState = store.objects[objectId]
+      if (object && objectState) {
+        restoreRuntimeObjectTransform(object, objectState)
+      }
+    })
     store.phoneScreenBoxes.forEach((entry) => {
       const object = store.runtime.objectById[entry.id]
       if (object instanceof THREE.Mesh) {
@@ -311,12 +445,39 @@ export function ShowcaseInteractionController({
     if (useLockedFrame && lockedFrame) {
       const runtimeMesh = runtimeObject instanceof THREE.Mesh ? runtimeObject : null
       if (runtimeMesh) {
+        const shiftX = smoothedOffsetRef.current.dot(rightAxisRef)
+        const shiftZ = smoothedOffsetRef.current.dot(screenUpAxisRef)
         applyPortalDepthShear(
           runtimeMesh,
-          smoothedOffsetRef.current.dot(rightAxisRef),
-          smoothedOffsetRef.current.dot(screenUpAxisRef),
+          shiftX,
+          shiftZ,
           lockedFrame.dimensions.boxHeight,
         )
+        resolveAttachedObjectIds(activeBox.content.attachedObjectIds, store, lockOnlyWhenSelected).forEach((objectId) => {
+          const attachedObject = store.runtime.objectById[objectId] ?? null
+          const attachedObjectState = store.objects[objectId] ?? null
+          if (
+            !attachedObject ||
+            !attachedObjectState ||
+            (transformDragging && objectId === store.selectedObjectId && store.hud.transformMode !== 'none')
+          ) {
+            return
+          }
+
+          lastPortalObjectIdsRef.current.add(objectId)
+          applyPortalDepthOffsetToObject({
+            object: attachedObject,
+            objectState: attachedObjectState,
+            boxObject: runtimeMesh,
+            boxHeight: lockedFrame.dimensions.boxHeight,
+            rightAxis: rightAxisRef,
+            screenUpAxis: screenUpAxisRef,
+            shiftX,
+            shiftZ,
+            pointerX,
+            pointerY,
+          })
+        })
       }
     }
   })

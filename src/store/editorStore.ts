@@ -250,6 +250,7 @@ export function createDefaultPhoneScreenBoxContentState(): PhoneScreenBoxContent
   return {
     anchor: [0, -0.025, 0],
     framingMode: 'manual',
+    attachedObjectIds: [],
   }
 }
 
@@ -532,6 +533,7 @@ export interface PhoneScreenBoxScreenBindingState {
 export interface PhoneScreenBoxContentState {
   anchor: [number, number, number]
   framingMode: PhoneScreenBoxContentFramingMode
+  attachedObjectIds: string[]
 }
 
 export interface PhoneScreenBoxInteractionState {
@@ -1390,6 +1392,7 @@ export function normalizePhoneScreenBoxState(
       ...defaultContent,
       ...entry.content,
       anchor: [...(entry.content?.anchor ?? defaultContent.anchor)] as [number, number, number],
+      attachedObjectIds: [...(entry.content?.attachedObjectIds ?? defaultContent.attachedObjectIds)],
     },
     interaction: {
       ...baseInteraction,
@@ -1421,6 +1424,9 @@ function applyPhoneScreenBoxPatch(current: PhoneScreenBoxState, patch: PhoneScre
           anchor: patch.content.anchor
             ? ([...patch.content.anchor] as [number, number, number])
             : current.content.anchor,
+          attachedObjectIds: patch.content.attachedObjectIds
+            ? [...patch.content.attachedObjectIds]
+            : current.content.attachedObjectIds,
         }
       : current.content,
     interaction: patch.interaction
@@ -1573,6 +1579,7 @@ function clonePhoneScreenBoxesState(phoneScreenBoxes: PhoneScreenBoxState[]) {
       content: {
         ...normalized.content,
         anchor: [...normalized.content.anchor] as [number, number, number],
+        attachedObjectIds: [...normalized.content.attachedObjectIds],
       },
       interaction: { ...normalized.interaction },
     }

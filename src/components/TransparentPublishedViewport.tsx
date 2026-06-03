@@ -182,14 +182,14 @@ function TransparentPublishedScene() {
         <LightRig />
         <TransparentSceneBridge />
         <CustomSceneBoxes selectable={false} />
+        <MaterialEffectController />
+        <SceneAnimationController />
         <ShowcaseInteractionController
           controlsRef={controlsRef}
           cameraOffsetRef={showcaseCameraOffsetRef}
           targetOffsetRef={showcaseTargetOffsetRef}
           gyroSampleRef={showcaseMotion.sampleRef}
         />
-        <MaterialEffectController />
-        <SceneAnimationController />
       </Suspense>
       {viewer.cameraMode === 'orbit' ? <OrbitControls ref={controlsRef} makeDefault /> : null}
     </>

@@ -152,10 +152,6 @@ export function useShowcaseMotionSensor() {
     }
 
     const handleMotion = (event: DeviceMotionEvent) => {
-      if (performance.now() - lastOrientationSampleTimeRef.current < 500) {
-        return
-      }
-
       const gravity = event.accelerationIncludingGravity
       if (!gravity || typeof gravity.x !== 'number' || typeof gravity.y !== 'number') {
         return
@@ -178,9 +174,11 @@ export function useShowcaseMotionSensor() {
     }
 
     window.addEventListener('deviceorientation', handleOrientation)
+    window.addEventListener('deviceorientationabsolute', handleOrientation as EventListener)
     window.addEventListener('devicemotion', handleMotion)
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation)
+      window.removeEventListener('deviceorientationabsolute', handleOrientation as EventListener)
       window.removeEventListener('devicemotion', handleMotion)
     }
   }, [enabled, permissionState, supported])

@@ -125,7 +125,7 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17
   scene: {
     background: {
       mode: string
@@ -638,6 +638,9 @@ async function buildPublishedSceneInternal() {
         content: {
           ...normalizedEntry.content,
           anchor: [...normalizedEntry.content.anchor] as [number, number, number],
+          attachedObjectIds: normalizedEntry.content.attachedObjectIds
+            .filter((objectId) => state.sceneGraph[objectId])
+            .map((objectId) => getPublishNodeId(objectId, state.sceneGraph, nodeIdCache)),
         },
         interaction: {
           ...normalizedEntry.interaction,
@@ -821,7 +824,7 @@ async function buildPublishedSceneInternal() {
     state.assets.reflections ?? state.environment.source ?? publishedEnvironmentPreset?.label ?? null
 
   const scene: PublishedSceneV2 = {
-    version: 16,
+    version: 17,
     scene: {
       background: {
         mode: state.backgroundMode,

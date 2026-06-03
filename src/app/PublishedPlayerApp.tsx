@@ -147,7 +147,12 @@ function resolveShowcaseFallbackCameraState(
     return null
   }
 
-  if (scene.model?.assetUrl && scene.model.visible !== false) {
+  if (
+    scene.model?.assetUrl &&
+    scene.model.visible !== false &&
+    !visiblePhoneScreenBox.content?.attachedObjectIds?.length &&
+    !visiblePhoneScreenBox.screenBinding?.lockToFrame
+  ) {
     return null
   }
 
@@ -187,6 +192,10 @@ function resolveShowcaseFallbackCameraState(
   }
 }
 
+function hasVisibleLockedPhoneScreenBox(scene: PublishedSceneV2) {
+  return (scene.phoneScreenBoxes ?? []).some((entry) => entry.visible && entry.screenBinding?.lockToFrame)
+}
+
 function resolvePublishedResponsivePresetKind(containerAspect: number): ResponsiveFramePresetKind {
   if (containerAspect > 1.2) {
     return 'landscape'
@@ -212,9 +221,14 @@ function resolvePublishedCameraState(
   }
 
   if (!scene.responsiveFrame || !responsivePresetKind) {
+    const showcaseCameraState = resolveShowcaseFallbackCameraState(scene, fixedCameraState, containerAspect)
+    if (showcaseCameraState && hasVisibleLockedPhoneScreenBox(scene)) {
+      return showcaseCameraState
+    }
+
     return (
       (isPublishedCameraPoseDefault(fixedCameraState)
-        ? resolveShowcaseFallbackCameraState(scene, fixedCameraState, containerAspect)
+        ? showcaseCameraState
         : null) ?? fixedCameraState
     )
   }
@@ -237,10 +251,15 @@ function resolvePublishedCameraState(
           frameAspectPreset: responsiveCameraState.frameAspectPreset,
         }
       : responsiveCameraState
+  const showcaseCameraState = resolveShowcaseFallbackCameraState(scene, effectiveCameraState, containerAspect)
+
+  if (showcaseCameraState && hasVisibleLockedPhoneScreenBox(scene)) {
+    return showcaseCameraState
+  }
 
   return (
     (isPublishedCameraPoseDefault(effectiveCameraState)
-      ? resolveShowcaseFallbackCameraState(scene, effectiveCameraState, containerAspect)
+      ? showcaseCameraState
       : null) ?? effectiveCameraState
   )
 }
@@ -264,7 +283,12 @@ type RuntimePublishedMaterial = THREE.Material & {
 }
 
 function normalizePublishId(publishId: string) {
-  return publishId.replace(/^root:[^/]+/, 'root')
+  const stableRootId = publishId.replace(/^root:published:/, 'root:')
+  if (/^root:(mesh:phone-box|effect:god-rays|effect:stencil-volume|light:)/.test(stableRootId)) {
+    return stableRootId
+  }
+
+  return stableRootId.replace(/^root:[^/]+/, 'root')
 }
 
 function copyTextureSettings(texture: THREE.Texture, previousTexture: THREE.Texture | null, slot: MaterialTextureSlot) {
@@ -343,6 +367,7 @@ function PublishedSceneController({
   const setViewer = useEditorStore((state) => state.setViewer)
   const setHud = useEditorStore((state) => state.setHud)
   const updateObjectTransform = useEditorStore((state) => state.updateObjectTransform)
+  const updatePhoneScreenBox = useEditorStore((state) => state.updatePhoneScreenBox)
   const updateMaterial = useEditorStore((state) => state.updateMaterial)
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
   const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
@@ -701,6 +726,28 @@ function PublishedSceneController({
         })
       }
 
+      for (const entry of scene.phoneScreenBoxes ?? []) {
+        const boxId = `published:${entry.id}`
+        if (!entry.content?.attachedObjectIds?.length) {
+          continue
+        }
+
+        const attachedObjectIds = entry.content.attachedObjectIds
+          .map((objectId) => reversePublishIdMap.get(normalizePublishId(objectId)))
+          .filter((objectId): objectId is string => Boolean(objectId))
+        const fallbackModelRootId = reversePublishIdMap.get('root')
+
+        updatePhoneScreenBox(boxId, {
+          content: {
+            attachedObjectIds: attachedObjectIds.length
+              ? attachedObjectIds
+              : fallbackModelRootId
+                ? [fallbackModelRootId]
+                : [],
+          },
+        })
+      }
+
       for (const materialEntry of scene.materials) {
         const storeMaterialId = reversePublishIdMap.get(normalizePublishId(materialEntry.id))
         if (!storeMaterialId || !materials[storeMaterialId]) {
@@ -855,7 +902,7 @@ function PublishedSceneController({
       console.error(error)
       setStatus('Failed to apply published scene.')
     })
-  }, [addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updateRotateAnimation, upsertMaterialEnvironment])
+  }, [addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updatePhoneScreenBox, updateRotateAnimation, upsertMaterialEnvironment])
 
   return null
 }

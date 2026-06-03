@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-05-31
+Last updated: 2026-06-04
 
 ## Project
 
@@ -12,7 +12,7 @@ React + TypeScript + Vite scene editor / GLB viewer built on:
 - `@react-three/fiber`
 - `@react-three/drei`
 
-Primary source of truth:
+Primary state:
 
 - `src/store/editorStore.ts`
 
@@ -21,414 +21,248 @@ Main entrypoints:
 - editor: `src/main.tsx` -> `src/app/App.tsx`
 - published player: `src/main.tsx` -> `src/app/PublishedPlayerApp.tsx`
 
+## Current Git State
+
+Current branch:
+
+- `main`
+
+Latest confirmed working commit:
+
+- `b4aba9d` `Tune showcase header auto inset`
+
+Recent showcase commits:
+
+- `b4aba9d` `Tune showcase header auto inset`
+- `a77e171` `Pin transparent showcase below page header`
+- `0d62c47` `Remove locked showcase edge overscan`
+- `3bea647` `Fit locked showcase directly to iframe`
+- `78a9e3b` `Force locked showcase to fill iframe`
+- `9a894b8` `Clarify auto frame format selection state`
+- `3cddb1b` `Tune showcase inset and parallax strength`
+- `8fac5f3` `Add showcase frame insets and motion fallback`
+- `ff783bf` `Render locked showcase as interior planes`
+- `fe3a371` `Fit locked showcase to published iframe bounds`
+
+Current worktree expectation after writing this file:
+
+- `CODEX_HANDOFF.md` is intentionally dirty until committed.
+- No scene republish is required for the current player framing changes.
+
 ## Validation
 
-Passing at the end of this session:
+Passing at the end of the working showcase pass:
 
 - `npx tsc --noEmit`
 - `npx vite build`
 
 Vite still prints the usual chunk-size warning, but the build succeeds.
 
-## Current Git State
+## Critical Publish Reminder
 
-Latest important commits:
+`WEB` scene publish and player/app deployment are different things.
 
-- `fcbdbfc` `Refine camera workflow and atlas runtime preview`
-- `66cdc9b` `Publish scene demo-03`
-- `f1e3bc8` `Fix web publish build check on Windows`
-- `1c87b64` `Verify production build before web publish`
-- `9a6795e` `Restore web publish status event export`
-- `44c3d86` `Update scene demo-02`
+- Scene data lives under `public/scenes/<slug>`.
+- Player code changes must be committed and pushed so Vercel deploys the app.
+- The current framing fixes are player-code fixes, not scene-data fixes.
+- Do not republish `demo-03` just to pick up these latest framing changes.
 
-Current worktree state:
+If something works locally but not on `karneev.org`:
 
-- only `CODEX_HANDOFF.md` is dirty right now
+1. Verify Vercel deployed the latest app commit.
+2. Hard refresh the browser.
+3. Verify the Tilda iframe points at the direct player URL.
+4. Only then consider scene republish.
 
-## Big Picture
+## Current Live Showcase Setup
 
-Four tracks matter right now:
+Current scene:
 
-1. `God Rays` remain the reference volumetric behavior.
-2. `Stencil Volume` remains a real editor + publish/runtime feature and should not be regressed.
-3. `Flipbook` now has important runtime-preview / performance fixes that should not be regressed.
-4. `Published player / WEB publish` was materially upgraded and now includes responsive camera support, viewport deploy feedback, `iframe` copy support, and preflight build verification.
+- `public/scenes/demo-03/scene.json`
+- published scene schema version: `17`
+- contains one `Phone Box`
+- contains `assets/model/scene-model-ring.glb`
+- `camera.frameAspectPreset = "auto"`
+- `phoneScreenBoxes[0].screenBinding.lockToFrame = true`
+- `phoneScreenBoxes[0].screenBinding.margin = 0`
 
-## Camera Workflow
+Recommended iframe for Tilda:
 
-Current intended camera behavior:
+```html
+<iframe src="https://webgl-viewer-jet.vercel.app/?player=1&scene=https%3A%2F%2Fwebgl-viewer-jet.vercel.app%2Fscenes%2Fdemo-03%2Fscene.json&transparent=1" width="100%" height="700" style="border:0;display:block;width:100%;" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer"></iframe>
+```
 
-- fixed frame presets now include:
-  - `1:1`
-  - `3:2`
-  - `2:3`
-  - `16:9`
-  - `21:9`
-  - `9:16`
-- `AUTO` was tried and then removed
-- do not assume any `auto-fit` frame mode exists right now
+Important:
 
-Responsive camera behavior now:
+- The iframe should not need a scene republish.
+- `allow` should keep `accelerometer`, `gyroscope`, and `magnetometer`.
+- Current player auto-applies a top safe-area for transparent iframes.
+- If the visual alignment changes again, tune the auto inset before changing geometry.
 
-- there is no separate `Enable Responsive Camera` toggle anymore
-- there are no preview buttons like `Desktop / Phone / Square`
-- `CAM` tab always shows three preset cards:
-  - `Landscape`
-  - `Portrait`
-  - `Square / Fallback`
-- each preset stores:
-  - `frameAspectPreset`
-  - `cameraPosition`
-  - `orbitTarget`
-  - `focalLength`
-- `Save current camera` stores the current viewer camera into that preset
-- the button turns green when current view already matches the saved preset
-- if camera / target / focal length / frame format changes, the button goes back to normal
+## Phone Showcase Current Behavior
 
-Published player preset selection:
+The desired illusion:
 
-- `containerAspect > 1.2` -> `landscape`
-- `containerAspect < 0.85` -> `portrait`
-- otherwise -> `square`
+- The iframe/phone screen is a portal.
+- The nearest opening/rim is visually locked to the screen.
+- Motion should affect the interior depth, not rotate the whole box.
+- The user should feel there is a recessed space inside the phone.
 
-Important camera decisions to preserve:
+What is implemented now:
 
-- published/local player camera must respect both camera position and orbit target correctly
-- if future changes touch camera sync, verify all three:
-  - editor viewport
-  - `RUN Local`
-  - published pretty scene URL
+- Locked showcase uses only five interior planes, not thick exterior box slabs.
+- The exterior shell was removed for locked rendering.
+- The closest four opening points are fitted to the iframe/player safe area.
+- The far plane and side/floor/ceiling planes create depth.
+- Mouse can imitate gyro locally through `mouse+gyro`.
+- Device orientation and device motion fallback are wired.
+- Phone Box content can now explicitly attach scene object ids through
+  `phoneScreenBoxes[].content.attachedObjectIds`.
+- Attached objects are not deformed. In locked showcase mode they are restored
+  from their stored transform each frame and receive a depth-based portal
+  offset/tilt according to their local Y position inside the box.
+- Editor UI exposes this first pass in `SCN -> Primitives -> Phone Content`:
+  select a model/mesh, then use `Attach selected` for the target Phone Box.
+- In the editor viewport, locked showcase camera behavior is active only while
+  a Phone Box or its material is selected. Published/transparent runtime still
+  auto-runs the locked showcase camera.
+- Published player keeps stable root ids for Phone Box/effects during publish
+  id normalization so they do not collide with the loaded GLB root.
+- Published locked Phone Box camera is preferred over saved responsive camera
+  presets, including scenes with attached model content.
+- Attached content motion has a minimum depth ratio so models whose pivot sits
+  near the portal opening still respond visibly to mouse/gyro parallax.
+- `ShowcaseInteractionController` must run after material and animation
+  controllers in both `Viewport` and `TransparentPublishedViewport`, so the
+  Phone Box portal transform is the final visual transform for attached
+  content in a frame.
+- Attached content is restored to its saved base transform before each portal
+  update. The previous frame's portal targets are also restored, so objects do
+  not keep temporary offsets after the active showcase changes.
+- In the editor, selected attached content still receives portal motion while
+  a transform mode is active; portal motion is suspended only while the gizmo is
+  actively being dragged, to avoid writing temporary parallax into saved object
+  transforms.
+- If published attached object ids fail to resolve back to loaded GLB runtime
+  ids, the player falls back to the single loaded model root instead of clearing
+  Phone Box content.
+- In published/runtime mode, a single loaded model root is also used as Phone
+  Box content when `attachedObjectIds` is empty. Editor mode does not do this
+  because `lockOnlyWhenSelected` is true there.
+- Motion sensor listens to both `deviceorientation` and
+  `deviceorientationabsolute`, with `devicemotion` fallback still present.
+- `devicemotion` fallback is no longer suppressed by recent orientation events;
+  some Android/WebView browsers emit orientation events that are present but too
+  flat/zeroed for useful content parallax.
 
 Most relevant files:
 
-- `src/store/editorStore.ts`
-- `src/components/Sidebar.tsx`
-- `src/features/scene/runtime/ConfigController.tsx`
-- `src/features/scene/runtime/ViewerSync.tsx`
-- `src/app/PublishedPlayerApp.tsx`
+- `src/features/scene/runtime/phoneScreenBoxRuntime.ts`
+- `src/features/scene/runtime/CustomSceneBoxes.tsx`
+- `src/features/scene/runtime/ShowcaseInteractionController.tsx`
+- `src/features/scene/runtime/useShowcaseMotionSensor.ts`
 - `src/components/Viewport.tsx`
+- `src/components/Sidebar.tsx`
+- `src/app/PublishedPlayerApp.tsx`
 
-## WEB Publish Flow
+## Framing And Inset Notes
 
-`WEB` is no longer just an export button.
+Important framing decisions:
+
+- `Frame Format = AUTO` means the scene uses the actual container/iframe aspect.
+- `AUTO` is highlighted green and excludes other frame format highlights.
+- Locked showcase bypasses fixed preset letterboxing in published transparent mode.
+- `LOCKED_OPENING_EDGE_FILL` is currently `1`, not `1.01` or `1.22`.
+- Avoid reintroducing overscan unless the user explicitly asks for cropping beyond the iframe.
+
+Current auto top safe-area:
+
+- desktop: `64px`
+- mobile: `52px`
+- defined in `getPublishedViewportFrameInsets` in `src/components/Viewport.tsx`
+
+Why this exists:
+
+- On `karneev.org`, the site header visually competes with the top of the showcase.
+- The current user-approved result uses a tuned top inset so the top portal edge sits correctly near the menu boundary.
+- Earlier values `80px / 92px` created a visible black gap.
+
+If the top alignment needs more tuning:
+
+- Change only the `autoTopInset` values first.
+- Use explicit URL params only for testing:
+  - `frameInsetTopDesktop=<px>`
+  - `frameInsetTopMobile=<px>`
+  - `frameInsetTop=<px>` or `frameInsetTop=auto`
+- Do not move the iframe block in Tilda unless the user explicitly wants layout changes outside WebGL.
+
+## Gyro And Parallax
+
+Current parallax:
+
+- `LOCKED_FRAME_PARALLAX_SCALE = 1.625`
+- file: `src/features/scene/runtime/ShowcaseInteractionController.tsx`
 
 Current behavior:
 
-- packages the published scene and referenced assets
-- writes them into `public/scenes/<slug>`
-- stages and commits only that scene directory
-- pushes to `origin/<current-branch>`
-- returns pretty scene URLs like `/scenes/<slug>/`
+- For locked showcase, the camera stays fixed.
+- Geometry is sheared by depth ratio so near vertices remain fixed and far vertices move.
+- This prevents the whole box from rotating like a tray.
 
-Critical distinction:
+If continuing motion work:
 
-- `WEB` publishes scene content to Git
-- `WEB` does **not** deploy app/player code unless those source files are separately committed and pushed
+- Keep the closest opening/rim pinned.
+- Move only depth/far geometry.
+- Do not restore whole-object rotation.
+- Be careful with vertical axis behavior; previous attempts made the whole box drift vertically.
 
-This matters a lot:
+## Material / Lighting Notes
 
-- new `scene.json` can be live while old player JS is still deployed
-- if iframe behavior looks stale, verify whether the app code was actually pushed
+Current locked showcase geometry is planar interior geometry:
 
-Terminology that must stay clear:
+- back plane
+- left wall
+- right wall
+- top/ceiling plane
+- bottom/floor plane
 
-- `scene slug`
-  - example: `demo-02`
-  - means the folder under `public/scenes/demo-02`
-- published `schema version`
-  - example: `version: 15` inside `scene.json`
-  - means JSON format version, not publish count
-- `git commit`
-  - example: `fcbdbfc`
-  - means repository revision
-- `Vercel deployment`
-  - means production build for a git commit
+The user disliked polygons in one plane having visibly different lighting. Keep planar faces consistent and avoid splitting same-plane lighting into visibly unrelated chunks unless intentionally stylized.
 
-## WEB Preflight Build Check
+## Live Debugging Lessons From This Pass
 
-This session added a protective preflight before `WEB` scene publish.
+Several mistakes were corrected:
 
-Current intended behavior:
+- Do not assume the scene needs republishing when the player code changed.
+- Do not assume Tilda menu overlap if the iframe is already below the menu.
+- Do not use large overscan to hide black gutters; it clips the top portal edge.
+- Do not treat `frameInsetTop` as a physical iframe shift unless that is explicitly intended.
+- If a black gap appears between menu and scene, the top inset is too large.
 
-- before scene publish commits anything, local Vite middleware runs a production build check
-- if production build fails, `WEB` stops before git push
-- this prevents the old failure mode where a scene was published but Vercel then failed on broken app code
+## Other Features To Preserve
 
-Implementation detail:
+God Rays:
 
-- preflight is server-side inside Vite middleware, not a frontend-only check
-- it runs Vite build through the Vite CLI entry, not through the old Windows-spawn-prone approach
-- Windows `spawn EINVAL` issue was fixed in `f1e3bc8`
+- Preserve global direction/noise behavior.
+- Preserve published runtime restoration.
+- Relevant files: `src/components/viewport/effects/GodRays.tsx`, `src/features/publish/buildPublishedScene.ts`, `src/app/PublishedPlayerApp.tsx`.
 
-If `WEB` fails immediately with a build message:
+Stencil Volume:
 
-- treat it as a real production-build issue first
-- not as a scene-export issue
+- Preserve editor support and publish/runtime support.
+- Relevant files: `src/components/viewport/effects/StencilVolume.tsx`, `src/features/publish/buildPublishedScene.ts`, `src/app/PublishedPlayerApp.tsx`.
 
-Most relevant files:
+Flipbook:
 
-- `vite.config.ts`
-- `src/features/publish/exportWebPackage.ts`
-- `src/components/Sidebar.tsx`
+- Runtime preview frame state should stay separate from persisted material settings.
+- Atlas source/frame-grid changes must reset texture state correctly.
+- Relevant files: `src/features/atlas/useAtlasAnimator.ts`, `src/components/MaterialEffectController.tsx`, `src/components/Inspector.tsx`, `src/components/AtlasVisualizer.tsx`, `src/store/editorStore.ts`.
 
-## WEB Deploy Status Overlay
+## Immediate Next Steps
 
-Current intended UI:
+If showcase work resumes:
 
-- `WEB DEPLOY` status appears inside the viewport, not under the toolbar
-- it is a dismissable popup below `GRID / ORBIT / FLIGHT / RESET CAMERA`
-- it closes by:
-  - `x`
-  - clicking empty viewport space
-- it reopens on the next new publish status event
-
-Current status phases:
-
-- `preparing`
-- `git-pushed`
-- `checking`
-- `ready`
-- `timeout`
-- `error`
-
-Current payload shown there can include:
-
-- short git SHA
-- live scene link
-- ready-to-copy `iframe` snippet
-- `Copy iframe` action
-
-Important implementation detail:
-
-- viewport listens for `WEB_PUBLISH_STATUS_EVENT`
-- if that export disappears again, production build breaks with `MISSING_EXPORT`
-- this already happened once and was fixed in `9a6795e`
-
-Current local middleware endpoints:
-
-- `GET /__publish/scenes`
-- `POST /__publish/web-package`
-- `GET /__publish/web-package-status`
-
-Current deploy-origin behavior:
-
-- default is `https://webgl-viewer-jet.vercel.app`
-- override via env var `WEB_PUBLISH_DEPLOY_ORIGIN`
-
-Important troubleshooting note:
-
-- `timeout` does not necessarily mean scene publish failed
-- it often means:
-  - git push succeeded
-  - but local polling did not confirm fresh Vercel output in time
-- if needed, check Vercel deploy separately
-
-Most relevant files:
-
-- `src/features/publish/exportWebPackage.ts`
-- `src/components/Sidebar.tsx`
-- `src/components/Viewport.tsx`
-- `src/styles.css`
-- `vite.config.ts`
-
-## Transparent Published Embeds
-
-Transparent iframe behavior was fixed and should be preserved.
-
-Current intended behavior:
-
-- pretty scene URL `/scenes/<slug>/` preserves query params
-- when opened inside an iframe, transparent mode auto-enables
-- transparent published player should not flash an opaque background at startup
-
-If transparency breaks again, check these first:
-
-- whether embed uses the pretty scene URL
-- whether deployed `index.html` inside `public/scenes/<slug>/` is current
-- whether Vercel is serving fresh player code or stale code
-
-Most relevant files:
-
-- `src/features/publish/exportWebPackage.ts`
-- `src/main.tsx`
-- `src/app/PublishedPlayerApp.tsx`
-- `src/components/TransparentPublishedViewport.tsx`
-- `src/styles.css`
-
-## Flipbook: Current Status
-
-Flipbook still carries important fixes that should not be regressed.
-
-Main outcomes already in code:
-
-- severe FPS drop when combining flipbook with `God Rays` was reduced substantially
-- live atlas preview frame highlight works during playback
-- swapping atlas textures and then changing `Column` / `Row` no longer needs a `Wrap Mode` toggle
-- active material should not briefly fall back to showing the entire raw atlas sheet
-
-Important implementation decisions:
-
-- playback should not spam `updateMaterialEffect(...currentFrame...)` into Zustand every frame
-- live preview frame state is tracked separately in runtime state via `runtime.materialEffectPreviewFrameById`
-- inspector preview and atlas visualizer read runtime preview frame instead of only persisted `effect.currentFrame`
-- `useAtlasAnimator` draws the active frame into a single `CanvasTexture`
-- when atlas source changes, animator resets cached frame texture state
-- when frame output size changes because `Column` / `Row` changed, the `CanvasTexture` is disposed and recreated instead of reused with stale dimensions
-- runtime flipbook material sync now avoids redundant re-application when the current override is already active
-
-Current runtime texture-loading decision:
-
-- `loadTexture()` in `src/features/scene/runtime/shared.ts` no longer uses the old `THREE.TextureLoader`
-- it now loads through `Image`, waits for decode when possible, then wraps into `THREE.Texture`
-
-Current known reality:
-
-- very large atlases can still hitch during browser decode / first upload
-- that residual hitch is expected to some extent
-
-Most relevant files:
-
-- `src/features/atlas/useAtlasAnimator.ts`
-- `src/components/MaterialEffectController.tsx`
-- `src/components/Inspector.tsx`
-- `src/components/AtlasVisualizer.tsx`
-- `src/features/scene/runtime/shared.ts`
-- `src/store/editorStore.ts`
-
-## Stencil Volume: Preserve Current Architecture
-
-`Stencil Volume` is still in a strong usable state.
-
-Keep these facts in mind:
-
-- editor support is real, not scaffold-level
-- runtime / publish path is real
-- published runtime should restore baked effect geometry state and should not depend on live mask contour extraction
-
-Current published/baked support still matters:
-
-- baked runtime payloads include:
-  - `bakedContourShapes`
-  - `bakedPrimitiveShapeGroups`
-  - `bakedPreparedPrimitives`
-
-Preserve these architectural decisions:
-
-- `Stencil Volume` should stay aligned with `God Rays` control language, not collapse back into simple box geometry
-- `extrudeEnd` remains internal effect geometry state, not object transform state
-- do not reintroduce published-player dependence on raw mask extraction or editor-only helper workflows
-
-Relevant files:
-
-- `src/store/editorStore.ts`
-- `src/components/viewport/effects/StencilVolume.tsx`
-- `src/components/viewport/effects/StencilVolumes.tsx`
-- `src/features/stencilVolume/maskContour.ts`
-- `src/features/publish/buildPublishedScene.ts`
-- `src/app/PublishedPlayerApp.tsx`
-
-## God Rays: Stable Reference
-
-`God Rays` remain the visual and behavior reference for volumetric lighting.
-
-Semantics that should be preserved:
-
-- pivot at lower-plane center
-- height from object `scale.y`
-- width / depth from object scale
-- `DIR` editing is rotate-based
-- global/local noise semantics stay intact
-- global/local dust direction semantics stay intact
-- roll is not clamped away during direction editing
-
-Dust status that must not regress:
-
-- dust uses world-space motion behavior
-- rotating the effect should not rotate the perceived dust motion pattern
-
-Relevant files:
-
-- `src/components/viewport/effects/GodRaysBox.tsx`
-- `src/components/viewport/effects/GodRaysBoxes.tsx`
-- `src/components/viewport/effects/GodRaysVolume.tsx`
-- `src/components/viewport/effects/GodRaysDust.tsx`
-- `src/components/viewport/effects/godRaysShared.ts`
-
-## Important Decisions To Preserve
-
-### 1. Do not regress God Rays semantics
-
-Especially:
-
-- global/local noise rules
-- global/local direction rules
-- rotate-based `DIR`
-- unrestricted roll during direction edit
-- world-space dust motion
-
-### 2. Keep Stencil Volume tied to God Rays behavior language, not God Rays geometry
-
-Do not collapse `Stencil Volume` back into:
-
-- a plain rectangular God Rays box
-- a flat projected mask slab
-
-### 3. Keep active flipbook rendering based on frame extraction, not raw atlas display
-
-Especially:
-
-- do not make active playback depend on showing the whole atlas and UV-cropping it later
-- do not reintroduce per-frame store churn for `currentFrame`
-- do not reuse stale `CanvasTexture` dimensions after `Column` / `Row` changes
-
-### 4. Treat WEB scene publish and app-code deploy as separate concerns
-
-Especially:
-
-- `WEB` scene push does not guarantee the deployed player JS is fresh
-- if new published-scene features seem ignored in iframe, verify player code deploy separately
-
-### 5. Preserve current responsive camera model
-
-Especially:
-
-- keep the three explicit presets `landscape / portrait / square`
-- do not reintroduce half-working `AUTO` framing without a very deliberate design
-- keep `21:9` support working in editor, local preview, and published player
-
-## Recommended Next Steps
-
-Most sensible future work from here:
-
-1. Add a calmer `pending / timeout` visual treatment in `WEB DEPLOY`, because it currently reads a bit too error-like.
-2. If atlas loading still feels too hitchy on very large sheets, investigate deeper optimization such as `createImageBitmap` and/or `OffscreenCanvas`.
-3. If heavy scenes still struggle, add an explicit lighter editor-preview mode for flipbook + volumetrics together.
-
-What is not the best next step:
-
-- reverting flipbook back to raw-atlas-first behavior
-- reintroducing per-frame store churn for preview convenience
-- bringing back `AUTO` framing in an ambiguous state
-- assuming `WEB` implies full production deploy of all app code
-
-## Most Relevant Files Right Now
-
-- `CODEX_HANDOFF.md`
-- `vite.config.ts`
-- `src/store/editorStore.ts`
-- `src/components/Sidebar.tsx`
-- `src/components/Viewport.tsx`
-- `src/app/PublishedPlayerApp.tsx`
-- `src/features/publish/exportWebPackage.ts`
-- `src/features/publish/buildPublishedScene.ts`
-- `src/features/scene/runtime/ConfigController.tsx`
-- `src/features/scene/runtime/ViewerSync.tsx`
-- `src/styles.css`
-- `src/components/Inspector.tsx`
-- `src/components/AtlasVisualizer.tsx`
-- `src/components/MaterialEffectController.tsx`
-- `src/features/atlas/useAtlasAnimator.ts`
-- `src/features/scene/runtime/shared.ts`
-- `src/components/viewport/effects/GodRaysVolume.tsx`
-- `src/components/viewport/effects/GodRaysDust.tsx`
-- `src/components/viewport/effects/StencilVolume.tsx`
+1. Verify live Vercel deployment has latest commit.
+2. Check desktop and mobile with the existing Tilda iframe.
+3. If the top edge is off, tune `autoTopInset` in `src/components/Viewport.tsx`.
+4. If motion needs refinement, tune `ShowcaseInteractionController` shear/parallax, not object rotation.
+5. Only republish `demo-03` if scene content changes, not for player framing code.

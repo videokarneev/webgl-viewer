@@ -1912,12 +1912,6 @@ function ViewportScene({
         <LightRig />
         <SceneBridge allowSelection={allowSelection} />
         <CustomSceneBoxes selectable={allowSelection} />
-        <ShowcaseInteractionController
-          controlsRef={controlsRef}
-          cameraOffsetRef={showcaseCameraOffsetRef}
-          targetOffsetRef={showcaseTargetOffsetRef}
-          gyroSampleRef={gyroSampleRef}
-        />
         <StencilVolumes />
         <GodRaysBoxes />
         {allowSelection ? <SelectionHighlight /> : null}
@@ -1925,6 +1919,14 @@ function ViewportScene({
         {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
         <MaterialEffectController />
         <SceneAnimationController />
+        <ShowcaseInteractionController
+          controlsRef={controlsRef}
+          cameraOffsetRef={showcaseCameraOffsetRef}
+          targetOffsetRef={showcaseTargetOffsetRef}
+          gyroSampleRef={gyroSampleRef}
+          lockOnlyWhenSelected={allowSelection}
+          transformDragging={transformDragging}
+        />
         {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (

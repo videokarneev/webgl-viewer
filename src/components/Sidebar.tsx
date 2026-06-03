@@ -367,13 +367,59 @@ function SceneTabContent() {
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
   const backgroundColor = useEditorStore((state) => state.backgroundColor)
   const backgroundRotation = useEditorStore((state) => state.backgroundRotation)
+  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const sceneGraph = useEditorStore((state) => state.sceneGraph)
+  const phoneScreenBoxes = useEditorStore((state) => state.phoneScreenBoxes)
   const addPhoneScreenBox = useEditorStore((state) => state.addPhoneScreenBox)
+  const updatePhoneScreenBox = useEditorStore((state) => state.updatePhoneScreenBox)
   const setBackgroundMode = useEditorStore((state) => state.setBackgroundMode)
   const setBackgroundColor = useEditorStore((state) => state.setBackgroundColor)
   const setBackgroundPanoramaUrl = useEditorStore((state) => state.setBackgroundPanoramaUrl)
   const setBackgroundRotation = useEditorStore((state) => state.setBackgroundRotation)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
   const backgroundInputRef = useRef<HTMLInputElement | null>(null)
+  const selectedNode = selectedObjectId ? sceneGraph[selectedObjectId] ?? null : null
+  const selectedPhoneBox = phoneScreenBoxes.find((entry) => entry.id === selectedObjectId) ?? null
+  const targetPhoneBox = selectedPhoneBox ?? phoneScreenBoxes[0] ?? null
+  const selectedIsPhoneBoxPart = Boolean(
+    selectedObjectId &&
+      phoneScreenBoxes.some((entry) => entry.id === selectedObjectId || entry.materialId === selectedObjectId),
+  )
+  const canAttachSelectedObject = Boolean(
+    targetPhoneBox &&
+      selectedObjectId &&
+      selectedNode &&
+      selectedNode.type !== 'material' &&
+      !selectedIsPhoneBoxPart,
+  )
+  const selectedIsAttached = Boolean(
+    targetPhoneBox &&
+      selectedObjectId &&
+      targetPhoneBox.content.attachedObjectIds.includes(selectedObjectId),
+  )
+  const targetPhoneBoxLabel = targetPhoneBox ? sceneGraph[targetPhoneBox.id]?.label ?? 'Phone Box' : 'No Phone Box'
+  const selectedObjectLabel = selectedObjectId ? sceneGraph[selectedObjectId]?.label ?? selectedObjectId : 'Nothing selected'
+  const attachedObjectLabels =
+    targetPhoneBox?.content.attachedObjectIds
+      .map((objectId) => sceneGraph[objectId]?.label ?? objectId)
+      .filter(Boolean)
+      .join(', ') || 'None'
+
+  const handleTogglePhoneContentAttachment = () => {
+    if (!targetPhoneBox || !selectedObjectId || !canAttachSelectedObject) {
+      return
+    }
+
+    const attachedObjectIds = selectedIsAttached
+      ? targetPhoneBox.content.attachedObjectIds.filter((objectId) => objectId !== selectedObjectId)
+      : [...targetPhoneBox.content.attachedObjectIds, selectedObjectId]
+
+    updatePhoneScreenBox(targetPhoneBox.id, {
+      content: {
+        attachedObjectIds,
+      },
+    })
+  }
 
   const handleBackgroundFile = (file: File) => {
     const url = createObjectUrl(file)
@@ -398,6 +444,30 @@ function SceneTabContent() {
           <span className="tool-button__label">Add Phone Showcase</span>
         </button>
         <p className="settings-note">Responsive portrait showcase box with open top and screen-bound sizing.</p>
+        {phoneScreenBoxes.length ? (
+          <div className="left-controls__group left-controls__group--nested">
+            <span className="left-controls__label">Phone Content</span>
+            <div className="left-controls__value">
+              <span>Box: {targetPhoneBoxLabel}</span>
+            </div>
+            <div className="left-controls__value">
+              <span>Selected: {selectedObjectLabel}</span>
+            </div>
+            <button
+              type="button"
+              className="tool-button tool-button--secondary"
+              disabled={!canAttachSelectedObject}
+              onClick={handleTogglePhoneContentAttachment}
+            >
+              <span className="tool-button__glyph">{selectedIsAttached ? 'OUT' : 'IN'}</span>
+              <span className="tool-button__label">{selectedIsAttached ? 'Detach selected' : 'Attach selected'}</span>
+            </button>
+            <p className="settings-note">Attached objects use the Phone Box portal parallax when the showcase is locked.</p>
+            <div className="left-controls__value">
+              <span>Attached: {attachedObjectLabels}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div className="left-controls__group">
