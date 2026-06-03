@@ -31,6 +31,23 @@ function getBaseGeometryPositions(mesh: THREE.Mesh) {
   return snapshot
 }
 
+function getBaseGeometryNormals(mesh: THREE.Mesh) {
+  const geometry = mesh.geometry
+  const normalAttribute = geometry.getAttribute('normal')
+  if (!(normalAttribute instanceof THREE.BufferAttribute)) {
+    return null
+  }
+
+  const existing = mesh.userData.showcaseBaseNormals as Float32Array | undefined
+  if (existing && existing.length === normalAttribute.array.length) {
+    return existing
+  }
+
+  const snapshot = new Float32Array(normalAttribute.array as ArrayLike<number>)
+  mesh.userData.showcaseBaseNormals = snapshot
+  return snapshot
+}
+
 function restoreShowcaseGeometry(mesh: THREE.Mesh | null) {
   if (!mesh) {
     return
@@ -71,11 +88,20 @@ function applyPortalDepthDeformation(
   const geometry = mesh.geometry
   const positionAttribute = geometry.getAttribute('position')
   const basePositions = getBaseGeometryPositions(mesh)
-  if (!(positionAttribute instanceof THREE.BufferAttribute) || !basePositions) {
+  const baseNormals = getBaseGeometryNormals(mesh)
+  if (!(positionAttribute instanceof THREE.BufferAttribute) || !basePositions || !baseNormals) {
+    return
+  }
+
+  geometry.computeBoundingBox()
+  const bounds = geometry.boundingBox
+  if (!bounds) {
     return
   }
 
   const safeHeight = Math.max(boxHeight, 0.0001)
+  const heightSpan = Math.max(bounds.max.y - bounds.min.y, safeHeight, 0.0001)
+  const depthSpan = Math.max(bounds.max.z - bounds.min.z, 0.0001)
   const positions = positionAttribute.array as Float32Array
   let changed = false
 
@@ -84,12 +110,21 @@ function applyPortalDepthDeformation(
     const baseX = basePositions[offset] ?? 0
     const baseY = basePositions[offset + 1] ?? 0
     const baseZ = basePositions[offset + 2] ?? 0
-    const depthRatio = THREE.MathUtils.clamp(-baseY / safeHeight, 0, 1)
-    const easedDepthRatio = depthRatio * depthRatio * depthRatio
-    const frontLock = THREE.MathUtils.clamp((-baseZ + safeHeight * 0.08) / Math.max(Math.abs(baseZ) * 1.35, 0.0001), 0, 1)
-    const sideBias = THREE.MathUtils.clamp(Math.abs(baseX) / Math.max(Math.abs(baseZ), 0.0001), 0, 1)
-    const wallTaper = 1 - sideBias * 0.06
-    const influence = easedDepthRatio * frontLock * wallTaper
+    const normalX = baseNormals[offset] ?? 0
+    const normalY = baseNormals[offset + 1] ?? 0
+    const normalZ = baseNormals[offset + 2] ?? 0
+    const isBottomBand = baseY <= bounds.min.y + heightSpan * 0.08
+    const isBackBand = baseZ <= bounds.min.z + depthSpan * 0.12
+    const isSideWall = Math.abs(normalX) >= 0.85
+    const isRearCap = Math.abs(normalZ) >= 0.85 && baseZ < 0
+
+    let influence = 0
+    if (isBottomBand || isBackBand || isRearCap) {
+      influence = 1
+    } else if (isSideWall) {
+      influence = 1 - THREE.MathUtils.clamp((baseZ - bounds.min.z) / Math.max(depthSpan * 0.88, 0.0001), 0, 1)
+    }
+
     const nextX = baseX + shiftX * influence
     const nextZ = baseZ + shiftZ * influence
 
@@ -254,7 +289,6 @@ export function ShowcaseInteractionController({
     const useMouse =
       activeBox.interaction.enabled &&
       supportsMouseInput(activeBox.interaction.inputMode) &&
-      !useLockedFrame &&
       !useGyro
     const pointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
     const pointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
