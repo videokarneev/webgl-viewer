@@ -486,6 +486,7 @@ function CameraTabContent() {
   const setViewer = useEditorStore((state) => state.setViewer)
   const setResponsiveFramePreset = useEditorStore((state) => state.setResponsiveFramePreset)
   const saveCurrentCameraToResponsivePreset = useEditorStore((state) => state.saveCurrentCameraToResponsivePreset)
+  const isAutoFrameCurrent = viewer.frameAspectPreset === 'auto'
   const getAssignedResponsivePresetKind = (frameAspectPreset: FrameAspectPreset) =>
     frameAspectPreset === '1:1'
       ? 'square'
@@ -606,7 +607,7 @@ function CameraTabContent() {
                       <>
                         <button
                           type="button"
-                          className={`tool-button mode-button frame-aspect-button${isCurrent ? ' is-active' : ''}`}
+                          className={`tool-button mode-button frame-aspect-button${isCurrent ? ' is-active is-saved' : ''}`}
                           aria-pressed={isCurrent}
                           title={option.label}
                           onClick={() => handleFrameAspectSelect(option.value)}
@@ -627,6 +628,7 @@ function CameraTabContent() {
                   const isAssigned = isLocked || preset.frameAspectPreset === option.value
                   const isCurrent = viewer.frameAspectPreset === option.value
                   const isSaved =
+                    !isAutoFrameCurrent &&
                     isAssigned &&
                     (!isCurrent ||
                       (areNumbersClose(viewer.focalLength, preset.focalLength) &&
