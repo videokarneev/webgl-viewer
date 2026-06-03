@@ -2015,7 +2015,16 @@ export function Viewport({
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
   const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
   const [webPublishCopyFeedback, setWebPublishCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle')
-  const effectiveEnforceFrameAspect = enforceFrameAspect || viewer.frameGuidesEnabled
+  const hasVisibleLockedShowcase = useMemo(
+    () =>
+      phoneScreenBoxes.some(
+        (entry) => entry.screenBinding.lockToFrame && (objects[entry.id]?.visible ?? false),
+      ),
+    [objects, phoneScreenBoxes],
+  )
+  const shouldUseFullContainerForLockedShowcase = enforceFrameAspect && !showChrome && hasVisibleLockedShowcase
+  const effectiveEnforceFrameAspect =
+    (enforceFrameAspect || viewer.frameGuidesEnabled) && !shouldUseFullContainerForLockedShowcase
   const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
   const frameRect = useMemo(
     () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
