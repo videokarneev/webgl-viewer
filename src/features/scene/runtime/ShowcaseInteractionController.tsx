@@ -147,6 +147,7 @@ export function ShowcaseInteractionController({
   const bottomLeftCornerRef = new THREE.Vector3()
   const bottomRightCornerRef = new THREE.Vector3()
   const topLeftCornerRef = new THREE.Vector3()
+  const portalVirtualEyeRef = new THREE.Vector3()
 
   function resolveActiveBox() {
     const store = useEditorStore.getState()
@@ -298,7 +299,13 @@ export function ShowcaseInteractionController({
 
     smoothedOffsetRef.current.lerp(desiredOffsetRef, nextSmoothing)
     smoothedTargetOffsetRef.current.lerp(desiredTargetOffsetRef, nextSmoothing)
-    perspectiveCamera.position.copy(baseCameraPositionRef).add(smoothedOffsetRef.current)
+    if (useLockedFrame) {
+      perspectiveCamera.position.copy(baseCameraPositionRef)
+      portalVirtualEyeRef.copy(baseCameraPositionRef).add(smoothedOffsetRef.current)
+    } else {
+      perspectiveCamera.position.copy(baseCameraPositionRef).add(smoothedOffsetRef.current)
+      portalVirtualEyeRef.copy(perspectiveCamera.position)
+    }
     selectedTargetRef.copy(baseTargetRef).add(smoothedTargetOffsetRef.current)
 
     if (useLockedFrame) {
@@ -324,7 +331,7 @@ export function ShowcaseInteractionController({
       topLeftCornerRef.set(-halfWidth, 0, halfDepth).applyMatrix4(boxWorldMatrixRef)
       applyOffAxisPortalProjection(
         perspectiveCamera,
-        perspectiveCamera.position,
+        portalVirtualEyeRef,
         bottomLeftCornerRef,
         bottomRightCornerRef,
         topLeftCornerRef,
