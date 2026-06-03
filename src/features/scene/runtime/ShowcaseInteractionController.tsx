@@ -281,7 +281,7 @@ export function ShowcaseInteractionController({
         .copy(rightAxisRef)
         .multiplyScalar(pointerX * activeBox.interaction.maxOffsetX * 1.2)
         .addScaledVector(screenUpAxisRef, -pointerY * activeBox.interaction.maxOffsetY * 1.2)
-      desiredTargetOffsetRef.copy(desiredOffsetRef)
+      desiredTargetOffsetRef.set(0, 0, 0)
     } else {
       desiredOffsetRef
         .copy(rightAxisRef)
