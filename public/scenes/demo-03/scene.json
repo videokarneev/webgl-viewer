@@ -9,8 +9,8 @@
     "environment": {
       "enabled": true,
       "kind": "hdri",
-      "assetLabel": "Studio",
-      "assetUrl": "assets/environment/scene-environment-studio.exr",
+      "assetLabel": "City Night Lights",
+      "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
       "intensity": 1.5,
       "rotation": 0,
       "backgroundMode": "color",
@@ -24,9 +24,9 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      4.775541437518627,
-      0.2285714285733107,
-      -7.624865740109993
+      -2.395719254731287,
+      0.22857142857142332,
+      -2.770422864216877
     ],
     "target": [
       0,
@@ -118,7 +118,7 @@
   },
   "phoneScreenBoxes": [
     {
-      "id": "mesh:phone-box:1:1780523827932",
+      "id": "mesh:phone-box:1:1780524638621",
       "label": "Phone Box",
       "visible": true,
       "geometry": {
@@ -143,7 +143,7 @@
         ],
         "framingMode": "manual",
         "attachedObjectIds": [
-          "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0"
+          "root:f843e853-23f0-4436-a372-27b4cd4c398f/node:0"
         ]
       },
       "interaction": {
@@ -192,7 +192,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [],
   "model": {
-    "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+    "id": "root:f843e853-23f0-4436-a372-27b4cd4c398f",
     "assetLabel": "ring.glb",
     "assetUrl": "assets/model/scene-model-ring.glb",
     "visible": true,
@@ -216,7 +216,7 @@
   },
   "objects": [
     {
-      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+      "id": "root:f843e853-23f0-4436-a372-27b4cd4c398f",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -240,31 +240,31 @@
       }
     },
     {
-      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0",
-      "parentId": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+      "id": "root:f843e853-23f0-4436-a372-27b4cd4c398f/node:0",
+      "parentId": "root:f843e853-23f0-4436-a372-27b4cd4c398f",
       "type": "mesh",
       "label": "Box001",
       "visible": true,
       "transform": {
         "position": [
-          -0.04083681037215879,
-          -0.0134749208,
-          0.02412500662249818
+          -0.04235621778493778,
+          0.009158932395161202,
+          -5.890075e-10
         ],
         "rotation": [
-          -2.3811947353110643,
-          -0.4561455197392946,
-          0.22170132647394203
+          0.7853982166099334,
+          0,
+          0
         ],
         "scale": [
-          0.26281852914878906,
-          0.19475195931616707,
-          0.26870461433973164
+          0.20793597020053148,
+          0.20793597020053148,
+          0.20793597020053148
         ]
       }
     },
     {
-      "id": "root:mesh:phone-box:1:1780523827932",
+      "id": "root:mesh:phone-box:1:1780524638621",
       "parentId": null,
       "type": "mesh",
       "label": "Phone Box",
@@ -290,7 +290,7 @@
   ],
   "materials": [
     {
-      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0/material:0",
+      "id": "root:f843e853-23f0-4436-a372-27b4cd4c398f/node:0/material:0",
       "name": "Material #43",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -299,7 +299,7 @@
       "metalness": 1,
       "roughness": 0,
       "envMapIntensity": 1,
-      "emissiveIntensity": 1,
+      "emissiveIntensity": 1.15,
       "clearcoat": null,
       "environmentOverride": null,
       "textureSlots": {
@@ -307,14 +307,41 @@
           "source": "original",
           "label": "One_Ring_inscription_NRM.jpg",
           "assetUrl": null
+        },
+        "emissiveMap": {
+          "source": "flipbook",
+          "label": "fire2.jpg",
+          "assetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg"
         }
       },
       "effects": {
-        "flipbook": null
+        "flipbook": {
+          "enabled": true,
+          "atlasAssetLabel": "fire2.jpg",
+          "atlasAssetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg",
+          "targetSlot": "emissive",
+          "frameOrder": "column",
+          "gridX": 2,
+          "gridY": 25,
+          "fps": 12,
+          "frameCount": 50,
+          "currentFrame": 8,
+          "opacity": 0.85,
+          "frameBlend": true,
+          "loop": true,
+          "uvChannel": "auto",
+          "wrapMode": "repeat",
+          "offsetX": 0,
+          "offsetY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "swapXY": false
+        }
       }
     },
     {
-      "id": "root:mesh:phone-box:1:1780523827932/material:0",
+      "id": "root:mesh:phone-box:1:1780524638621/material:0",
       "name": "Standard Material",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
