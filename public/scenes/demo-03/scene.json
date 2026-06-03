@@ -34,7 +34,7 @@
       0
     ],
     "focalLength": 20,
-    "frameAspectPreset": "1:1",
+    "frameAspectPreset": "auto",
     "exposure": 1
   },
   "responsiveFrame": {

@@ -5,8 +5,9 @@ import * as THREE from 'three'
 import { useEditorStore, type SceneConfig } from '../../../store/editorStore'
 import { sanitizeNumber } from './shared'
 
-function isFrameAspectPreset(value: unknown): value is '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16' {
+function isFrameAspectPreset(value: unknown): value is 'auto' | '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16' {
   return (
+    value === 'auto' ||
     value === '1:1' ||
     value === '3:2' ||
     value === '2:3' ||
@@ -131,6 +132,7 @@ export function ConfigController({
     }
 
     if (
+      config.viewer?.frameAspectPreset === 'auto' ||
       config.viewer?.frameAspectPreset === '1:1' ||
       config.viewer?.frameAspectPreset === '3:2' ||
       config.viewer?.frameAspectPreset === '2:3' ||

@@ -75,6 +75,7 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
 
 function isFrameAspectPreset(value: string | null | undefined): value is FrameAspectPreset {
   return (
+    value === 'auto' ||
     value === '1:1' ||
     value === '3:2' ||
     value === '2:3' ||
@@ -223,9 +224,11 @@ function resolvePublishedCameraState(
     cameraPosition: isVector3(responsivePreset?.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
     orbitTarget: isVector3(responsivePreset?.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
     focalLength: Number.isFinite(responsivePreset?.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
-    frameAspectPreset: isFrameAspectPreset(responsivePreset?.frameAspectPreset)
-      ? responsivePreset.frameAspectPreset
-      : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
+    frameAspectPreset: fixedCameraState.frameAspectPreset === 'auto'
+      ? 'auto'
+      : isFrameAspectPreset(responsivePreset?.frameAspectPreset)
+        ? responsivePreset.frameAspectPreset
+        : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
   }
   const effectiveCameraState =
     isPublishedCameraPoseDefault(responsiveCameraState) && !isPublishedCameraPoseDefault(fixedCameraState)

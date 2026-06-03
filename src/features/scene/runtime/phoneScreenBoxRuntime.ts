@@ -8,7 +8,7 @@ import type {
   ResponsiveFrameState,
 } from '../../../store/editorStore'
 
-const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
+const FRAME_ASPECT_VALUES: Record<Exclude<FrameAspectPreset, 'auto'>, number> = {
   '1:1': 1,
   '3:2': 3 / 2,
   '2:3': 2 / 3,
@@ -46,8 +46,12 @@ function clampNumber(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
 }
 
-function getFrameAspectValue(preset: FrameAspectPreset) {
-  return FRAME_ASPECT_VALUES[preset]
+function getFrameAspectValue(preset: FrameAspectPreset, fallbackAspect: number) {
+  if (preset === 'auto') {
+    return Math.max(fallbackAspect, 0.0001)
+  }
+
+  return FRAME_ASPECT_VALUES[preset] ?? Math.max(fallbackAspect, 0.0001)
 }
 
 function resolveResponsivePresetKindFromAspect(containerAspect: number): ResponsiveFramePresetKind {
@@ -98,7 +102,7 @@ function resolvePhoneScreenBoxAspectValue(
 
     case 'phonePortrait':
       return {
-        aspect: getFrameAspectValue('9:16'),
+        aspect: getFrameAspectValue('9:16', safeContainerAspect),
         frameAspectPreset: '9:16' as FrameAspectPreset,
         responsivePresetKind: 'portrait' as ResponsiveFramePresetKind,
       }
@@ -112,7 +116,7 @@ function resolvePhoneScreenBoxAspectValue(
         responsiveFrame[responsivePresetKind]?.frameAspectPreset ?? DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind]
 
       return {
-        aspect: getFrameAspectValue(frameAspectPreset),
+        aspect: getFrameAspectValue(frameAspectPreset, safeContainerAspect),
         frameAspectPreset,
         responsivePresetKind,
       }
@@ -121,7 +125,7 @@ function resolvePhoneScreenBoxAspectValue(
     case 'fixed':
     default:
       return {
-        aspect: getFrameAspectValue(box.geometry.aspectPreset),
+        aspect: getFrameAspectValue(box.geometry.aspectPreset, safeContainerAspect),
         frameAspectPreset: box.geometry.aspectPreset,
         responsivePresetKind: null,
       }

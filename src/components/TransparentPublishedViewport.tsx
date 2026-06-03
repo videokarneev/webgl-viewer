@@ -14,13 +14,21 @@ import { MaterialEffectController } from './MaterialEffectController'
 import { SceneAnimationController } from './SceneAnimationController'
 import { LightRig } from './viewport/LightRig'
 
-const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
+const FRAME_ASPECT_VALUES: Record<Exclude<FrameAspectPreset, 'auto'>, number> = {
   '1:1': 1,
   '3:2': 3 / 2,
   '2:3': 2 / 3,
   '16:9': 16 / 9,
   '21:9': 21 / 9,
   '9:16': 9 / 16,
+}
+
+function getFrameAspectValue(preset: FrameAspectPreset, fallbackAspect: number) {
+  if (preset === 'auto') {
+    return Math.max(fallbackAspect, 0.0001)
+  }
+
+  return FRAME_ASPECT_VALUES[preset] ?? Math.max(fallbackAspect, 0.0001)
 }
 
 type ViewportFrameRect = {
@@ -193,7 +201,10 @@ export function TransparentPublishedViewport() {
   const backgroundOverride = getBackgroundOverrideColor()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
-  const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
+  const frameAspect = getFrameAspectValue(
+    viewer.frameAspectPreset,
+    containerSize.width / Math.max(containerSize.height, 1),
+  )
   const frameRect = useMemo(
     () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
     [containerSize.height, containerSize.width, frameAspect],

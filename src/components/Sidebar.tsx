@@ -45,6 +45,7 @@ const TAB_TITLES: Record<SidebarTab, string> = {
 const ambientSystemLightNodeId = 'light:ambient:system'
 const environmentNodeIds = new Set(['environment:system', 'environment:hdri'])
 const FRAME_ASPECT_OPTIONS: Array<{ value: FrameAspectPreset; label: string }> = [
+  { value: 'auto', label: 'Auto Container' },
   { value: '1:1', label: '1:1 Square' },
   { value: '3:2', label: '3:2 Landscape' },
   { value: '2:3', label: '2:3 Portrait' },
@@ -70,7 +71,9 @@ function broadcastWebPublishStatus(status: WebPublishDeploymentStatus | null) {
 
 function FrameAspectIcon({ preset }: { preset: FrameAspectPreset }) {
   const dimensions =
-    preset === '1:1'
+    preset === 'auto'
+      ? { width: 18, height: 13 }
+      : preset === '1:1'
       ? { width: 16, height: 16 }
       : preset === '3:2'
         ? { width: 18, height: 12 }
@@ -596,6 +599,28 @@ function CameraTabContent() {
             {FRAME_ASPECT_OPTIONS.map((option) => (
               <div key={option.value} className="frame-aspect-choice">
                 {(() => {
+                  if (option.value === 'auto') {
+                    const isCurrent = viewer.frameAspectPreset === option.value
+
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className={`tool-button mode-button frame-aspect-button${isCurrent ? ' is-active' : ''}`}
+                          aria-pressed={isCurrent}
+                          title={option.label}
+                          onClick={() => handleFrameAspectSelect(option.value)}
+                        >
+                          <FrameAspectIcon preset={option.value} />
+                          <span className="frame-aspect-button__label">AUTO</span>
+                        </button>
+                        <div className="frame-aspect-choice__assignment">
+                          <span className="frame-aspect-assignment frame-aspect-assignment--locked">IFR</span>
+                        </div>
+                      </>
+                    )
+                  }
+
                   const kind = getResponsiveFrameGroupKind(option.value)
                   const preset = responsiveFrame[kind]
                   const isLocked = kind === 'square'
