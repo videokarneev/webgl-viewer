@@ -1,5 +1,5 @@
 {
-  "version": 16,
+  "version": 17,
   "scene": {
     "background": {
       "mode": "none",
@@ -24,9 +24,9 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -2.55479201782194,
-      0.2263083451201786,
-      -3.15063879839457
+      4.775541437518627,
+      0.2285714285733107,
+      -7.624865740109993
     ],
     "target": [
       0,
@@ -34,7 +34,7 @@
       0
     ],
     "focalLength": 50,
-    "frameAspectPreset": "auto",
+    "frameAspectPreset": "1:1",
     "exposure": 1
   },
   "responsiveFrame": {
@@ -69,8 +69,8 @@
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        4.000000000000001,
-        2.9999999999999996,
+        4,
+        3,
         5
       ],
       "orbitTarget": [
@@ -78,7 +78,7 @@
         0,
         0
       ],
-      "focalLength": 50
+      "focalLength": 20
     }
   },
   "viewer": {
@@ -118,7 +118,7 @@
   },
   "phoneScreenBoxes": [
     {
-      "id": "mesh:phone-box:1:1780520062971",
+      "id": "mesh:phone-box:1:1780523827932",
       "label": "Phone Box",
       "visible": true,
       "geometry": {
@@ -141,7 +141,10 @@
           -0.025,
           0
         ],
-        "framingMode": "manual"
+        "framingMode": "manual",
+        "attachedObjectIds": [
+          "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0"
+        ]
       },
       "interaction": {
         "enabled": true,
@@ -188,10 +191,80 @@
   },
   "godRaysBoxes": [],
   "stencilVolumes": [],
-  "model": null,
+  "model": {
+    "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+    "assetLabel": "ring.glb",
+    "assetUrl": "assets/model/scene-model-ring.glb",
+    "visible": true,
+    "transform": {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
   "objects": [
     {
-      "id": "root:mesh:phone-box:1:1780520062971",
+      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+      "parentId": null,
+      "type": "group",
+      "label": "Loaded Model",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0",
+      "parentId": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7",
+      "type": "mesh",
+      "label": "Box001",
+      "visible": true,
+      "transform": {
+        "position": [
+          -0.04083681037215879,
+          -0.0134749208,
+          0.02412500662249818
+        ],
+        "rotation": [
+          -2.3811947353110643,
+          -0.4561455197392946,
+          0.22170132647394203
+        ],
+        "scale": [
+          0.26281852914878906,
+          0.19475195931616707,
+          0.26870461433973164
+        ]
+      }
+    },
+    {
+      "id": "root:mesh:phone-box:1:1780523827932",
       "parentId": null,
       "type": "mesh",
       "label": "Phone Box",
@@ -217,7 +290,31 @@
   ],
   "materials": [
     {
-      "id": "root:mesh:phone-box:1:1780520062971/material:0",
+      "id": "root:9fcbb07b-36a5-4708-bc0e-680b54e4f7f7/node:0/material:0",
+      "name": "Material #43",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ead659",
+      "emissive": "#000000",
+      "metalness": 1,
+      "roughness": 0,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "normalMap": {
+          "source": "original",
+          "label": "One_Ring_inscription_NRM.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null
+      }
+    },
+    {
+      "id": "root:mesh:phone-box:1:1780523827932/material:0",
       "name": "Standard Material",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
