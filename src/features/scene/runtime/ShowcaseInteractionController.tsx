@@ -141,7 +141,7 @@ export function ShowcaseInteractionController({
   const boxQuaternionRef = new THREE.Quaternion()
   const fallbackObjectQuaternionRef = new THREE.Quaternion()
   const fallbackObjectMatrixRef = new THREE.Matrix4()
-  const portalBasisMatrixRef = new THREE.Matrix4()
+  const portalLookAtMatrixRef = new THREE.Matrix4()
   const portalQuaternionRef = new THREE.Quaternion()
   const boxWorldMatrixRef = new THREE.Matrix4()
   const bottomLeftCornerRef = new THREE.Vector3()
@@ -302,8 +302,8 @@ export function ShowcaseInteractionController({
     selectedTargetRef.copy(baseTargetRef).add(smoothedTargetOffsetRef.current)
 
     if (useLockedFrame) {
-      portalBasisMatrixRef.makeBasis(rightAxisRef, screenUpAxisRef, boxUpAxisRef)
-      portalQuaternionRef.setFromRotationMatrix(portalBasisMatrixRef)
+      portalLookAtMatrixRef.lookAt(perspectiveCamera.position, baseTargetRef, screenUpAxisRef)
+      portalQuaternionRef.setFromRotationMatrix(portalLookAtMatrixRef)
       perspectiveCamera.quaternion.copy(portalQuaternionRef)
       perspectiveCamera.updateMatrixWorld()
       if (controlsRef.current) {
