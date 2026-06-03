@@ -181,6 +181,7 @@ export function ShowcaseInteractionController({
     const nextSmoothing = THREE.MathUtils.clamp((activeBox?.interaction.smoothing ?? 0.14) * delta * 60, 0.01, 1)
 
     if (!activeBox || store.viewer.cameraMode !== 'orbit') {
+      perspectiveCamera.up.set(0, 1, 0)
       resetPortalProjection(perspectiveCamera)
       baseCameraPositionRef.copy(perspectiveCamera.position).sub(smoothedOffsetRef.current)
       if (controlsRef.current) {
@@ -257,6 +258,12 @@ export function ShowcaseInteractionController({
       boxWorldMatrixRef.identity()
       rightAxisRef.set(1, 0, 0)
       screenUpAxisRef.set(0, 0, 1)
+    }
+
+    if (useLockedFrame) {
+      perspectiveCamera.up.copy(screenUpAxisRef)
+    } else {
+      perspectiveCamera.up.set(0, 1, 0)
     }
 
     const gyroSample = gyroSampleRef.current
