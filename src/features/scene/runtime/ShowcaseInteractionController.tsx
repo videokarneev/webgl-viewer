@@ -3,7 +3,7 @@ import type { MutableRefObject, RefObject } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { useEditorStore } from '../../../store/editorStore'
-import { resolvePhoneScreenBoxCameraFrame, resolvePhoneScreenBoxDimensions } from './phoneScreenBoxRuntime'
+import { resolvePhoneScreenBoxCameraFrame } from './phoneScreenBoxRuntime'
 import type { ShowcaseMotionSample } from './useShowcaseMotionSensor'
 
 function supportsMouseInput(mode: string) {
@@ -28,23 +28,6 @@ function getBaseGeometryPositions(mesh: THREE.Mesh) {
 
   const snapshot = new Float32Array(positionAttribute.array as ArrayLike<number>)
   mesh.userData.showcaseBasePositions = snapshot
-  return snapshot
-}
-
-function getBaseGeometryNormals(mesh: THREE.Mesh) {
-  const geometry = mesh.geometry
-  const normalAttribute = geometry.getAttribute('normal')
-  if (!(normalAttribute instanceof THREE.BufferAttribute)) {
-    return null
-  }
-
-  const existing = mesh.userData.showcaseBaseNormals as Float32Array | undefined
-  if (existing && existing.length === normalAttribute.array.length) {
-    return existing
-  }
-
-  const snapshot = new Float32Array(normalAttribute.array as ArrayLike<number>)
-  mesh.userData.showcaseBaseNormals = snapshot
   return snapshot
 }
 
@@ -79,68 +62,57 @@ function restoreShowcaseGeometry(mesh: THREE.Mesh | null) {
   }
 }
 
-function applyPortalDepthDeformation(
-  mesh: THREE.Mesh,
-  shiftX: number,
-  shiftZ: number,
-  boxHeight: number,
+function resetPortalProjection(camera: THREE.PerspectiveCamera) {
+  camera.clearViewOffset()
+  camera.updateProjectionMatrix()
+}
+
+function applyOffAxisPortalProjection(
+  camera: THREE.PerspectiveCamera,
+  eye: THREE.Vector3,
+  bottomLeft: THREE.Vector3,
+  bottomRight: THREE.Vector3,
+  topLeft: THREE.Vector3,
 ) {
-  const geometry = mesh.geometry
-  const positionAttribute = geometry.getAttribute('position')
-  const basePositions = getBaseGeometryPositions(mesh)
-  const baseNormals = getBaseGeometryNormals(mesh)
-  if (!(positionAttribute instanceof THREE.BufferAttribute) || !basePositions || !baseNormals) {
+  const screenRight = bottomRight.clone().sub(bottomLeft).normalize()
+  const screenUp = topLeft.clone().sub(bottomLeft).normalize()
+  const screenNormal = new THREE.Vector3().crossVectors(screenUp, screenRight).normalize()
+  const toBottomLeft = bottomLeft.clone().sub(eye)
+  const toBottomRight = bottomRight.clone().sub(eye)
+  const toTopLeft = topLeft.clone().sub(eye)
+  const distanceToScreen = -toBottomLeft.dot(screenNormal)
+
+  if (!Number.isFinite(distanceToScreen) || distanceToScreen <= 0.0001) {
+    resetPortalProjection(camera)
     return
   }
 
-  geometry.computeBoundingBox()
-  const bounds = geometry.boundingBox
-  if (!bounds) {
-    return
-  }
+  const near = Math.max(camera.near, 0.01)
+  const far = Math.max(camera.far, near + 0.01)
+  const left = screenRight.dot(toBottomLeft) * near / distanceToScreen
+  const right = screenRight.dot(toBottomRight) * near / distanceToScreen
+  const bottom = screenUp.dot(toBottomLeft) * near / distanceToScreen
+  const top = screenUp.dot(toTopLeft) * near / distanceToScreen
 
-  const safeHeight = Math.max(boxHeight, 0.0001)
-  const heightSpan = Math.max(bounds.max.y - bounds.min.y, safeHeight, 0.0001)
-  const depthSpan = Math.max(bounds.max.z - bounds.min.z, 0.0001)
-  const positions = positionAttribute.array as Float32Array
-  let changed = false
-
-  for (let index = 0; index < positionAttribute.count; index += 1) {
-    const offset = index * 3
-    const baseX = basePositions[offset] ?? 0
-    const baseY = basePositions[offset + 1] ?? 0
-    const baseZ = basePositions[offset + 2] ?? 0
-    const normalX = baseNormals[offset] ?? 0
-    const normalY = baseNormals[offset + 1] ?? 0
-    const normalZ = baseNormals[offset + 2] ?? 0
-    const isBottomBand = baseY <= bounds.min.y + heightSpan * 0.08
-    const isBackBand = baseZ <= bounds.min.z + depthSpan * 0.12
-    const isSideWall = Math.abs(normalX) >= 0.85
-    const isRearCap = Math.abs(normalZ) >= 0.85 && baseZ < 0
-
-    let influence = 0
-    if (isBottomBand || isBackBand || isRearCap) {
-      influence = 1
-    } else if (isSideWall) {
-      influence = 1 - THREE.MathUtils.clamp((baseZ - bounds.min.z) / Math.max(depthSpan * 0.88, 0.0001), 0, 1)
-    }
-
-    const nextX = baseX + shiftX * influence
-    const nextZ = baseZ + shiftZ * influence
-
-    if (positions[offset] !== nextX || positions[offset + 2] !== nextZ) {
-      positions[offset] = nextX
-      positions[offset + 2] = nextZ
-      changed = true
-    }
-  }
-
-  if (changed) {
-    positionAttribute.needsUpdate = true
-    geometry.computeBoundingBox()
-    geometry.computeBoundingSphere()
-    geometry.computeVertexNormals()
-  }
+  camera.projectionMatrix.set(
+    (2 * near) / (right - left),
+    0,
+    (right + left) / (right - left),
+    0,
+    0,
+    (2 * near) / (top - bottom),
+    (top + bottom) / (top - bottom),
+    0,
+    0,
+    0,
+    -(far + near) / (far - near),
+    (-2 * far * near) / (far - near),
+    0,
+    0,
+    -1,
+    0,
+  )
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
 }
 
 export function ShowcaseInteractionController({
@@ -164,12 +136,14 @@ export function ShowcaseInteractionController({
   const screenUpAxisRef = new THREE.Vector3()
   const fallbackTargetRef = new THREE.Vector3()
   const anchorTargetRef = new THREE.Vector3()
-  const openingCenterRef = new THREE.Vector3()
   const selectedTargetRef = new THREE.Vector3()
   const boxQuaternionRef = new THREE.Quaternion()
   const fallbackObjectQuaternionRef = new THREE.Quaternion()
   const fallbackObjectMatrixRef = new THREE.Matrix4()
-  const deformedBoxIdsRef = new Set<string>()
+  const boxWorldMatrixRef = new THREE.Matrix4()
+  const bottomLeftCornerRef = new THREE.Vector3()
+  const bottomRightCornerRef = new THREE.Vector3()
+  const topLeftCornerRef = new THREE.Vector3()
 
   function resolveActiveBox() {
     const store = useEditorStore.getState()
@@ -196,11 +170,10 @@ export function ShowcaseInteractionController({
   useFrame((state, delta) => {
     const store = useEditorStore.getState()
     const activeBox = resolveActiveBox()
-    const visibleBoxIds = new Set<string>()
     store.phoneScreenBoxes.forEach((entry) => {
-      const objectState = store.objects[entry.id]
-      if (objectState?.visible) {
-        visibleBoxIds.add(entry.id)
+      const object = store.runtime.objectById[entry.id]
+      if (object instanceof THREE.Mesh) {
+        restoreShowcaseGeometry(object)
       }
     })
 
@@ -208,6 +181,7 @@ export function ShowcaseInteractionController({
     const nextSmoothing = THREE.MathUtils.clamp((activeBox?.interaction.smoothing ?? 0.14) * delta * 60, 0.01, 1)
 
     if (!activeBox || store.viewer.cameraMode !== 'orbit') {
+      resetPortalProjection(perspectiveCamera)
       baseCameraPositionRef.copy(perspectiveCamera.position).sub(smoothedOffsetRef.current)
       if (controlsRef.current) {
         baseTargetRef.copy(controlsRef.current.target).sub(smoothedTargetOffsetRef.current)
@@ -229,9 +203,10 @@ export function ShowcaseInteractionController({
 
     const objectState = store.objects[activeBox.id] ?? null
     const useLockedFrame = Boolean(activeBox.screenBinding.lockToFrame && objectState)
+    let lockedFrame: ReturnType<typeof resolvePhoneScreenBoxCameraFrame> | null = null
 
     if (useLockedFrame && objectState) {
-      const frame = resolvePhoneScreenBoxCameraFrame(
+      lockedFrame = resolvePhoneScreenBoxCameraFrame(
         activeBox,
         objectState,
         store.responsiveFrame,
@@ -239,10 +214,11 @@ export function ShowcaseInteractionController({
         perspectiveCamera.aspect,
         perspectiveCamera.fov,
       )
-      baseCameraPositionRef.set(...frame.position)
-      baseTargetRef.set(...frame.target)
-      anchorTargetRef.set(...frame.target)
+      baseCameraPositionRef.set(...lockedFrame.position)
+      baseTargetRef.set(...lockedFrame.target)
+      anchorTargetRef.set(...lockedFrame.target)
     } else {
+      resetPortalProjection(perspectiveCamera)
       baseCameraPositionRef.copy(perspectiveCamera.position).sub(smoothedOffsetRef.current)
       if (controlsRef.current) {
         baseTargetRef.copy(controlsRef.current.target).sub(smoothedTargetOffsetRef.current)
@@ -254,8 +230,8 @@ export function ShowcaseInteractionController({
     const runtimeObject = store.runtime.objectById[activeBox.id] ?? null
     if (runtimeObject) {
       runtimeObject.updateWorldMatrix(true, false)
+      boxWorldMatrixRef.copy(runtimeObject.matrixWorld)
       runtimeObject.getWorldQuaternion(boxQuaternionRef)
-      openingCenterRef.set(0, 0, 0).applyMatrix4(runtimeObject.matrixWorld)
       if (!useLockedFrame) {
         anchorTargetRef.set(...activeBox.content.anchor).applyMatrix4(runtimeObject.matrixWorld)
       }
@@ -268,7 +244,7 @@ export function ShowcaseInteractionController({
         fallbackObjectQuaternionRef,
         new THREE.Vector3(...objectState.scale),
       )
-      openingCenterRef.set(0, 0, 0).applyMatrix4(fallbackObjectMatrixRef)
+      boxWorldMatrixRef.copy(fallbackObjectMatrixRef)
       if (!useLockedFrame) {
         anchorTargetRef
           .set(...activeBox.content.anchor)
@@ -278,7 +254,7 @@ export function ShowcaseInteractionController({
       screenUpAxisRef.set(0, 0, 1).applyQuaternion(fallbackObjectQuaternionRef).normalize()
     } else {
       anchorTargetRef.copy(baseTargetRef)
-      openingCenterRef.copy(baseTargetRef)
+      boxWorldMatrixRef.identity()
       rightAxisRef.set(1, 0, 0)
       screenUpAxisRef.set(0, 0, 1)
     }
@@ -293,50 +269,17 @@ export function ShowcaseInteractionController({
     const pointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
     const pointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
 
-    const runtimeMesh = runtimeObject instanceof THREE.Mesh ? runtimeObject : null
-    if (useLockedFrame && runtimeMesh) {
-      const resolvedDimensions = resolvePhoneScreenBoxDimensions(
-        activeBox,
-        store.responsiveFrame,
-        state.size.width / Math.max(state.size.height, 1),
-      )
-      const localShiftX = pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * 6.5
-      const localShiftZ = -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * 6.5
-      applyPortalDepthDeformation(
-        runtimeMesh,
-        localShiftX,
-        localShiftZ,
-        resolvedDimensions.boxHeight,
-      )
-      deformedBoxIdsRef.add(activeBox.id)
-      desiredOffsetRef.set(0, 0, 0)
+    if (useLockedFrame) {
+      desiredOffsetRef
+        .copy(rightAxisRef)
+        .multiplyScalar(pointerX * activeBox.interaction.maxOffsetX * 1.2)
+        .addScaledVector(screenUpAxisRef, -pointerY * activeBox.interaction.maxOffsetY * 1.2)
+      desiredTargetOffsetRef.copy(desiredOffsetRef)
     } else {
       desiredOffsetRef
         .copy(rightAxisRef)
         .multiplyScalar(pointerX * activeBox.interaction.maxOffsetX)
         .addScaledVector(screenUpAxisRef, -pointerY * activeBox.interaction.maxOffsetY)
-    }
-
-    for (const boxId of Array.from(deformedBoxIdsRef)) {
-      if (boxId === activeBox.id && useLockedFrame && runtimeMesh) {
-        continue
-      }
-
-      if (!visibleBoxIds.has(boxId)) {
-        deformedBoxIdsRef.delete(boxId)
-        continue
-      }
-
-      const object = store.runtime.objectById[boxId]
-      if (object instanceof THREE.Mesh) {
-        restoreShowcaseGeometry(object)
-      }
-      deformedBoxIdsRef.delete(boxId)
-    }
-
-    if (useLockedFrame) {
-      desiredTargetOffsetRef.set(0, 0, 0)
-    } else {
       desiredTargetOffsetRef.copy(anchorTargetRef).sub(baseTargetRef)
     }
 
@@ -349,6 +292,21 @@ export function ShowcaseInteractionController({
       controlsRef.current.update()
     } else {
       perspectiveCamera.lookAt(selectedTargetRef)
+    }
+
+    if (useLockedFrame && lockedFrame) {
+      const halfWidth = lockedFrame.dimensions.width * 0.5
+      const halfDepth = lockedFrame.dimensions.footprintDepth * 0.5
+      bottomLeftCornerRef.set(-halfWidth, 0, -halfDepth).applyMatrix4(boxWorldMatrixRef)
+      bottomRightCornerRef.set(halfWidth, 0, -halfDepth).applyMatrix4(boxWorldMatrixRef)
+      topLeftCornerRef.set(-halfWidth, 0, halfDepth).applyMatrix4(boxWorldMatrixRef)
+      applyOffAxisPortalProjection(
+        perspectiveCamera,
+        perspectiveCamera.position,
+        bottomLeftCornerRef,
+        bottomRightCornerRef,
+        topLeftCornerRef,
+      )
     }
   })
 
