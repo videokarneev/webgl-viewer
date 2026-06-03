@@ -134,31 +134,37 @@ export function resolvePhoneScreenBoxDimensions(
   const safeAspect = Math.max(aspect, 0.0001)
   const safeBaseLongEdge = Math.max(box.geometry.baseLongEdge, 0.001)
 
-  let width = safeAspect >= 1 ? safeBaseLongEdge : safeBaseLongEdge * safeAspect
-  let footprintDepth = safeAspect >= 1 ? safeBaseLongEdge / safeAspect : safeBaseLongEdge
+  let contentWidth = safeAspect >= 1 ? safeBaseLongEdge : safeBaseLongEdge * safeAspect
+  let contentFootprintDepth = safeAspect >= 1 ? safeBaseLongEdge / safeAspect : safeBaseLongEdge
 
   const marginScale = Math.max(0.05, 1 - clampNumber(box.screenBinding.margin, 0, 0.45) * 2)
-  width *= marginScale
-  footprintDepth *= marginScale
+  contentWidth *= marginScale
+  contentFootprintDepth *= marginScale
 
-  const longEdge = Math.max(width, footprintDepth)
-  const shortEdge = Math.min(width, footprintDepth)
+  const contentLongEdge = Math.max(contentWidth, contentFootprintDepth)
+  const contentShortEdge = Math.min(contentWidth, contentFootprintDepth)
 
   let boxHeight = Math.max(box.geometry.depth, 0.001)
   if (box.screenBinding.depthScaleMode === 'shortEdge') {
-    boxHeight = Math.max(shortEdge * box.geometry.depth, 0.001)
+    boxHeight = Math.max(contentShortEdge * box.geometry.depth, 0.001)
   }
   if (box.screenBinding.depthScaleMode === 'longEdge') {
-    boxHeight = Math.max(longEdge * box.geometry.depth, 0.001)
+    boxHeight = Math.max(contentLongEdge * box.geometry.depth, 0.001)
   }
   if (box.screenBinding.mode !== 'fixed') {
     // Keep responsive showcase boxes visually deep enough to read as open containers from the default camera.
-    boxHeight = Math.max(boxHeight, longEdge * 0.45)
+    boxHeight = Math.max(boxHeight, contentLongEdge * 0.45)
   }
 
-  const maxWallThickness = Math.max(shortEdge * 0.49, 0.0005)
-  const minWallThickness = box.screenBinding.mode === 'fixed' ? 0.0005 : shortEdge * 0.08
+  const maxWallThickness = Math.max(contentShortEdge * 0.49, 0.0005)
+  const minWallThickness = box.screenBinding.mode === 'fixed' ? 0.0005 : contentShortEdge * 0.08
   const wallThickness = clampNumber(box.geometry.wallThickness, minWallThickness, maxWallThickness)
+  const width = box.screenBinding.mode === 'fixed' ? contentWidth : contentWidth + wallThickness * 2
+  const footprintDepth =
+    box.screenBinding.mode === 'fixed' ? contentFootprintDepth : contentFootprintDepth + wallThickness * 2
+  const innerWidth = box.screenBinding.mode === 'fixed' ? Math.max(width - wallThickness * 2, 0.0001) : contentWidth
+  const innerFootprintDepth =
+    box.screenBinding.mode === 'fixed' ? Math.max(footprintDepth - wallThickness * 2, 0.0001) : contentFootprintDepth
 
   return {
     aspect: safeAspect,
@@ -168,8 +174,8 @@ export function resolvePhoneScreenBoxDimensions(
     footprintDepth,
     boxHeight,
     wallThickness,
-    innerWidth: Math.max(width - wallThickness * 2, 0.0001),
-    innerFootprintDepth: Math.max(footprintDepth - wallThickness * 2, 0.0001),
+    innerWidth: Math.max(innerWidth, 0.0001),
+    innerFootprintDepth: Math.max(innerFootprintDepth, 0.0001),
     innerHeight: Math.max(boxHeight - wallThickness, 0.0001),
   }
 }
@@ -190,8 +196,8 @@ export function resolvePhoneScreenBoxCameraFrame(
   )
   const boxQuaternion = new THREE.Quaternion().setFromRotationMatrix(transformMatrix)
   const targetVector = new THREE.Vector3(...box.content.anchor).applyMatrix4(transformMatrix)
-  const halfWidth = dimensions.width * 0.5
-  const halfDepth = dimensions.footprintDepth * 0.5
+  const halfWidth = (box.screenBinding.lockToFrame ? dimensions.innerWidth : dimensions.width) * 0.5
+  const halfDepth = (box.screenBinding.lockToFrame ? dimensions.innerFootprintDepth : dimensions.footprintDepth) * 0.5
   const topY = 0
   const bottomY = -dimensions.boxHeight
   const corners = [

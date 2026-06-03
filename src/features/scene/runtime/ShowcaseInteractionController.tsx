@@ -266,8 +266,8 @@ export function ShowcaseInteractionController({
     if (useLockedFrame) {
       desiredOffsetRef
         .copy(rightAxisRef)
-        .multiplyScalar(pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * 6.5)
-        .addScaledVector(screenUpAxisRef, -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * 6.5)
+        .multiplyScalar(pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * 3.25)
+        .addScaledVector(screenUpAxisRef, -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * 3.25)
       desiredTargetOffsetRef.set(0, 0, 0)
     } else {
       desiredOffsetRef
