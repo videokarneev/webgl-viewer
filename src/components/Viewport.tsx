@@ -7,7 +7,7 @@ import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
 import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
 import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
-import { useShowcaseMotionSensor } from '../features/scene/runtime/useShowcaseMotionSensor'
+import { useShowcaseMotionSensor, type ShowcaseMotionSample } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
@@ -1714,7 +1714,7 @@ function ViewportScene({
   autoFrameOnLoad: boolean
   transparentBackground: boolean
   clearColor: number
-  gyroSampleRef: React.MutableRefObject<{ x: number; y: number; active: boolean }>
+  gyroSampleRef: React.MutableRefObject<ShowcaseMotionSample>
 }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null)
   const showcaseCameraOffsetRef = useRef(new THREE.Vector3())

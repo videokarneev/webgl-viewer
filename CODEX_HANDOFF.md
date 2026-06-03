@@ -154,6 +154,10 @@ What is implemented now:
 - `devicemotion` fallback is no longer suppressed by recent orientation events;
   some Android/WebView browsers emit orientation events that are present but too
   flat/zeroed for useful content parallax.
+- Motion sample now carries `yaw` from `DeviceOrientationEvent.alpha`, measured
+  as a baseline-relative signed delta. Attached Phone Box content uses that yaw
+  as an extra rotation around the screen vertical axis, with mouse horizontal
+  movement as a weaker desktop fallback.
 
 Most relevant files:
 

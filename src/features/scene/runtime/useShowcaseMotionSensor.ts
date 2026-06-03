@@ -6,8 +6,12 @@ export type ShowcaseMotionPermissionState = 'unsupported' | 'idle' | 'granted' |
 export interface ShowcaseMotionSample {
   x: number
   y: number
+  yaw: number
   active: boolean
 }
+
+const IDLE_SAMPLE: ShowcaseMotionSample = { x: 0, y: 0, yaw: 0, active: false }
+const YAW_RESPONSE_DEGREES = 42
 
 function getScreenOrientationAngle() {
   if (typeof window === 'undefined') {
@@ -83,9 +87,21 @@ function resolveMotionTiltAxes(deltaX: number, deltaY: number, angle: number) {
   }
 }
 
+function normalizeSignedAngleDelta(current: number, baseline: number) {
+  return ((((current - baseline) % 360) + 540) % 360) - 180
+}
+
+function resolveYawAxis(currentAlpha: number | null, baselineAlpha: number | null) {
+  if (currentAlpha === null || baselineAlpha === null) {
+    return 0
+  }
+
+  return THREE.MathUtils.clamp(normalizeSignedAngleDelta(currentAlpha, baselineAlpha) / YAW_RESPONSE_DEGREES, -1, 1)
+}
+
 export function useShowcaseMotionSensor() {
-  const sampleRef = useRef<ShowcaseMotionSample>({ x: 0, y: 0, active: false })
-  const baselineRef = useRef<{ beta: number; gamma: number; angle: number } | null>(null)
+  const sampleRef = useRef<ShowcaseMotionSample>(IDLE_SAMPLE)
+  const baselineRef = useRef<{ beta: number; gamma: number; alpha: number | null; angle: number } | null>(null)
   const motionBaselineRef = useRef<{ x: number; y: number; angle: number } | null>(null)
   const lastOrientationSampleTimeRef = useRef(0)
   const [supported, setSupported] = useState(false)
@@ -121,7 +137,7 @@ export function useShowcaseMotionSensor() {
 
   useEffect(() => {
     if (!supported || !enabled || permissionState !== 'granted' || typeof window === 'undefined') {
-      sampleRef.current = { x: 0, y: 0, active: false }
+      sampleRef.current = IDLE_SAMPLE
       baselineRef.current = null
       motionBaselineRef.current = null
       lastOrientationSampleTimeRef.current = 0
@@ -134,20 +150,23 @@ export function useShowcaseMotionSensor() {
       }
 
       const angle = getScreenOrientationAngle()
+      const alpha = typeof event.alpha === 'number' ? event.alpha : null
       const baseline = baselineRef.current
       if (!baseline || Math.abs(baseline.angle - angle) >= 45) {
         baselineRef.current = {
           beta: event.beta,
           gamma: event.gamma,
+          alpha,
           angle,
         }
-        sampleRef.current = { x: 0, y: 0, active: true }
+        sampleRef.current = { x: 0, y: 0, yaw: 0, active: true }
         lastOrientationSampleTimeRef.current = performance.now()
         return
       }
 
       const { x, y } = resolveTiltAxes(event.beta - baseline.beta, event.gamma - baseline.gamma, angle)
-      sampleRef.current = { x, y, active: true }
+      const yaw = resolveYawAxis(alpha, baseline.alpha)
+      sampleRef.current = { x, y, yaw, active: true }
       lastOrientationSampleTimeRef.current = performance.now()
     }
 
@@ -165,12 +184,12 @@ export function useShowcaseMotionSensor() {
           y: gravity.y,
           angle,
         }
-        sampleRef.current = { x: 0, y: 0, active: true }
+        sampleRef.current = { x: 0, y: 0, yaw: sampleRef.current.yaw, active: true }
         return
       }
 
       const { x, y } = resolveMotionTiltAxes(gravity.x - baseline.x, gravity.y - baseline.y, angle)
-      sampleRef.current = { x, y, active: true }
+      sampleRef.current = { x, y, yaw: sampleRef.current.yaw, active: true }
     }
 
     window.addEventListener('deviceorientation', handleOrientation)
@@ -212,7 +231,7 @@ export function useShowcaseMotionSensor() {
         setPermissionState(granted ? 'granted' : 'denied')
         setEnabled(granted)
         if (!granted) {
-          sampleRef.current = { x: 0, y: 0, active: false }
+          sampleRef.current = IDLE_SAMPLE
           baselineRef.current = null
           motionBaselineRef.current = null
           lastOrientationSampleTimeRef.current = 0
@@ -221,7 +240,7 @@ export function useShowcaseMotionSensor() {
       } catch {
         setPermissionState('denied')
         setEnabled(false)
-        sampleRef.current = { x: 0, y: 0, active: false }
+        sampleRef.current = IDLE_SAMPLE
         baselineRef.current = null
         motionBaselineRef.current = null
         lastOrientationSampleTimeRef.current = 0
@@ -235,7 +254,7 @@ export function useShowcaseMotionSensor() {
 
   const disable = useCallback(() => {
     setEnabled(false)
-    sampleRef.current = { x: 0, y: 0, active: false }
+    sampleRef.current = IDLE_SAMPLE
     baselineRef.current = null
     motionBaselineRef.current = null
     lastOrientationSampleTimeRef.current = 0
