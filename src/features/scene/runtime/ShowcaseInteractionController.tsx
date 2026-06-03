@@ -134,12 +134,15 @@ export function ShowcaseInteractionController({
   const desiredTargetOffsetRef = new THREE.Vector3()
   const rightAxisRef = new THREE.Vector3()
   const screenUpAxisRef = new THREE.Vector3()
+  const boxUpAxisRef = new THREE.Vector3()
   const fallbackTargetRef = new THREE.Vector3()
   const anchorTargetRef = new THREE.Vector3()
   const selectedTargetRef = new THREE.Vector3()
   const boxQuaternionRef = new THREE.Quaternion()
   const fallbackObjectQuaternionRef = new THREE.Quaternion()
   const fallbackObjectMatrixRef = new THREE.Matrix4()
+  const portalBasisMatrixRef = new THREE.Matrix4()
+  const portalQuaternionRef = new THREE.Quaternion()
   const boxWorldMatrixRef = new THREE.Matrix4()
   const bottomLeftCornerRef = new THREE.Vector3()
   const bottomRightCornerRef = new THREE.Vector3()
@@ -236,6 +239,7 @@ export function ShowcaseInteractionController({
       if (!useLockedFrame) {
         anchorTargetRef.set(...activeBox.content.anchor).applyMatrix4(runtimeObject.matrixWorld)
       }
+      boxUpAxisRef.set(0, 1, 0).applyQuaternion(boxQuaternionRef).normalize()
       rightAxisRef.set(1, 0, 0).applyQuaternion(boxQuaternionRef).normalize()
       screenUpAxisRef.set(0, 0, 1).applyQuaternion(boxQuaternionRef).normalize()
     } else if (objectState) {
@@ -251,11 +255,13 @@ export function ShowcaseInteractionController({
           .set(...activeBox.content.anchor)
           .applyMatrix4(fallbackObjectMatrixRef)
       }
+      boxUpAxisRef.set(0, 1, 0).applyQuaternion(fallbackObjectQuaternionRef).normalize()
       rightAxisRef.set(1, 0, 0).applyQuaternion(fallbackObjectQuaternionRef).normalize()
       screenUpAxisRef.set(0, 0, 1).applyQuaternion(fallbackObjectQuaternionRef).normalize()
     } else {
       anchorTargetRef.copy(baseTargetRef)
       boxWorldMatrixRef.identity()
+      boxUpAxisRef.set(0, 1, 0)
       rightAxisRef.set(1, 0, 0)
       screenUpAxisRef.set(0, 0, 1)
     }
@@ -294,7 +300,16 @@ export function ShowcaseInteractionController({
     smoothedTargetOffsetRef.current.lerp(desiredTargetOffsetRef, nextSmoothing)
     perspectiveCamera.position.copy(baseCameraPositionRef).add(smoothedOffsetRef.current)
     selectedTargetRef.copy(baseTargetRef).add(smoothedTargetOffsetRef.current)
-    if (controlsRef.current) {
+
+    if (useLockedFrame) {
+      portalBasisMatrixRef.makeBasis(rightAxisRef, screenUpAxisRef, boxUpAxisRef)
+      portalQuaternionRef.setFromRotationMatrix(portalBasisMatrixRef)
+      perspectiveCamera.quaternion.copy(portalQuaternionRef)
+      perspectiveCamera.updateMatrixWorld()
+      if (controlsRef.current) {
+        controlsRef.current.target.copy(baseTargetRef)
+      }
+    } else if (controlsRef.current) {
       controlsRef.current.target.copy(selectedTargetRef)
       controlsRef.current.update()
     } else {
