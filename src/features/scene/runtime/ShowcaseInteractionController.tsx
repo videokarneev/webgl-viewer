@@ -3,7 +3,7 @@ import type { MutableRefObject, RefObject } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { useEditorStore } from '../../../store/editorStore'
-import { resolvePhoneScreenBoxCameraFrame } from './phoneScreenBoxRuntime'
+import { resolvePhoneScreenBoxCameraFrame, resolvePhoneScreenBoxDimensions } from './phoneScreenBoxRuntime'
 import type { ShowcaseMotionSample } from './useShowcaseMotionSensor'
 
 function supportsMouseInput(mode: string) {
@@ -12,6 +12,100 @@ function supportsMouseInput(mode: string) {
 
 function supportsGyroInput(mode: string) {
   return mode === 'gyro' || mode === 'mouse+gyro'
+}
+
+function getBaseGeometryPositions(mesh: THREE.Mesh) {
+  const geometry = mesh.geometry
+  const positionAttribute = geometry.getAttribute('position')
+  if (!(positionAttribute instanceof THREE.BufferAttribute)) {
+    return null
+  }
+
+  const existing = mesh.userData.showcaseBasePositions as Float32Array | undefined
+  if (existing && existing.length === positionAttribute.array.length) {
+    return existing
+  }
+
+  const snapshot = new Float32Array(positionAttribute.array as ArrayLike<number>)
+  mesh.userData.showcaseBasePositions = snapshot
+  return snapshot
+}
+
+function restoreShowcaseGeometry(mesh: THREE.Mesh | null) {
+  if (!mesh) {
+    return
+  }
+
+  const geometry = mesh.geometry
+  const positionAttribute = geometry.getAttribute('position')
+  const basePositions = getBaseGeometryPositions(mesh)
+  if (!(positionAttribute instanceof THREE.BufferAttribute) || !basePositions) {
+    return
+  }
+
+  const positions = positionAttribute.array as Float32Array
+  let changed = false
+
+  for (let index = 0; index < positions.length; index += 1) {
+    const baseValue = basePositions[index] ?? 0
+    if (positions[index] !== baseValue) {
+      positions[index] = baseValue
+      changed = true
+    }
+  }
+
+  if (changed) {
+    positionAttribute.needsUpdate = true
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    geometry.computeVertexNormals()
+  }
+}
+
+function applyPortalDepthDeformation(
+  mesh: THREE.Mesh,
+  shiftX: number,
+  shiftZ: number,
+  boxHeight: number,
+) {
+  const geometry = mesh.geometry
+  const positionAttribute = geometry.getAttribute('position')
+  const basePositions = getBaseGeometryPositions(mesh)
+  if (!(positionAttribute instanceof THREE.BufferAttribute) || !basePositions) {
+    return
+  }
+
+  const safeHeight = Math.max(boxHeight, 0.0001)
+  const positions = positionAttribute.array as Float32Array
+  let changed = false
+
+  for (let index = 0; index < positionAttribute.count; index += 1) {
+    const offset = index * 3
+    const baseX = basePositions[offset] ?? 0
+    const baseY = basePositions[offset + 1] ?? 0
+    const baseZ = basePositions[offset + 2] ?? 0
+    const depthRatio = THREE.MathUtils.clamp(-baseY / safeHeight, 0, 1)
+    const easedDepthRatio = depthRatio * depthRatio * depthRatio
+    const frontLock = THREE.MathUtils.clamp((-baseZ + 0.0001) / Math.max(Math.abs(baseZ) * 2, 0.0001), 0, 1)
+    const sideBias = THREE.MathUtils.clamp(Math.abs(baseX) / Math.max(Math.abs(baseZ), 0.0001), 0, 1)
+    const wallTaper = 1 - sideBias * 0.1
+    const influence = easedDepthRatio * frontLock * wallTaper
+    const nextX = baseX + shiftX * influence
+    const nextZ = baseZ + shiftZ * influence
+
+    if (positions[offset] !== nextX || positions[offset + 2] !== nextZ) {
+      positions[offset] = nextX
+      positions[offset + 2] = nextZ
+      changed = true
+    }
+  }
+
+  if (changed) {
+    positionAttribute.needsUpdate = true
+    geometry.computeBoundingBox()
+    geometry.computeBoundingSphere()
+    geometry.computeVertexNormals()
+  }
 }
 
 export function ShowcaseInteractionController({
@@ -32,13 +126,15 @@ export function ShowcaseInteractionController({
   const desiredOffsetRef = new THREE.Vector3()
   const desiredTargetOffsetRef = new THREE.Vector3()
   const rightAxisRef = new THREE.Vector3()
-  const depthAxisRef = new THREE.Vector3()
+  const screenUpAxisRef = new THREE.Vector3()
   const fallbackTargetRef = new THREE.Vector3()
   const anchorTargetRef = new THREE.Vector3()
+  const openingCenterRef = new THREE.Vector3()
   const selectedTargetRef = new THREE.Vector3()
   const boxQuaternionRef = new THREE.Quaternion()
   const fallbackObjectQuaternionRef = new THREE.Quaternion()
   const fallbackObjectMatrixRef = new THREE.Matrix4()
+  const deformedBoxIdsRef = new Set<string>()
 
   function resolveActiveBox() {
     const store = useEditorStore.getState()
@@ -65,6 +161,13 @@ export function ShowcaseInteractionController({
   useFrame((state, delta) => {
     const store = useEditorStore.getState()
     const activeBox = resolveActiveBox()
+    const visibleBoxIds = new Set<string>()
+    store.phoneScreenBoxes.forEach((entry) => {
+      const objectState = store.objects[entry.id]
+      if (objectState?.visible) {
+        visibleBoxIds.add(entry.id)
+      }
+    })
 
     const perspectiveCamera = state.camera as THREE.PerspectiveCamera
     const nextSmoothing = THREE.MathUtils.clamp((activeBox?.interaction.smoothing ?? 0.14) * delta * 60, 0.01, 1)
@@ -117,29 +220,32 @@ export function ShowcaseInteractionController({
     if (runtimeObject) {
       runtimeObject.updateWorldMatrix(true, false)
       runtimeObject.getWorldQuaternion(boxQuaternionRef)
+      openingCenterRef.set(0, 0, 0).applyMatrix4(runtimeObject.matrixWorld)
       if (!useLockedFrame) {
         anchorTargetRef.set(...activeBox.content.anchor).applyMatrix4(runtimeObject.matrixWorld)
       }
       rightAxisRef.set(1, 0, 0).applyQuaternion(boxQuaternionRef).normalize()
-      depthAxisRef.set(0, 0, 1).applyQuaternion(boxQuaternionRef).normalize()
+      screenUpAxisRef.set(0, 0, 1).applyQuaternion(boxQuaternionRef).normalize()
     } else if (objectState) {
       fallbackObjectQuaternionRef.setFromEuler(new THREE.Euler(...objectState.rotation))
+      fallbackObjectMatrixRef.compose(
+        new THREE.Vector3(...objectState.position),
+        fallbackObjectQuaternionRef,
+        new THREE.Vector3(...objectState.scale),
+      )
+      openingCenterRef.set(0, 0, 0).applyMatrix4(fallbackObjectMatrixRef)
       if (!useLockedFrame) {
-        fallbackObjectMatrixRef.compose(
-          new THREE.Vector3(...objectState.position),
-          fallbackObjectQuaternionRef,
-          new THREE.Vector3(...objectState.scale),
-        )
         anchorTargetRef
           .set(...activeBox.content.anchor)
           .applyMatrix4(fallbackObjectMatrixRef)
       }
       rightAxisRef.set(1, 0, 0).applyQuaternion(fallbackObjectQuaternionRef).normalize()
-      depthAxisRef.set(0, 0, 1).applyQuaternion(fallbackObjectQuaternionRef).normalize()
+      screenUpAxisRef.set(0, 0, 1).applyQuaternion(fallbackObjectQuaternionRef).normalize()
     } else {
       anchorTargetRef.copy(baseTargetRef)
+      openingCenterRef.copy(baseTargetRef)
       rightAxisRef.set(1, 0, 0)
-      depthAxisRef.set(0, 0, 1)
+      screenUpAxisRef.set(0, 0, 1)
     }
 
     const gyroSample = gyroSampleRef.current
@@ -152,10 +258,48 @@ export function ShowcaseInteractionController({
       !useGyro
     const pointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
     const pointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
-    desiredOffsetRef
-      .copy(rightAxisRef)
-      .multiplyScalar(pointerX * activeBox.interaction.maxOffsetX)
-      .addScaledVector(depthAxisRef, -pointerY * activeBox.interaction.maxOffsetY)
+
+    const runtimeMesh = runtimeObject instanceof THREE.Mesh ? runtimeObject : null
+    if (useLockedFrame && runtimeMesh) {
+      const resolvedDimensions = resolvePhoneScreenBoxDimensions(
+        activeBox,
+        store.responsiveFrame,
+        state.size.width / Math.max(state.size.height, 1),
+      )
+      const localShiftX = pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.006) * 0.55
+      const localShiftZ = -pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.009) * 0.55
+      applyPortalDepthDeformation(
+        runtimeMesh,
+        localShiftX,
+        localShiftZ,
+        resolvedDimensions.boxHeight,
+      )
+      deformedBoxIdsRef.add(activeBox.id)
+      desiredOffsetRef.set(0, 0, 0)
+    } else {
+      desiredOffsetRef
+        .copy(rightAxisRef)
+        .multiplyScalar(pointerX * activeBox.interaction.maxOffsetX)
+        .addScaledVector(screenUpAxisRef, -pointerY * activeBox.interaction.maxOffsetY)
+    }
+
+    for (const boxId of Array.from(deformedBoxIdsRef)) {
+      if (boxId === activeBox.id && useLockedFrame && runtimeMesh) {
+        continue
+      }
+
+      if (!visibleBoxIds.has(boxId)) {
+        deformedBoxIdsRef.delete(boxId)
+        continue
+      }
+
+      const object = store.runtime.objectById[boxId]
+      if (object instanceof THREE.Mesh) {
+        restoreShowcaseGeometry(object)
+      }
+      deformedBoxIdsRef.delete(boxId)
+    }
+
     if (useLockedFrame) {
       desiredTargetOffsetRef.set(0, 0, 0)
     } else {
