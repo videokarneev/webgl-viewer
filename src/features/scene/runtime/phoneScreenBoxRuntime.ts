@@ -22,7 +22,7 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
   portrait: '9:16',
   square: '1:1',
 }
-const LOCKED_OPENING_OVERSCAN = 1.22
+const LOCKED_OPENING_EDGE_FILL = 1.01
 
 export interface ResolvedPhoneScreenBoxDimensions {
   aspect: number
@@ -240,14 +240,14 @@ export function resolvePhoneScreenBoxCameraFrame(
   const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
   const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
   const baseFitFraction = lockToOpening
-    ? LOCKED_OPENING_OVERSCAN
+    ? LOCKED_OPENING_EDGE_FILL
     : cameraAspect < 0.85
       ? 0.74
       : cameraAspect < 1.2
         ? 0.8
         : 0.86
   const fitFraction = lockToOpening
-    ? Math.max(baseFitFraction - box.screenBinding.margin * 0.2, 1.08)
+    ? Math.max(baseFitFraction - box.screenBinding.margin * 0.2, 1)
     : THREE.MathUtils.clamp(baseFitFraction - box.screenBinding.margin * 0.35, 0.7, 0.9)
   const halfHorizontalFovTangent = Math.max(Math.tan(horizontalFov / 2), 0.0001)
   const halfVerticalFovTangent = Math.max(Math.tan(verticalFov / 2), 0.0001)

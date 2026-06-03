@@ -95,7 +95,6 @@ function buildPublishedPlayerUrl(sceneUrl: string, deployOrigin: string) {
   params.set('player', '1')
   params.set('scene', sceneUrl)
   params.set('transparent', '1')
-  params.set('frameInsetTop', 'auto')
   return `${normalizedOrigin}/?${params.toString()}`
 }
 
@@ -185,15 +184,10 @@ function getUrlFrameInsetParam(params: URLSearchParams, key: string) {
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
 }
 
-function getUrlFrameInsetParamWithAuto(
-  params: URLSearchParams,
-  key: string,
-  autoValue: number,
-  defaultValue = 0,
-) {
+function getUrlFrameInsetParamWithAuto(params: URLSearchParams, key: string, autoValue: number) {
   const value = params.get(key)
   if (!value) {
-    return defaultValue
+    return 0
   }
 
   if (value.toLowerCase() === 'auto') {
@@ -212,16 +206,10 @@ function getPublishedViewportFrameInsets(viewportWidth: number): ViewportFrameIn
   const params = new URL(window.location.href).searchParams
   const autoTopInset = viewportWidth <= 960 ? 92 : 80
   const responsiveTopKey = viewportWidth <= 960 ? 'frameInsetTopMobile' : 'frameInsetTopDesktop'
-  const responsiveTop = params.has(responsiveTopKey) ? getUrlFrameInsetParam(params, responsiveTopKey) : null
-  const transparentPlayerFallbackTop = params.get('transparent') === '1' ? autoTopInset : 0
+  const responsiveTop = getUrlFrameInsetParam(params, responsiveTopKey)
 
   return {
-    top: responsiveTop ?? getUrlFrameInsetParamWithAuto(
-      params,
-      'frameInsetTop',
-      autoTopInset,
-      transparentPlayerFallbackTop,
-    ),
+    top: responsiveTop || getUrlFrameInsetParamWithAuto(params, 'frameInsetTop', autoTopInset),
     right: getUrlFrameInsetParam(params, 'frameInsetRight'),
     bottom: getUrlFrameInsetParam(params, 'frameInsetBottom'),
     left: getUrlFrameInsetParam(params, 'frameInsetLeft'),
