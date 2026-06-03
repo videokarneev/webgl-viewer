@@ -24,12 +24,12 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      1.2181493088805309e-94,
-      0.12590943353774667,
-      -0.004799849083858642
+      1.2317727313930888,
+      0.12590943353782316,
+      1.3600379248930359
     ],
     "target": [
-      1.2181493088805309e-94,
+      0,
       -0.025,
       -0.0048
     ],
@@ -118,7 +118,7 @@
   },
   "phoneScreenBoxes": [
     {
-      "id": "mesh:phone-box:1:1780481951495",
+      "id": "mesh:phone-box:1:1780484042707",
       "label": "Phone Box",
       "visible": true,
       "geometry": {
@@ -191,7 +191,7 @@
   "model": null,
   "objects": [
     {
-      "id": "root:mesh:phone-box:1:1780481951495",
+      "id": "root:mesh:phone-box:1:1780484042707",
       "parentId": null,
       "type": "mesh",
       "label": "Phone Box",
@@ -217,7 +217,7 @@
   ],
   "materials": [
     {
-      "id": "root:mesh:phone-box:1:1780481951495/material:0",
+      "id": "root:mesh:phone-box:1:1780484042707/material:0",
       "name": "Standard Material",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
