@@ -210,7 +210,7 @@ function getPublishedViewportFrameInsets(viewportWidth: number): ViewportFrameIn
   }
 
   const params = new URL(window.location.href).searchParams
-  const autoTopInset = viewportWidth <= 960 ? 92 : 80
+  const autoTopInset = viewportWidth <= 960 ? 52 : 64
   const responsiveTopKey = viewportWidth <= 960 ? 'frameInsetTopMobile' : 'frameInsetTopDesktop'
   const responsiveTop = params.has(responsiveTopKey) ? getUrlFrameInsetParam(params, responsiveTopKey) : null
   const transparentPlayerFallbackTop = params.get('transparent') === '1' ? autoTopInset : 0
