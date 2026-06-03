@@ -3,7 +3,11 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { type PbrMaterialState, type PhoneScreenBoxState, useEditorStore } from '../../../store/editorStore'
 import { applyRuntimeMaterialState } from './materialRuntime'
-import { createPhoneScreenBoxGeometry, resolvePhoneScreenBoxDimensions } from './phoneScreenBoxRuntime'
+import {
+  createPhoneScreenBoxGeometry,
+  createPhoneScreenBoxInteriorGeometry,
+  resolvePhoneScreenBoxDimensions,
+} from './phoneScreenBoxRuntime'
 
 function isLegacyDefaultPhoneScreenBoxMaterial(materialState: PbrMaterialState) {
   return (
@@ -55,14 +59,29 @@ function PhoneScreenBox({
   )
   const geometry = useMemo(
     () =>
-      createPhoneScreenBoxGeometry(
-        resolved.width,
-        resolved.boxHeight,
-        resolved.footprintDepth,
-        resolved.wallThickness,
-        boxState.geometry.openTop,
-      ),
-    [boxState.geometry.openTop, resolved.boxHeight, resolved.footprintDepth, resolved.wallThickness, resolved.width],
+      boxState.screenBinding.lockToFrame
+        ? createPhoneScreenBoxInteriorGeometry(
+            resolved.innerWidth,
+            resolved.boxHeight,
+            resolved.innerFootprintDepth,
+          )
+        : createPhoneScreenBoxGeometry(
+            resolved.width,
+            resolved.boxHeight,
+            resolved.footprintDepth,
+            resolved.wallThickness,
+            boxState.geometry.openTop,
+          ),
+    [
+      boxState.geometry.openTop,
+      boxState.screenBinding.lockToFrame,
+      resolved.boxHeight,
+      resolved.footprintDepth,
+      resolved.innerFootprintDepth,
+      resolved.innerWidth,
+      resolved.wallThickness,
+      resolved.width,
+    ],
   )
 
   useEffect(() => () => geometry.dispose(), [geometry])

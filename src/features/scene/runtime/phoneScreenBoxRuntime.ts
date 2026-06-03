@@ -317,6 +317,80 @@ function mergePanelGeometries(geometries: THREE.BufferGeometry[]) {
   return merged
 }
 
+function appendQuad(
+  positions: number[],
+  normals: number[],
+  uvs: number[],
+  vertices: [THREE.Vector3, THREE.Vector3, THREE.Vector3, THREE.Vector3],
+  normal: THREE.Vector3,
+) {
+  const triangleOrder = [0, 1, 2, 0, 2, 3]
+  const quadUvs = [
+    [0, 1],
+    [1, 1],
+    [1, 0],
+    [0, 0],
+  ] as const
+
+  triangleOrder.forEach((vertexIndex) => {
+    const vertex = vertices[vertexIndex]
+    const uv = quadUvs[vertexIndex]
+    positions.push(vertex.x, vertex.y, vertex.z)
+    normals.push(normal.x, normal.y, normal.z)
+    uvs.push(uv[0], uv[1])
+  })
+}
+
+export function createPhoneScreenBoxInteriorGeometry(
+  width: number,
+  height: number,
+  depth: number,
+) {
+  const safeWidth = Math.max(width, 0.001)
+  const safeHeight = Math.max(height, 0.001)
+  const safeDepth = Math.max(depth, 0.001)
+  const halfWidth = safeWidth * 0.5
+  const halfDepth = safeDepth * 0.5
+  const nearY = 0
+  const farY = -safeHeight
+  const left = -halfWidth
+  const right = halfWidth
+  const top = halfDepth
+  const bottom = -halfDepth
+
+  const nearTopLeft = new THREE.Vector3(left, nearY, top)
+  const nearTopRight = new THREE.Vector3(right, nearY, top)
+  const nearBottomRight = new THREE.Vector3(right, nearY, bottom)
+  const nearBottomLeft = new THREE.Vector3(left, nearY, bottom)
+  const farTopLeft = new THREE.Vector3(left, farY, top)
+  const farTopRight = new THREE.Vector3(right, farY, top)
+  const farBottomRight = new THREE.Vector3(right, farY, bottom)
+  const farBottomLeft = new THREE.Vector3(left, farY, bottom)
+
+  const positions: number[] = []
+  const normals: number[] = []
+  const uvs: number[] = []
+
+  appendQuad(positions, normals, uvs, [farTopLeft, farTopRight, farBottomRight, farBottomLeft], new THREE.Vector3(0, 1, 0))
+  appendQuad(positions, normals, uvs, [nearTopLeft, farTopLeft, farBottomLeft, nearBottomLeft], new THREE.Vector3(1, 0, 0))
+  appendQuad(positions, normals, uvs, [nearBottomRight, farBottomRight, farTopRight, nearTopRight], new THREE.Vector3(-1, 0, 0))
+  appendQuad(positions, normals, uvs, [nearTopRight, farTopRight, farTopLeft, nearTopLeft], new THREE.Vector3(0, 0, -1))
+  appendQuad(positions, normals, uvs, [nearBottomLeft, farBottomLeft, farBottomRight, nearBottomRight], new THREE.Vector3(0, 0, 1))
+
+  const geometry = new THREE.BufferGeometry()
+  const uvArray = new Float32Array(uvs)
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvArray, 2))
+  geometry.setAttribute('uv1', new THREE.Float32BufferAttribute(new Float32Array(uvArray), 2))
+  geometry.setAttribute('uv2', new THREE.Float32BufferAttribute(new Float32Array(uvArray), 2))
+  geometry.setAttribute('uv3', new THREE.Float32BufferAttribute(new Float32Array(uvArray), 2))
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
+
+  return geometry
+}
+
 export function createPhoneScreenBoxGeometry(
   width: number,
   height: number,

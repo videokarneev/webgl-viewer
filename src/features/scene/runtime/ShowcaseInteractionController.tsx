@@ -22,12 +22,14 @@ function getBaseGeometryPositions(mesh: THREE.Mesh) {
   }
 
   const existing = mesh.userData.showcaseBasePositions as Float32Array | undefined
-  if (existing && existing.length === positionAttribute.array.length) {
+  const existingGeometryUuid = mesh.userData.showcaseBasePositionsGeometryUuid as string | undefined
+  if (existing && existingGeometryUuid === geometry.uuid && existing.length === positionAttribute.array.length) {
     return existing
   }
 
   const snapshot = new Float32Array(positionAttribute.array as ArrayLike<number>)
   mesh.userData.showcaseBasePositions = snapshot
+  mesh.userData.showcaseBasePositionsGeometryUuid = geometry.uuid
   return snapshot
 }
 
