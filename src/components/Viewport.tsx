@@ -176,14 +176,32 @@ function getUrlFrameInsetParam(params: URLSearchParams, key: string) {
   return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
 }
 
-function getPublishedViewportFrameInsets(): ViewportFrameInsets {
+function getUrlFrameInsetParamWithAuto(params: URLSearchParams, key: string, autoValue: number) {
+  const value = params.get(key)
+  if (!value) {
+    return 0
+  }
+
+  if (value.toLowerCase() === 'auto') {
+    return autoValue
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+}
+
+function getPublishedViewportFrameInsets(viewportWidth: number): ViewportFrameInsets {
   if (typeof window === 'undefined') {
     return { top: 0, right: 0, bottom: 0, left: 0 }
   }
 
   const params = new URL(window.location.href).searchParams
+  const autoTopInset = viewportWidth <= 960 ? 92 : 80
+  const responsiveTopKey = viewportWidth <= 960 ? 'frameInsetTopMobile' : 'frameInsetTopDesktop'
+  const responsiveTop = getUrlFrameInsetParam(params, responsiveTopKey)
+
   return {
-    top: getUrlFrameInsetParam(params, 'frameInsetTop'),
+    top: responsiveTop || getUrlFrameInsetParamWithAuto(params, 'frameInsetTop', autoTopInset),
     right: getUrlFrameInsetParam(params, 'frameInsetRight'),
     bottom: getUrlFrameInsetParam(params, 'frameInsetBottom'),
     left: getUrlFrameInsetParam(params, 'frameInsetLeft'),
@@ -2070,7 +2088,10 @@ export function Viewport({
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
   const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
   const [webPublishCopyFeedback, setWebPublishCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle')
-  const publishedFrameInsets = useMemo(() => getPublishedViewportFrameInsets(), [])
+  const publishedFrameInsets = useMemo(
+    () => getPublishedViewportFrameInsets(containerSize.width),
+    [containerSize.width],
+  )
   const hasPublishedFrameInsets = useMemo(
     () => hasViewportFrameInsets(publishedFrameInsets),
     [publishedFrameInsets],

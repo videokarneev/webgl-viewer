@@ -14,6 +14,8 @@ function supportsGyroInput(mode: string) {
   return mode === 'gyro' || mode === 'mouse+gyro'
 }
 
+const LOCKED_FRAME_PARALLAX_SCALE = 1.625
+
 function getBaseGeometryPositions(mesh: THREE.Mesh) {
   const geometry = mesh.geometry
   const positionAttribute = geometry.getAttribute('position')
@@ -268,8 +270,11 @@ export function ShowcaseInteractionController({
     if (useLockedFrame) {
       desiredOffsetRef
         .copy(rightAxisRef)
-        .multiplyScalar(-pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * 3.25)
-        .addScaledVector(screenUpAxisRef, pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * 3.25)
+        .multiplyScalar(-pointerX * Math.min(activeBox.interaction.maxOffsetX, 0.02) * LOCKED_FRAME_PARALLAX_SCALE)
+        .addScaledVector(
+          screenUpAxisRef,
+          pointerY * Math.min(activeBox.interaction.maxOffsetY, 0.026) * LOCKED_FRAME_PARALLAX_SCALE,
+        )
       desiredTargetOffsetRef.set(0, 0, 0)
     } else {
       desiredOffsetRef
