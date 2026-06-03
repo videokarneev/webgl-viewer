@@ -78,7 +78,7 @@ const FRAME_ASPECT_VALUES: Record<FrameAspectPreset, number> = {
 }
 
 function buildIframeEmbedCode(url: string) {
-  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen; accelerometer; gyroscope"></iframe>`
+  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer"></iframe>`
 }
 
 function buildPublishedPlayerUrl(sceneUrl: string, deployOrigin: string) {
@@ -112,6 +112,13 @@ type ViewportFrameRect = {
   height: number
   left: number
   top: number
+}
+
+type ViewportFrameInsets = {
+  top: number
+  right: number
+  bottom: number
+  left: number
 }
 
 type OrientationQuaternion = [number, number, number, number]
@@ -156,6 +163,54 @@ function getViewportFrameRect(width: number, height: number, aspect: number): Vi
     height: frameHeight,
     left: 0,
     top: (safeHeight - frameHeight) / 2,
+  }
+}
+
+function getUrlFrameInsetParam(params: URLSearchParams, key: string) {
+  const value = params.get(key)
+  if (!value) {
+    return 0
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+}
+
+function getPublishedViewportFrameInsets(): ViewportFrameInsets {
+  if (typeof window === 'undefined') {
+    return { top: 0, right: 0, bottom: 0, left: 0 }
+  }
+
+  const params = new URL(window.location.href).searchParams
+  return {
+    top: getUrlFrameInsetParam(params, 'frameInsetTop'),
+    right: getUrlFrameInsetParam(params, 'frameInsetRight'),
+    bottom: getUrlFrameInsetParam(params, 'frameInsetBottom'),
+    left: getUrlFrameInsetParam(params, 'frameInsetLeft'),
+  }
+}
+
+function hasViewportFrameInsets(insets: ViewportFrameInsets) {
+  return insets.top > 0 || insets.right > 0 || insets.bottom > 0 || insets.left > 0
+}
+
+function getInsetViewportFrameRect(
+  width: number,
+  height: number,
+  insets: ViewportFrameInsets,
+): ViewportFrameRect {
+  const safeWidth = Math.max(width, 1)
+  const safeHeight = Math.max(height, 1)
+  const left = THREE.MathUtils.clamp(insets.left, 0, safeWidth - 1)
+  const right = THREE.MathUtils.clamp(insets.right, 0, safeWidth - left - 1)
+  const top = THREE.MathUtils.clamp(insets.top, 0, safeHeight - 1)
+  const bottom = THREE.MathUtils.clamp(insets.bottom, 0, safeHeight - top - 1)
+
+  return {
+    width: Math.max(safeWidth - left - right, 1),
+    height: Math.max(safeHeight - top - bottom, 1),
+    left,
+    top,
   }
 }
 
@@ -2015,6 +2070,11 @@ export function Viewport({
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
   const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
   const [webPublishCopyFeedback, setWebPublishCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle')
+  const publishedFrameInsets = useMemo(() => getPublishedViewportFrameInsets(), [])
+  const hasPublishedFrameInsets = useMemo(
+    () => hasViewportFrameInsets(publishedFrameInsets),
+    [publishedFrameInsets],
+  )
   const hasVisibleLockedShowcase = useMemo(
     () =>
       phoneScreenBoxes.some(
@@ -2022,13 +2082,24 @@ export function Viewport({
       ),
     [objects, phoneScreenBoxes],
   )
-  const shouldUseFullContainerForLockedShowcase = enforceFrameAspect && !showChrome && hasVisibleLockedShowcase
+  const shouldBypassPresetFrameForLockedShowcase = enforceFrameAspect && !showChrome && hasVisibleLockedShowcase
+  const shouldInsetLockedShowcaseFrame = shouldBypassPresetFrameForLockedShowcase && hasPublishedFrameInsets
   const effectiveEnforceFrameAspect =
-    (enforceFrameAspect || viewer.frameGuidesEnabled) && !shouldUseFullContainerForLockedShowcase
+    ((enforceFrameAspect || viewer.frameGuidesEnabled) && !shouldBypassPresetFrameForLockedShowcase) ||
+    shouldInsetLockedShowcaseFrame
   const frameAspect = FRAME_ASPECT_VALUES[viewer.frameAspectPreset] ?? 1
   const frameRect = useMemo(
-    () => getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
-    [containerSize.height, containerSize.width, frameAspect],
+    () =>
+      shouldInsetLockedShowcaseFrame
+        ? getInsetViewportFrameRect(containerSize.width, containerSize.height, publishedFrameInsets)
+        : getViewportFrameRect(containerSize.width, containerSize.height, frameAspect),
+    [
+      containerSize.height,
+      containerSize.width,
+      frameAspect,
+      publishedFrameInsets,
+      shouldInsetLockedShowcaseFrame,
+    ],
   )
   const frameStyle = useMemo(
     () =>

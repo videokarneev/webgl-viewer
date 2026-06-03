@@ -53,16 +53,51 @@ function resolveTiltAxes(deltaBeta: number, deltaGamma: number, angle: number) {
   }
 }
 
+function resolveMotionTiltAxes(deltaX: number, deltaY: number, angle: number) {
+  const normalizedAngle = ((Math.round(angle / 90) * 90) % 360 + 360) % 360
+
+  if (normalizedAngle === 90) {
+    return {
+      x: THREE.MathUtils.clamp(deltaY / 6, -1, 1),
+      y: THREE.MathUtils.clamp(deltaX / 6, -1, 1),
+    }
+  }
+
+  if (normalizedAngle === 180) {
+    return {
+      x: THREE.MathUtils.clamp(-deltaX / 6, -1, 1),
+      y: THREE.MathUtils.clamp(deltaY / 6, -1, 1),
+    }
+  }
+
+  if (normalizedAngle === 270) {
+    return {
+      x: THREE.MathUtils.clamp(-deltaY / 6, -1, 1),
+      y: THREE.MathUtils.clamp(-deltaX / 6, -1, 1),
+    }
+  }
+
+  return {
+    x: THREE.MathUtils.clamp(deltaX / 6, -1, 1),
+    y: THREE.MathUtils.clamp(-deltaY / 6, -1, 1),
+  }
+}
+
 export function useShowcaseMotionSensor() {
   const sampleRef = useRef<ShowcaseMotionSample>({ x: 0, y: 0, active: false })
   const baselineRef = useRef<{ beta: number; gamma: number; angle: number } | null>(null)
+  const motionBaselineRef = useRef<{ x: number; y: number; angle: number } | null>(null)
+  const lastOrientationSampleTimeRef = useRef(0)
   const [supported, setSupported] = useState(false)
   const [permissionState, setPermissionState] = useState<ShowcaseMotionPermissionState>('unsupported')
   const [enabled, setEnabled] = useState(false)
   const [needsPermission, setNeedsPermission] = useState(false)
 
   useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.DeviceOrientationEvent === 'undefined') {
+    if (
+      typeof window === 'undefined' ||
+      (typeof window.DeviceOrientationEvent === 'undefined' && typeof window.DeviceMotionEvent === 'undefined')
+    ) {
       setSupported(false)
       setPermissionState('unsupported')
       setNeedsPermission(false)
@@ -72,9 +107,15 @@ export function useShowcaseMotionSensor() {
     const maybePermissionEvent = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
       requestPermission?: () => Promise<'granted' | 'denied'>
     }
+    const maybeMotionPermissionEvent = window.DeviceMotionEvent as typeof DeviceMotionEvent & {
+      requestPermission?: () => Promise<'granted' | 'denied'>
+    }
 
     setSupported(true)
-    setNeedsPermission(typeof maybePermissionEvent.requestPermission === 'function')
+    setNeedsPermission(
+      typeof maybePermissionEvent?.requestPermission === 'function' ||
+      typeof maybeMotionPermissionEvent?.requestPermission === 'function',
+    )
     setPermissionState('idle')
   }, [])
 
@@ -82,6 +123,8 @@ export function useShowcaseMotionSensor() {
     if (!supported || !enabled || permissionState !== 'granted' || typeof window === 'undefined') {
       sampleRef.current = { x: 0, y: 0, active: false }
       baselineRef.current = null
+      motionBaselineRef.current = null
+      lastOrientationSampleTimeRef.current = 0
       return
     }
 
@@ -99,16 +142,46 @@ export function useShowcaseMotionSensor() {
           angle,
         }
         sampleRef.current = { x: 0, y: 0, active: true }
+        lastOrientationSampleTimeRef.current = performance.now()
         return
       }
 
       const { x, y } = resolveTiltAxes(event.beta - baseline.beta, event.gamma - baseline.gamma, angle)
       sampleRef.current = { x, y, active: true }
+      lastOrientationSampleTimeRef.current = performance.now()
+    }
+
+    const handleMotion = (event: DeviceMotionEvent) => {
+      if (performance.now() - lastOrientationSampleTimeRef.current < 500) {
+        return
+      }
+
+      const gravity = event.accelerationIncludingGravity
+      if (!gravity || typeof gravity.x !== 'number' || typeof gravity.y !== 'number') {
+        return
+      }
+
+      const angle = getScreenOrientationAngle()
+      const baseline = motionBaselineRef.current
+      if (!baseline || Math.abs(baseline.angle - angle) >= 45) {
+        motionBaselineRef.current = {
+          x: gravity.x,
+          y: gravity.y,
+          angle,
+        }
+        sampleRef.current = { x: 0, y: 0, active: true }
+        return
+      }
+
+      const { x, y } = resolveMotionTiltAxes(gravity.x - baseline.x, gravity.y - baseline.y, angle)
+      sampleRef.current = { x, y, active: true }
     }
 
     window.addEventListener('deviceorientation', handleOrientation)
+    window.addEventListener('devicemotion', handleMotion)
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation)
+      window.removeEventListener('devicemotion', handleMotion)
     }
   }, [enabled, permissionState, supported])
 
@@ -122,16 +195,29 @@ export function useShowcaseMotionSensor() {
     const maybePermissionEvent = window.DeviceOrientationEvent as typeof DeviceOrientationEvent & {
       requestPermission?: () => Promise<'granted' | 'denied'>
     }
+    const maybeMotionPermissionEvent = window.DeviceMotionEvent as typeof DeviceMotionEvent & {
+      requestPermission?: () => Promise<'granted' | 'denied'>
+    }
 
-    if (typeof maybePermissionEvent.requestPermission === 'function') {
+    const permissionRequests: Array<Promise<'granted' | 'denied'>> = []
+    if (typeof maybePermissionEvent?.requestPermission === 'function') {
+      permissionRequests.push(maybePermissionEvent.requestPermission())
+    }
+    if (typeof maybeMotionPermissionEvent?.requestPermission === 'function') {
+      permissionRequests.push(maybeMotionPermissionEvent.requestPermission())
+    }
+
+    if (permissionRequests.length) {
       try {
-        const result = await maybePermissionEvent.requestPermission()
-        const granted = result === 'granted'
+        const results = await Promise.all(permissionRequests)
+        const granted = results.every((result) => result === 'granted')
         setPermissionState(granted ? 'granted' : 'denied')
         setEnabled(granted)
         if (!granted) {
           sampleRef.current = { x: 0, y: 0, active: false }
           baselineRef.current = null
+          motionBaselineRef.current = null
+          lastOrientationSampleTimeRef.current = 0
         }
         return
       } catch {
@@ -139,6 +225,8 @@ export function useShowcaseMotionSensor() {
         setEnabled(false)
         sampleRef.current = { x: 0, y: 0, active: false }
         baselineRef.current = null
+        motionBaselineRef.current = null
+        lastOrientationSampleTimeRef.current = 0
         return
       }
     }
@@ -151,6 +239,8 @@ export function useShowcaseMotionSensor() {
     setEnabled(false)
     sampleRef.current = { x: 0, y: 0, active: false }
     baselineRef.current = null
+    motionBaselineRef.current = null
+    lastOrientationSampleTimeRef.current = 0
   }, [])
 
   const toggle = useCallback(async () => {

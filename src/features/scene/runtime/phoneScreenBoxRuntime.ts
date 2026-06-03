@@ -234,7 +234,7 @@ export function resolvePhoneScreenBoxCameraFrame(
   const screenRight = new THREE.Vector3().crossVectors(screenUp, cameraForward).normalize()
   const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
   const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
-  const baseFitFraction = lockToOpening ? 1.035 : cameraAspect < 0.85 ? 0.74 : cameraAspect < 1.2 ? 0.8 : 0.86
+  const baseFitFraction = lockToOpening ? 1 : cameraAspect < 0.85 ? 0.74 : cameraAspect < 1.2 ? 0.8 : 0.86
   const fitFraction = lockToOpening
     ? Math.max(baseFitFraction - box.screenBinding.margin * 0.2, 1)
     : THREE.MathUtils.clamp(baseFitFraction - box.screenBinding.margin * 0.35, 0.7, 0.9)
