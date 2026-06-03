@@ -195,21 +195,29 @@ export function resolvePhoneScreenBoxCameraFrame(
     new THREE.Vector3(...transform.scale),
   )
   const boxQuaternion = new THREE.Quaternion().setFromRotationMatrix(transformMatrix)
-  const targetVector = new THREE.Vector3(...box.content.anchor).applyMatrix4(transformMatrix)
-  const halfWidth = (box.screenBinding.lockToFrame ? dimensions.innerWidth : dimensions.width) * 0.5
-  const halfDepth = (box.screenBinding.lockToFrame ? dimensions.innerFootprintDepth : dimensions.footprintDepth) * 0.5
+  const lockToOpening = box.screenBinding.lockToFrame
+  const targetVector = lockToOpening
+    ? new THREE.Vector3(0, 0, 0).applyMatrix4(transformMatrix)
+    : new THREE.Vector3(...box.content.anchor).applyMatrix4(transformMatrix)
+  const halfWidth = (lockToOpening ? dimensions.innerWidth : dimensions.width) * 0.5
+  const halfDepth = (lockToOpening ? dimensions.innerFootprintDepth : dimensions.footprintDepth) * 0.5
   const topY = 0
   const bottomY = -dimensions.boxHeight
-  const corners = [
+  const openingCorners = [
     new THREE.Vector3(-halfWidth, topY, -halfDepth),
     new THREE.Vector3(-halfWidth, topY, halfDepth),
     new THREE.Vector3(halfWidth, topY, -halfDepth),
     new THREE.Vector3(halfWidth, topY, halfDepth),
+  ]
+  const depthCorners = [
     new THREE.Vector3(-halfWidth, bottomY, -halfDepth),
     new THREE.Vector3(-halfWidth, bottomY, halfDepth),
     new THREE.Vector3(halfWidth, bottomY, -halfDepth),
     new THREE.Vector3(halfWidth, bottomY, halfDepth),
-  ].map((corner) => corner.applyMatrix4(transformMatrix))
+  ]
+  const corners = (lockToOpening ? openingCorners : [...openingCorners, ...depthCorners]).map((corner) =>
+    corner.applyMatrix4(transformMatrix),
+  )
   const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(boxQuaternion).normalize()
   const depthAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(boxQuaternion).normalize()
   const viewDirection = upAxis.clone()
@@ -218,8 +226,10 @@ export function resolvePhoneScreenBoxCameraFrame(
   const screenRight = new THREE.Vector3().crossVectors(screenUp, cameraForward).normalize()
   const verticalFov = THREE.MathUtils.degToRad(cameraFovDegrees)
   const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(cameraAspect, 0.0001))
-  const baseFitFraction = cameraAspect < 0.85 ? 0.74 : cameraAspect < 1.2 ? 0.8 : 0.86
-  const fitFraction = THREE.MathUtils.clamp(baseFitFraction - box.screenBinding.margin * 0.35, 0.7, 0.9)
+  const baseFitFraction = lockToOpening ? 0.995 : cameraAspect < 0.85 ? 0.74 : cameraAspect < 1.2 ? 0.8 : 0.86
+  const fitFraction = lockToOpening
+    ? Math.max(baseFitFraction - box.screenBinding.margin * 0.2, 0.92)
+    : THREE.MathUtils.clamp(baseFitFraction - box.screenBinding.margin * 0.35, 0.7, 0.9)
   const halfHorizontalFovTangent = Math.max(Math.tan(horizontalFov / 2), 0.0001)
   const halfVerticalFovTangent = Math.max(Math.tan(verticalFov / 2), 0.0001)
   const requiredDistance = corners.reduce((maxDistance, corner) => {
@@ -232,8 +242,10 @@ export function resolvePhoneScreenBoxCameraFrame(
     return Math.max(maxDistance, horizontalDistance, verticalDistance)
   }, 0)
   const minimumDistance = Math.max(dimensions.boxHeight * 1.35, dimensions.footprintDepth * 0.65, 0.1)
-  const distance = Math.max(requiredDistance, minimumDistance)
-  const safeTargetOffset = screenUp.clone().multiplyScalar(-dimensions.footprintDepth * (cameraAspect < 0.85 ? 0.06 : 0.03))
+  const distance = lockToOpening ? Math.max(requiredDistance, 0.1) : Math.max(requiredDistance, minimumDistance)
+  const safeTargetOffset = lockToOpening
+    ? new THREE.Vector3()
+    : screenUp.clone().multiplyScalar(-dimensions.footprintDepth * (cameraAspect < 0.85 ? 0.06 : 0.03))
   const cameraPosition = targetVector
     .clone()
     .add(safeTargetOffset)
