@@ -22,7 +22,7 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
   portrait: '9:16',
   square: '1:1',
 }
-const LOCKED_OPENING_EDGE_FILL = 1.01
+const LOCKED_OPENING_EDGE_FILL = 1
 
 export interface ResolvedPhoneScreenBoxDimensions {
   aspect: number
