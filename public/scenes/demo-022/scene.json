@@ -1,0 +1,277 @@
+{
+  "version": 17,
+  "scene": {
+    "background": {
+      "mode": "none",
+      "color": "#808080",
+      "rotation": 0
+    },
+    "environment": {
+      "enabled": true,
+      "kind": "hdri",
+      "assetLabel": "City Night Lights",
+      "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
+      "intensity": 1.5,
+      "rotation": 0,
+      "backgroundMode": "color",
+      "backgroundVisible": true,
+      "backgroundAssetLabel": null,
+      "backgroundAssetUrl": null,
+      "backgroundIntensity": 1,
+      "backgroundBlur": 0
+    }
+  },
+  "camera": {
+    "mode": "orbit",
+    "position": [
+      -0.32965585738106457,
+      -0.12447317482755425,
+      0.3696995066456714
+    ],
+    "target": [
+      0.009288819093303454,
+      -0.002773544095706328,
+      -0.007922411702436348
+    ],
+    "focalLength": 50,
+    "frameAspectPreset": "auto",
+    "exposure": 1
+  },
+  "responsiveFrame": {
+    "landscape": {
+      "frameAspectPreset": "16:9",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "portrait": {
+      "frameAspectPreset": "9:16",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "square": {
+      "frameAspectPreset": "1:1",
+      "cameraPosition": [
+        0.15457341222503138,
+        0.10803016461401396,
+        0.1595680543744216
+      ],
+      "orbitTarget": [
+        0.0035514644000000026,
+        -0.00523629625475959,
+        0.008546106549390198
+      ],
+      "focalLength": 20
+    }
+  },
+  "viewer": {
+    "postEffectsEnabled": true,
+    "bloomIntensity": 0.95,
+    "bloomRadius": 0.32,
+    "bloomThreshold": 0.18,
+    "toneMappingWhitePoint": 4,
+    "toneMappingAdaptation": 1,
+    "dofEnabled": false,
+    "dofFocusDistance": 5,
+    "dofAperture": 2,
+    "dofManualBlur": 1.2
+  },
+  "audio": {
+    "isAdded": true,
+    "enabled": true,
+    "assetLabel": "The Theme Of The Ring (short).mp3",
+    "assetUrl": "assets/audio/scene-audio-the-theme-of-the-ring-short.mp3",
+    "volume": 0.08,
+    "loop": true
+  },
+  "lights": {
+    "ambient": {
+      "exists": true,
+      "visible": true,
+      "color": "#ffffff",
+      "intensity": 0.5
+    },
+    "rig": {
+      "hemisphere": 0.9,
+      "key": 1.8,
+      "fill": 0.85,
+      "rim": 0.65
+    },
+    "extra": []
+  },
+  "phoneScreenBoxes": [],
+  "godRaysGlobals": {
+    "noise": {
+      "amount": 0.6,
+      "scale": 5,
+      "grain": 0.18,
+      "motionMode": "off",
+      "motionSpeed": 1.6,
+      "quality": "low"
+    },
+    "direction": {
+      "vector": [
+        0,
+        1,
+        0
+      ]
+    }
+  },
+  "godRaysBoxes": [],
+  "stencilVolumes": [],
+  "model": {
+    "id": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa",
+    "assetLabel": "ring.glb",
+    "assetUrl": "assets/model/scene-model-ring.glb",
+    "visible": true,
+    "transform": {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "objects": [
+    {
+      "id": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa",
+      "parentId": null,
+      "type": "group",
+      "label": "Loaded Model",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa/node:0",
+      "parentId": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa",
+      "type": "mesh",
+      "label": "Box001",
+      "visible": true,
+      "transform": {
+        "position": [
+          -0.163894862,
+          -0.0134749208,
+          -5.890075e-10
+        ],
+        "rotation": [
+          1.5707963800073816,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa/node:0/material:0",
+      "name": "Material #43",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#fed339",
+      "emissive": "#000000",
+      "metalness": 1,
+      "roughness": 0.2,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 0.76,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "normalMap": {
+          "source": "original",
+          "label": "One_Ring_inscription_NRM.jpg",
+          "assetUrl": null
+        },
+        "emissiveMap": {
+          "source": "flipbook",
+          "label": "fire2.jpg",
+          "assetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg"
+        }
+      },
+      "effects": {
+        "flipbook": {
+          "enabled": true,
+          "atlasAssetLabel": "fire2.jpg",
+          "atlasAssetUrl": "assets/atlas/1-material-43-emissivemap-fire2.jpg",
+          "targetSlot": "emissive",
+          "frameOrder": "column",
+          "gridX": 2,
+          "gridY": 25,
+          "fps": 12,
+          "frameCount": 50,
+          "currentFrame": 36,
+          "opacity": 0.85,
+          "frameBlend": true,
+          "loop": true,
+          "uvChannel": "auto",
+          "wrapMode": "repeat",
+          "offsetX": 0,
+          "offsetY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "swapXY": false
+        }
+      }
+    }
+  ],
+  "animations": [
+    {
+      "type": "rotate",
+      "targetObjectId": "root:57d5c8d2-c31b-4251-a240-5d29944e69aa/node:0",
+      "enabled": true,
+      "loop": true,
+      "pivot": "gizmo",
+      "axis": "z",
+      "speed": 5,
+      "progress": 69.40694444453062
+    }
+  ]
+}
