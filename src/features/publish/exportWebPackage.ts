@@ -562,10 +562,149 @@ async function publishWebPackageToRemote(
 
 async function requestSceneTarget() {
   const existingScenes = await fetchPublishedSceneCatalog()
-  const rawValue = window.prompt(
-    `Publish scene to GitHub as public/scenes/<name>.\nExisting scenes: ${existingScenes.join(', ') || 'none'}\nEnter a scene name.`,
-    'demo-02',
-  )
+  const defaultScene = existingScenes.length ? existingScenes[existingScenes.length - 1] : ''
+  const rawValue = await new Promise<string | null>((resolve) => {
+    const overlay = document.createElement('div')
+    overlay.style.position = 'fixed'
+    overlay.style.inset = '0'
+    overlay.style.zIndex = '99999'
+    overlay.style.display = 'grid'
+    overlay.style.placeItems = 'center'
+    overlay.style.background = 'rgba(0, 0, 0, 0.62)'
+
+    const dialog = document.createElement('form')
+    dialog.style.width = 'min(520px, calc(100vw - 32px))'
+    dialog.style.display = 'grid'
+    dialog.style.gap = '14px'
+    dialog.style.padding = '22px'
+    dialog.style.border = '1px solid rgba(165, 197, 216, 0.18)'
+    dialog.style.background = '#15191d'
+    dialog.style.color = '#eef4f8'
+    dialog.style.boxShadow = '0 24px 80px rgba(0, 0, 0, 0.55)'
+    dialog.style.font = '13px/1.45 system-ui, sans-serif'
+
+    const title = document.createElement('strong')
+    title.textContent = 'Publish scene'
+    title.style.fontSize = '18px'
+
+    const help = document.createElement('p')
+    help.textContent = 'Choose an existing scene to overwrite, or type a new scene name.'
+    help.style.margin = '0'
+    help.style.color = 'rgba(232, 242, 247, 0.72)'
+
+    const selectLabel = document.createElement('label')
+    selectLabel.textContent = 'Existing scenes'
+    selectLabel.style.display = 'grid'
+    selectLabel.style.gap = '6px'
+
+    const select = document.createElement('select')
+    select.style.height = '38px'
+    select.style.border = '1px solid rgba(165, 197, 216, 0.24)'
+    select.style.background = '#0d1116'
+    select.style.color = '#eef4f8'
+    select.style.padding = '0 10px'
+
+    if (existingScenes.length) {
+      existingScenes.forEach((scene) => {
+        const option = document.createElement('option')
+        option.value = scene
+        option.textContent = scene === defaultScene ? `${scene} (latest)` : scene
+        select.appendChild(option)
+      })
+      select.value = defaultScene
+    } else {
+      const option = document.createElement('option')
+      option.value = ''
+      option.textContent = 'No published scenes yet'
+      select.appendChild(option)
+      select.disabled = true
+    }
+
+    const inputLabel = document.createElement('label')
+    inputLabel.textContent = 'Scene name'
+    inputLabel.style.display = 'grid'
+    inputLabel.style.gap = '6px'
+
+    const input = document.createElement('input')
+    input.value = defaultScene
+    input.placeholder = 'new-scene-name'
+    input.style.height = '38px'
+    input.style.border = '1px solid rgba(165, 197, 216, 0.24)'
+    input.style.background = '#0d1116'
+    input.style.color = '#eef4f8'
+    input.style.padding = '0 10px'
+
+    const note = document.createElement('small')
+    note.textContent = 'Existing name = overwrite. New name = create a new scene.'
+    note.style.color = 'rgba(232, 242, 247, 0.56)'
+
+    const error = document.createElement('small')
+    error.style.minHeight = '16px'
+    error.style.color = '#ff9aa7'
+
+    const actions = document.createElement('div')
+    actions.style.display = 'flex'
+    actions.style.justifyContent = 'flex-end'
+    actions.style.gap = '10px'
+
+    const cancelButton = document.createElement('button')
+    cancelButton.type = 'button'
+    cancelButton.textContent = 'Cancel'
+    cancelButton.style.height = '36px'
+    cancelButton.style.padding = '0 16px'
+
+    const submitButton = document.createElement('button')
+    submitButton.type = 'submit'
+    submitButton.textContent = 'Publish'
+    submitButton.style.height = '36px'
+    submitButton.style.padding = '0 16px'
+
+    const close = (value: string | null) => {
+      document.removeEventListener('keydown', handleKeyDown)
+      overlay.remove()
+      resolve(value)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        close(null)
+      }
+    }
+
+    select.addEventListener('change', () => {
+      input.value = select.value
+      error.textContent = ''
+      input.focus()
+      input.select()
+    })
+    cancelButton.addEventListener('click', () => close(null))
+    dialog.addEventListener('submit', (event) => {
+      event.preventDefault()
+      const value = input.value.trim()
+      if (!value) {
+        error.textContent = 'Enter a scene name.'
+        input.focus()
+        return
+      }
+      close(value)
+    })
+    overlay.addEventListener('click', (event) => {
+      if (event.target === overlay) {
+        close(null)
+      }
+    })
+    document.addEventListener('keydown', handleKeyDown)
+
+    selectLabel.appendChild(select)
+    inputLabel.appendChild(input)
+    inputLabel.appendChild(note)
+    actions.appendChild(cancelButton)
+    actions.appendChild(submitButton)
+    dialog.append(title, help, selectLabel, inputLabel, error, actions)
+    overlay.appendChild(dialog)
+    document.body.appendChild(overlay)
+    input.focus()
+    input.select()
+  })
 
   if (rawValue == null) {
     return null
@@ -578,12 +717,6 @@ async function requestSceneTarget() {
 
   const sceneSlug = sanitizeSegment(trimmedValue)
   const replace = existingScenes.includes(sceneSlug)
-    ? window.confirm(`Scene "${sceneSlug}" already exists on web. Replace it?`)
-    : false
-
-  if (existingScenes.includes(sceneSlug) && !replace) {
-    return null
-  }
 
   return {
     sceneSlug,
