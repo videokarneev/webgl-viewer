@@ -1113,7 +1113,7 @@ button {
   z-index: 10;
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 3px;
   padding: 7px 7px 6px;
   border-bottom: 1px solid rgba(165, 197, 216, 0.07);
@@ -1154,6 +1154,94 @@ button {
 
 .project-toolbar__reset:hover .tool-button__label {
   color: rgba(255, 210, 210, 0.72);
+}
+
+.scene-manager-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.scene-manager-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(165, 197, 216, 0.16);
+  background: #0d1116;
+  box-shadow: 0 28px 96px rgba(0, 0, 0, 0.6);
+}
+
+.scene-manager-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  border-bottom: 1px solid rgba(165, 197, 216, 0.08);
+}
+
+.scene-manager-dialog__header strong {
+  color: rgba(236, 246, 252, 0.94);
+  font-size: 13px;
+}
+
+.scene-manager-dialog__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.scene-manager-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.scene-manager-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(165, 197, 216, 0.08);
+  background: rgba(7, 10, 14, 0.82);
+}
+
+.scene-manager-item__main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.scene-manager-item__main strong {
+  overflow: hidden;
+  color: rgba(238, 246, 250, 0.92);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scene-manager-item__main a {
+  width: max-content;
+  color: rgba(147, 197, 253, 0.9);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.scene-manager-item__delete:hover {
+  border-color: rgba(220, 38, 38, 0.32);
+  background: rgba(220, 38, 38, 0.18);
+}
+
+.scene-manager-empty {
+  margin: 0;
+  padding: 18px 10px;
+  color: rgba(232, 242, 247, 0.58);
+  text-align: center;
 }
 
 .left-panel__body {

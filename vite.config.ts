@@ -46,10 +46,20 @@ async function listPublishedScenes(rootDir: string) {
 
   try {
     const entries = await fs.readdir(scenesDir, { withFileTypes: true })
-    return entries
-      .filter((entry: import('node:fs').Dirent) => entry.isDirectory())
-      .map((entry: import('node:fs').Dirent) => entry.name)
-      .sort((left: string, right: string) => left.localeCompare(right))
+    const directories = entries.filter((entry: import('node:fs').Dirent) => entry.isDirectory())
+    const scenes = await Promise.all(
+      directories.map(async (entry: import('node:fs').Dirent) => {
+        const stats = await fs.stat(path.join(scenesDir, entry.name))
+        return {
+          name: entry.name,
+          updatedAt: stats.mtimeMs,
+        }
+      }),
+    )
+
+    return scenes
+      .sort((left, right) => left.updatedAt - right.updatedAt || left.name.localeCompare(right.name))
+      .map((entry) => entry.name)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return []
@@ -299,6 +309,79 @@ function createWebPublishPlugin(): Plugin {
       Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
       response.end(result.body)
       return true
+    }
+
+    if (request.method === 'DELETE' && requestUrl.pathname.startsWith('/__publish/scenes/')) {
+      const rawSceneSlug = decodeURIComponent(requestUrl.pathname.replace('/__publish/scenes/', ''))
+      const sceneSlug = sanitizeSceneSlug(rawSceneSlug)
+      const scenesDir = path.join(rootDir, 'public', 'scenes')
+      const targetDirectory = path.join(scenesDir, sceneSlug)
+      const relativeSceneDirectory = path.posix.join('public', 'scenes', sceneSlug)
+
+      if (!sceneSlug || sceneSlug !== rawSceneSlug) {
+        const result = createJsonResponse(400, { message: 'A valid scene name is required.' })
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      }
+
+      try {
+        if (!(await pathExists(targetDirectory))) {
+          const result = createJsonResponse(404, { message: `Scene "${sceneSlug}" does not exist.` })
+          response.statusCode = result.statusCode
+          Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+          response.end(result.body)
+          return true
+        }
+
+        await fs.rm(targetDirectory, { recursive: true, force: true })
+        await runGit(rootDir, ['add', '--', relativeSceneDirectory])
+        const stagedFiles = await getStagedFiles(rootDir)
+        const stagedOutsideTarget = stagedFiles.filter(
+          (file: string) => !file.startsWith(`${relativeSceneDirectory}/`) && file !== relativeSceneDirectory,
+        )
+        if (stagedOutsideTarget.length) {
+          throw new Error(
+            `Delete stopped because unrelated staged files already exist: ${stagedOutsideTarget.join(', ')}.`,
+          )
+        }
+
+        const hasChanges = await hasStagedChangesForPath(rootDir, relativeSceneDirectory)
+        if (!hasChanges) {
+          const result = createJsonResponse(200, {
+            message: `Scene "${sceneSlug}" was already removed.`,
+            sceneSlug,
+            pushed: false,
+            gitCommitSha: await getCurrentGitCommitShortSha(rootDir),
+          })
+          response.statusCode = result.statusCode
+          Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+          response.end(result.body)
+          return true
+        }
+
+        const branch = await getCurrentGitBranch(rootDir)
+        await runGit(rootDir, ['commit', '-m', `Delete scene ${sceneSlug}`, '--', relativeSceneDirectory])
+        await runGit(rootDir, ['push', 'origin', branch])
+        const result = createJsonResponse(200, {
+          message: `Scene "${sceneSlug}" deleted from GitHub.`,
+          sceneSlug,
+          pushed: true,
+          gitCommitSha: await getCurrentGitCommitShortSha(rootDir),
+        })
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Failed to delete scene.'
+        const result = createJsonResponse(500, { message })
+        response.statusCode = result.statusCode
+        Object.entries(result.headers).forEach(([key, value]) => response.setHeader(key, value))
+        response.end(result.body)
+        return true
+      }
     }
 
     if (request.method === 'POST' && requestUrl.pathname === '/__publish/web-package') {

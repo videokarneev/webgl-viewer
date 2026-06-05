@@ -345,7 +345,7 @@ function buildPublishedSceneIndexHtml(sceneSlug: string) {
 `
 }
 
-async function fetchPublishedSceneCatalog() {
+export async function fetchPublishedSceneCatalog() {
   const response = await fetch('/__publish/scenes')
   if (!response.ok) {
     throw new Error(`Failed to load published scene catalog: ${response.status}`)
@@ -353,6 +353,19 @@ async function fetchPublishedSceneCatalog() {
 
   const payload = (await response.json()) as { scenes?: string[] }
   return Array.isArray(payload.scenes) ? payload.scenes : []
+}
+
+export async function deletePublishedScene(sceneSlug: string) {
+  const response = await fetch(`/__publish/scenes/${encodeURIComponent(sceneSlug)}`, {
+    method: 'DELETE',
+  })
+  const payload = (await response.json().catch(() => null)) as { message?: string } | null
+
+  if (!response.ok) {
+    throw new Error(payload?.message ?? `Failed to delete scene: ${response.status}`)
+  }
+
+  return payload?.message ?? `Scene "${sceneSlug}" deleted.`
 }
 
 function emitWebPublishDeploymentStatus(

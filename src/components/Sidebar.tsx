@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Outliner } from './Outliner'
 import { openPublishedScenePreview } from '../features/publish/buildPublishedScene'
 import {
+  deletePublishedScene,
   exportWebPackage,
+  fetchPublishedSceneCatalog,
   WEB_PUBLISH_STATUS_EVENT,
   type WebPublishDeploymentStatus,
 } from '../features/publish/exportWebPackage'
@@ -2717,6 +2719,10 @@ export function Sidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('scn')
   const [outlinerViewMode, setOutlinerViewMode] = useState<OutlinerViewMode>('layers')
   const [isWebPublishSubmitting, setIsWebPublishSubmitting] = useState(false)
+  const [isSceneManagerOpen, setIsSceneManagerOpen] = useState(false)
+  const [publishedScenes, setPublishedScenes] = useState<string[]>([])
+  const [isSceneListLoading, setIsSceneListLoading] = useState(false)
+  const [deletingSceneSlug, setDeletingSceneSlug] = useState<string | null>(null)
   const webPublishAbortRef = useRef<AbortController | null>(null)
 
   const handleSidebarTabChange = (tab: SidebarTab) => {
@@ -2870,6 +2876,44 @@ export function Sidebar() {
     }
   }
 
+  const loadPublishedScenes = async () => {
+    setIsSceneListLoading(true)
+    try {
+      const scenes = await fetchPublishedSceneCatalog()
+      setPublishedScenes(scenes)
+      setStatus(`Loaded ${scenes.length} published scene${scenes.length === 1 ? '' : 's'}.`)
+    } catch (error) {
+      console.error(error)
+      setStatus(error instanceof Error ? error.message : 'Failed to load published scenes.')
+    } finally {
+      setIsSceneListLoading(false)
+    }
+  }
+
+  const handleOpenSceneManager = () => {
+    setIsSceneManagerOpen(true)
+    void loadPublishedScenes()
+  }
+
+  const handleDeletePublishedScene = async (sceneSlug: string) => {
+    if (!window.confirm(`Delete published scene "${sceneSlug}"? This removes public/scenes/${sceneSlug} and pushes the change.`)) {
+      return
+    }
+
+    setDeletingSceneSlug(sceneSlug)
+    setStatus(`Deleting scene ${sceneSlug}...`)
+    try {
+      const message = await deletePublishedScene(sceneSlug)
+      setStatus(message)
+      await loadPublishedScenes()
+    } catch (error) {
+      console.error(error)
+      setStatus(error instanceof Error ? error.message : 'Failed to delete published scene.')
+    } finally {
+      setDeletingSceneSlug(null)
+    }
+  }
+
   return (
     <aside className="left-panel">
       <div className="left-panel__body">
@@ -2916,11 +2960,68 @@ export function Sidebar() {
             <span className="tool-button__glyph">WEB</span>
             <span className="tool-button__label">{isWebPublishSubmitting ? 'Publishing...' : 'Package'}</span>
           </button>
+          <button type="button" className="tool-button" onClick={handleOpenSceneManager}>
+            <span className="tool-button__glyph">SCNS</span>
+            <span className="tool-button__label">Scenes</span>
+          </button>
           <button type="button" className="tool-button project-toolbar__reset" onClick={() => requestSceneReset()}>
             <span className="tool-button__glyph">RST</span>
             <span className="tool-button__label">Reset Scene</span>
           </button>
         </section>
+        {isSceneManagerOpen ? (
+          <div className="scene-manager-overlay" onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setIsSceneManagerOpen(false)
+            }
+          }}>
+            <section className="scene-manager-dialog" role="dialog" aria-modal="true" aria-label="Published scenes">
+              <header className="scene-manager-dialog__header">
+                <div>
+                  <p className="panel-eyebrow">Published Scenes</p>
+                  <strong>{publishedScenes.length} scene{publishedScenes.length === 1 ? '' : 's'}</strong>
+                </div>
+                <div className="scene-manager-dialog__actions">
+                  <button type="button" className="tool-button tool-button--secondary" onClick={() => void loadPublishedScenes()}>
+                    Refresh
+                  </button>
+                  <button type="button" className="tool-button tool-button--secondary" onClick={() => setIsSceneManagerOpen(false)}>
+                    Close
+                  </button>
+                </div>
+              </header>
+              <div className="scene-manager-list">
+                {isSceneListLoading ? (
+                  <p className="scene-manager-empty">Loading scenes...</p>
+                ) : publishedScenes.length ? (
+                  [...publishedScenes].reverse().map((sceneSlug) => {
+                    const sceneUrl = `https://webgl-viewer-jet.vercel.app/scenes/${sceneSlug}/`
+                    return (
+                      <article key={sceneSlug} className="scene-manager-item">
+                        <div className="scene-manager-item__main">
+                          <strong>{sceneSlug}</strong>
+                          <a href={sceneUrl} target="_blank" rel="noreferrer">
+                            Open
+                          </a>
+                        </div>
+                        <button
+                          type="button"
+                          className="tool-button tool-button--secondary scene-manager-item__delete"
+                          disabled={deletingSceneSlug === sceneSlug}
+                          onClick={() => void handleDeletePublishedScene(sceneSlug)}
+                        >
+                          {deletingSceneSlug === sceneSlug ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </article>
+                    )
+                  })
+                ) : (
+                  <p className="scene-manager-empty">No published scenes found.</p>
+                )}
+              </div>
+            </section>
+          </div>
+        ) : null}
         <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">
