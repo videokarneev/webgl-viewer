@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Outliner } from './Outliner'
 import { openPublishedScenePreview } from '../features/publish/buildPublishedScene'
 import {
@@ -2914,7 +2915,67 @@ export function Sidebar() {
     }
   }
 
+  const sceneManagerDialog = isSceneManagerOpen
+    ? createPortal(
+        <div className="scene-manager-overlay" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) {
+            setIsSceneManagerOpen(false)
+          }
+        }}>
+          <section className="scene-manager-dialog" role="dialog" aria-modal="true" aria-label="Published scenes">
+            <header className="scene-manager-dialog__header">
+              <div>
+                <p className="panel-eyebrow">Published Scenes</p>
+                <strong>{publishedScenes.length} scene{publishedScenes.length === 1 ? '' : 's'}</strong>
+              </div>
+              <div className="scene-manager-dialog__actions">
+                <button type="button" className="tool-button tool-button--secondary" onClick={() => void loadPublishedScenes()}>
+                  Refresh
+                </button>
+                <button type="button" className="scene-manager-dialog__close" aria-label="Close" onClick={() => setIsSceneManagerOpen(false)}>
+                  ×
+                </button>
+              </div>
+            </header>
+            <div className="scene-manager-list">
+              {isSceneListLoading ? (
+                <p className="scene-manager-empty">Loading scenes...</p>
+              ) : publishedScenes.length ? (
+                [...publishedScenes].reverse().map((sceneSlug) => {
+                  const sceneUrl = `https://webgl-viewer-jet.vercel.app/scenes/${sceneSlug}/`
+                  return (
+                    <article key={sceneSlug} className="scene-manager-item">
+                      <div className="scene-manager-item__main">
+                        <strong>{sceneSlug}</strong>
+                        <a href={sceneUrl} target="_blank" rel="noreferrer">
+                          Open
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        className="scene-manager-item__delete"
+                        aria-label={`Delete ${sceneSlug}`}
+                        title={`Delete ${sceneSlug}`}
+                        disabled={deletingSceneSlug === sceneSlug}
+                        onClick={() => void handleDeletePublishedScene(sceneSlug)}
+                      >
+                        ×
+                      </button>
+                    </article>
+                  )
+                })
+              ) : (
+                <p className="scene-manager-empty">No published scenes found.</p>
+              )}
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )
+    : null
+
   return (
+    <>
     <aside className="left-panel">
       <div className="left-panel__body">
         <section className="left-panel__title">
@@ -2969,59 +3030,6 @@ export function Sidebar() {
             <span className="tool-button__label">Reset Scene</span>
           </button>
         </section>
-        {isSceneManagerOpen ? (
-          <div className="scene-manager-overlay" onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setIsSceneManagerOpen(false)
-            }
-          }}>
-            <section className="scene-manager-dialog" role="dialog" aria-modal="true" aria-label="Published scenes">
-              <header className="scene-manager-dialog__header">
-                <div>
-                  <p className="panel-eyebrow">Published Scenes</p>
-                  <strong>{publishedScenes.length} scene{publishedScenes.length === 1 ? '' : 's'}</strong>
-                </div>
-                <div className="scene-manager-dialog__actions">
-                  <button type="button" className="tool-button tool-button--secondary" onClick={() => void loadPublishedScenes()}>
-                    Refresh
-                  </button>
-                  <button type="button" className="tool-button tool-button--secondary" onClick={() => setIsSceneManagerOpen(false)}>
-                    Close
-                  </button>
-                </div>
-              </header>
-              <div className="scene-manager-list">
-                {isSceneListLoading ? (
-                  <p className="scene-manager-empty">Loading scenes...</p>
-                ) : publishedScenes.length ? (
-                  [...publishedScenes].reverse().map((sceneSlug) => {
-                    const sceneUrl = `https://webgl-viewer-jet.vercel.app/scenes/${sceneSlug}/`
-                    return (
-                      <article key={sceneSlug} className="scene-manager-item">
-                        <div className="scene-manager-item__main">
-                          <strong>{sceneSlug}</strong>
-                          <a href={sceneUrl} target="_blank" rel="noreferrer">
-                            Open
-                          </a>
-                        </div>
-                        <button
-                          type="button"
-                          className="tool-button tool-button--secondary scene-manager-item__delete"
-                          disabled={deletingSceneSlug === sceneSlug}
-                          onClick={() => void handleDeletePublishedScene(sceneSlug)}
-                        >
-                          {deletingSceneSlug === sceneSlug ? 'Deleting...' : 'Delete'}
-                        </button>
-                      </article>
-                    )
-                  })
-                ) : (
-                  <p className="scene-manager-empty">No published scenes found.</p>
-                )}
-              </div>
-            </section>
-          </div>
-        ) : null}
         <Outliner viewMode={outlinerViewMode} onViewModeChange={handleOutlinerViewModeChange} />
 
         <section className="settings-panel">
@@ -3051,5 +3059,7 @@ export function Sidebar() {
         </section>
       </div>
     </aside>
+    {sceneManagerDialog}
+    </>
   )
 }
