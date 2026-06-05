@@ -11,7 +11,7 @@
       "kind": "hdri",
       "assetLabel": "City Night Lights",
       "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
-      "intensity": 2.1,
+      "intensity": 3.1,
       "rotation": 0,
       "backgroundMode": "color",
       "backgroundVisible": true,
@@ -24,17 +24,17 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -0.028233764642966813,
-      -0.06387452302837818,
-      0.5216503427935276
+      0.17012049610826827,
+      -0.09500556817408018,
+      0.159028977708097
     ],
     "target": [
-      0.008021418648986124,
-      -0.0021843353944254675,
-      0.004763034493517529
+      0.002059591026927185,
+      -0.0060233435686287435,
+      0.009756594143766135
     ],
-    "focalLength": 50,
-    "frameAspectPreset": "auto",
+    "focalLength": 20,
+    "frameAspectPreset": "1:1",
     "exposure": 1
   },
   "responsiveFrame": {
@@ -69,16 +69,16 @@
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        0.17700226130065205,
-        -0.022869467268778167,
-        0.1760227943061923
+        4,
+        3,
+        5
       ],
       "orbitTarget": [
-        0.0035514644000000026,
-        -0.00523629625475959,
-        0.008546106549390198
+        0,
+        0,
+        0
       ],
-      "focalLength": 50
+      "focalLength": 20
     }
   },
   "viewer": {
@@ -137,7 +137,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [],
   "model": {
-    "id": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30",
+    "id": "root:9321c87a-ea11-4e28-b945-25ab7f75f941",
     "assetLabel": "ring.glb",
     "assetUrl": "assets/model/scene-model-ring.glb",
     "visible": true,
@@ -161,7 +161,7 @@
   },
   "objects": [
     {
-      "id": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30",
+      "id": "root:9321c87a-ea11-4e28-b945-25ab7f75f941",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -185,8 +185,8 @@
       }
     },
     {
-      "id": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30/node:0",
-      "parentId": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30",
+      "id": "root:9321c87a-ea11-4e28-b945-25ab7f75f941/node:0",
+      "parentId": "root:9321c87a-ea11-4e28-b945-25ab7f75f941",
       "type": "mesh",
       "label": "Box001",
       "visible": true,
@@ -211,14 +211,14 @@
   ],
   "materials": [
     {
-      "id": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30/node:0/material:0",
+      "id": "root:9321c87a-ea11-4e28-b945-25ab7f75f941/node:0/material:0",
       "name": "Material #43",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
-      "color": "#eec83f",
+      "color": "#ead659",
       "emissive": "#000000",
-      "metalness": 0.99,
-      "roughness": 0.21,
+      "metalness": 1,
+      "roughness": 0.18,
       "envMapIntensity": 1,
       "emissiveIntensity": 1,
       "clearcoat": null,
@@ -265,14 +265,14 @@
   "animations": [
     {
       "type": "rotate",
-      "targetObjectId": "root:f8dff81f-2fb2-42fe-b499-dd27d42d4a30",
+      "targetObjectId": "root:9321c87a-ea11-4e28-b945-25ab7f75f941/node:0",
       "enabled": true,
       "loop": true,
       "pivot": "gizmo",
-      "axis": "y",
+      "axis": "z",
       "speed": 5,
-      "startProgress": 65.8377777777631,
-      "progress": 65.8377777777631
+      "startProgress": 0,
+      "progress": 59.946805555539484
     }
   ]
 }
