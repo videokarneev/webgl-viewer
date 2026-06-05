@@ -2656,16 +2656,17 @@ function AnimTabContent() {
             </label>
             <label className="field field--inline-range material-effect-current-frame">
               <span>
-                Cycle <output>{Math.round(rotateAnimation.progress)}%</output>
+                Start Frame <output>{Math.round(rotateAnimation.startProgress)}%</output>
               </span>
               <input
                 type="range"
                 min="0"
                 max="100"
                 step="1"
-                value={rotateAnimation.progress}
+                value={rotateAnimation.startProgress}
                 onInput={(event) =>
                   updateRotateAnimation({
+                    startProgress: Number(event.currentTarget.value),
                     progress: Number(event.currentTarget.value),
                     play: false,
                   })
@@ -2684,7 +2685,7 @@ function AnimTabContent() {
                     play: !rotateAnimation.play,
                     progress:
                       !rotateAnimation.play && !rotateAnimation.loop && rotateAnimation.progress >= 100
-                        ? 0
+                        ? rotateAnimation.startProgress
                         : rotateAnimation.progress,
                   })
                 }

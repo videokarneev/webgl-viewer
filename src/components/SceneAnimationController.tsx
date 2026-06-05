@@ -101,7 +101,7 @@ export function SceneAnimationController() {
       baseWorldQuaternion: tempWorldQuaternion.clone(),
       pivotWorldPosition: tempCenter.clone(),
       axisWorld: tempAxis.clone(),
-      angle: 0,
+      angle: progressToAngle(animation.progress),
       completed: false,
     }
   }

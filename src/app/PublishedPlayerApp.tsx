@@ -919,6 +919,7 @@ function PublishedSceneController({
       const rotateEntry = scene.animations.find((entry) => entry.type === 'rotate')
       if (rotateEntry) {
         const targetObjectId = reversePublishIdMap.get(normalizePublishId(rotateEntry.targetObjectId)) ?? null
+        const startProgress = rotateEntry.startProgress ?? rotateEntry.progress
         addRotateAnimation(targetObjectId)
         updateRotateAnimation({
           enabled: rotateEntry.enabled,
@@ -928,7 +929,8 @@ function PublishedSceneController({
           pivot: rotateEntry.pivot as never,
           axis: rotateEntry.axis as never,
           speed: rotateEntry.speed,
-          progress: rotateEntry.progress,
+          startProgress,
+          progress: startProgress,
           targetObjectId,
         })
       }

@@ -450,6 +450,7 @@ export interface PublishedSceneV2 {
     pivot: string
     axis: string
     speed: number
+    startProgress?: number
     progress: number
   }>
 }
@@ -812,6 +813,7 @@ async function buildPublishedSceneInternal() {
       pivot: state.rotateAnimation.pivot,
       axis: state.rotateAnimation.axis,
       speed: state.rotateAnimation.speed,
+      startProgress: state.rotateAnimation.startProgress,
       progress: state.rotateAnimation.progress,
     })
   }

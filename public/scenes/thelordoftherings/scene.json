@@ -271,6 +271,7 @@
       "pivot": "gizmo",
       "axis": "y",
       "speed": 5,
+      "startProgress": 65.8377777777631,
       "progress": 65.8377777777631
     }
   ]

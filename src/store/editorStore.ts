@@ -611,6 +611,7 @@ export interface RotateAnimationState {
   enabled: boolean
   play: boolean
   loop: boolean
+  startProgress: number
   progress: number
   targetObjectId: string | null
   pivot: RotateAnimationPivot
@@ -623,6 +624,7 @@ export const DEFAULT_ROTATE_ANIMATION: RotateAnimationState = {
   enabled: true,
   play: false,
   loop: true,
+  startProgress: 0,
   progress: 0,
   targetObjectId: null,
   pivot: 'pivot',
@@ -1637,7 +1639,7 @@ function cloneGodRaysGlobalDirectionState(
 }
 
 function cloneRotateAnimationState(rotateAnimation: RotateAnimationState): RotateAnimationState {
-  return { ...rotateAnimation }
+  return { ...DEFAULT_ROTATE_ANIMATION, ...rotateAnimation }
 }
 
 function cloneBackgroundAudioState(backgroundAudio: BackgroundAudioState): BackgroundAudioState {
