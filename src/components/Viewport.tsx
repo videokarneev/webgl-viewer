@@ -86,7 +86,7 @@ function getFrameAspectValue(preset: FrameAspectPreset, fallbackAspect: number) 
 }
 
 function buildIframeEmbedCode(url: string) {
-  return `<iframe src="${url}" width="100%" height="700" style="border:0;" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer"></iframe>`
+  return `<div style="width:100%;height:78vh;min-height:720px;position:relative;overflow:hidden;"><iframe src="${url}" style="width:100%;height:100%;border:0;display:block;background:transparent;" allow="autoplay; fullscreen; accelerometer; gyroscope; magnetometer" allowtransparency="true" scrolling="no"></iframe></div>`
 }
 
 function buildPublishedPlayerUrl(sceneUrl: string, deployOrigin: string) {
