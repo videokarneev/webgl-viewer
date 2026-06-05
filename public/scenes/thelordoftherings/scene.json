@@ -11,7 +11,7 @@
       "kind": "hdri",
       "assetLabel": "City Night Lights",
       "assetUrl": "assets/environment/scene-environment-city-night-lights.hdr",
-      "intensity": 1.1,
+      "intensity": 2.1,
       "rotation": 0,
       "backgroundMode": "color",
       "backgroundVisible": true,
@@ -24,9 +24,9 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      -0.024698884275569474,
-      -0.05785972973434533,
-      0.47125383023399325
+      -0.028233764642966813,
+      -0.06387452302837818,
+      0.5216503427935276
     ],
     "target": [
       0.008021418648986124,
@@ -271,7 +271,7 @@
       "pivot": "gizmo",
       "axis": "y",
       "speed": 5,
-      "progress": 19.1086111110956
+      "progress": 65.8377777777631
     }
   ]
 }
