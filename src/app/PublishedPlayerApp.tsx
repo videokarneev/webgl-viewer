@@ -72,6 +72,7 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
   portrait: '9:16',
   square: '1:1',
 }
+const AUTO_LANDSCAPE_FALLBACK_CAMERA_DISTANCE_SCALE = 1.62
 
 function isFrameAspectPreset(value: string | null | undefined): value is FrameAspectPreset {
   return (
@@ -87,6 +88,18 @@ function isFrameAspectPreset(value: string | null | undefined): value is FrameAs
 
 function isVector3(value: unknown): value is [number, number, number] {
   return Array.isArray(value) && value.length === 3 && value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))
+}
+
+function scaleCameraPositionAroundTarget(
+  position: [number, number, number],
+  target: [number, number, number],
+  scale: number,
+): [number, number, number] {
+  return [
+    target[0] + (position[0] - target[0]) * scale,
+    target[1] + (position[1] - target[1]) * scale,
+    target[2] + (position[2] - target[2]) * scale,
+  ]
 }
 
 function areNumbersClose(left: number, right: number, tolerance = 0.0001) {
@@ -222,19 +235,31 @@ function resolvePublishedCameraState(
 
   if (fixedCameraState.frameAspectPreset === 'auto') {
     const responsivePreset = responsivePresetKind ? scene.responsiveFrame?.[responsivePresetKind] : null
-    const responsiveCameraState: PublishedCameraState =
-      responsivePreset && !isPublishedCameraPoseDefault({
+    const candidateResponsiveCameraState: PublishedCameraState | null = responsivePreset
+      ? {
         cameraPosition: isVector3(responsivePreset.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
         orbitTarget: isVector3(responsivePreset.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
         focalLength: Number.isFinite(responsivePreset.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
         frameAspectPreset: fixedCameraState.frameAspectPreset,
-      })
+      }
+      : null
+    const responsiveCameraState: PublishedCameraState =
+      candidateResponsiveCameraState && !isPublishedCameraPoseDefault(candidateResponsiveCameraState)
         ? {
-            cameraPosition: isVector3(responsivePreset.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
-            orbitTarget: isVector3(responsivePreset.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
-            focalLength: Number.isFinite(responsivePreset.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
+            cameraPosition: candidateResponsiveCameraState.cameraPosition,
+            orbitTarget: candidateResponsiveCameraState.orbitTarget,
+            focalLength: candidateResponsiveCameraState.focalLength,
             frameAspectPreset: 'auto',
           }
+        : responsivePresetKind === 'landscape'
+          ? {
+              ...fixedCameraState,
+              cameraPosition: scaleCameraPositionAroundTarget(
+                fixedCameraState.cameraPosition,
+                fixedCameraState.orbitTarget,
+                AUTO_LANDSCAPE_FALLBACK_CAMERA_DISTANCE_SCALE,
+              ),
+            }
         : fixedCameraState
     const showcaseCameraState = resolveShowcaseFallbackCameraState(scene, responsiveCameraState, containerAspect)
     if (showcaseCameraState && hasVisibleLockedPhoneScreenBox(scene)) {
