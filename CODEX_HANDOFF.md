@@ -29,6 +29,9 @@ Current branch:
 
 Latest visible commits at handoff time:
 
+- `a5aa721` `Update scene thelordoftherings`
+- `af64b6e` `Update scene thelordoftherings`
+- `ad8e3d3` `Add rotate animation start frame`
 - `303ca1d` `Update scene thelordoftherings`
 - `df4c8b1` `Update scene thelordoftherings`
 - `958ee47` `Update scene thelordoftherings`
@@ -36,10 +39,6 @@ Latest visible commits at handoff time:
 - `43d6a5b` `Delete scene demo-02`
 - `7b03e46` `Delete scene demo-03`
 - `a7a151f` `Delete scene demo-01`
-- `1bb9efd` `Delete scene demo-022`
-- `3444d69` `Add published scene manager`
-- `b885612` `Add scene target picker for web publish`
-- `4edc2ab` `Add safe desktop fallback for auto published cameras`
 
 Expected local change after this handoff update:
 
@@ -92,6 +91,7 @@ Important:
 User-confirmed rule:
 
 - `Frame Format = AUTO` is the normal mode for responsive iframe publishing.
+- New scenes and scene reset now default to `Frame Format = AUTO`.
 - AUTO means the published player uses the actual iframe/container aspect.
 - Separate fixed formats are only needed when the user wants different camera compositions for specific social/video ratios.
 
@@ -194,7 +194,7 @@ Rotate animation start frame:
 - `startProgress` is serialized into published scenes.
 - Published player starts rotate animations from `startProgress` before the first visible frame.
 - Older scenes without `startProgress` fall back to their saved `progress`.
-- Current `thelordoftherings` scene uses `startProgress = 65.8377777777631`.
+- Current `thelordoftherings` scene has a rotate animation on axis `z`, speed `5`, `startProgress = 0`, and latest saved `progress = 96.91458333333559`.
 
 Iframe/embed generation:
 

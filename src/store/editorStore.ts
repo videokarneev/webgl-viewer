@@ -194,7 +194,7 @@ export const DEFAULT_VIEWER_FOCAL_LENGTH = 20
 export const DEFAULT_VIEWER_CAMERA_FOV = 63.5
 export const DEFAULT_VIEWER_CAMERA_POSITION: [number, number, number] = [4, 3, 5]
 export const DEFAULT_VIEWER_ORBIT_TARGET: [number, number, number] = [0, 0, 0]
-export const DEFAULT_FRAME_ASPECT_PRESET: FrameAspectPreset = '1:1'
+export const DEFAULT_FRAME_ASPECT_PRESET: FrameAspectPreset = 'auto'
 
 export interface ResponsiveFramePresetState {
   frameAspectPreset: FrameAspectPreset
