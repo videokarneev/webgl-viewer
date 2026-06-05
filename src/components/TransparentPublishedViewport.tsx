@@ -116,11 +116,12 @@ function TransparentCameraBridge({
   cameraOffsetRef: React.MutableRefObject<THREE.Vector3>
   targetOffsetRef: React.MutableRefObject<THREE.Vector3>
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
 
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
+    perspectiveCamera.aspect = size.width / Math.max(size.height, 1)
     perspectiveCamera.position.set(...viewer.cameraPosition)
     applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
 
@@ -130,7 +131,7 @@ function TransparentCameraBridge({
         .add(targetOffsetRef.current)
       controlsRef.current.update()
     }
-  }, [camera, controlsRef, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
+  }, [camera, controlsRef, size.height, size.width, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
   return <ViewerSync controlsRef={controlsRef} cameraOffsetRef={cameraOffsetRef} targetOffsetRef={targetOffsetRef} />
 }

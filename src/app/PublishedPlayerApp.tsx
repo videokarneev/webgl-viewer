@@ -220,6 +220,15 @@ function resolvePublishedCameraState(
     frameAspectPreset: isFrameAspectPreset(scene.camera.frameAspectPreset) ? scene.camera.frameAspectPreset : '1:1',
   }
 
+  if (fixedCameraState.frameAspectPreset === 'auto') {
+    const showcaseCameraState = resolveShowcaseFallbackCameraState(scene, fixedCameraState, containerAspect)
+    if (showcaseCameraState && hasVisibleLockedPhoneScreenBox(scene)) {
+      return showcaseCameraState
+    }
+
+    return fixedCameraState
+  }
+
   if (!scene.responsiveFrame || !responsivePresetKind) {
     const showcaseCameraState = resolveShowcaseFallbackCameraState(scene, fixedCameraState, containerAspect)
     if (showcaseCameraState && hasVisibleLockedPhoneScreenBox(scene)) {
@@ -238,11 +247,9 @@ function resolvePublishedCameraState(
     cameraPosition: isVector3(responsivePreset?.cameraPosition) ? responsivePreset.cameraPosition : fixedCameraState.cameraPosition,
     orbitTarget: isVector3(responsivePreset?.orbitTarget) ? responsivePreset.orbitTarget : fixedCameraState.orbitTarget,
     focalLength: Number.isFinite(responsivePreset?.focalLength) ? responsivePreset.focalLength : fixedCameraState.focalLength,
-    frameAspectPreset: fixedCameraState.frameAspectPreset === 'auto'
-      ? 'auto'
-      : isFrameAspectPreset(responsivePreset?.frameAspectPreset)
-        ? responsivePreset.frameAspectPreset
-        : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
+    frameAspectPreset: isFrameAspectPreset(responsivePreset?.frameAspectPreset)
+      ? responsivePreset.frameAspectPreset
+      : DEFAULT_RESPONSIVE_FRAME_ASPECTS[responsivePresetKind],
   }
   const effectiveCameraState =
     isPublishedCameraPoseDefault(responsiveCameraState) && !isPublishedCameraPoseDefault(fixedCameraState)

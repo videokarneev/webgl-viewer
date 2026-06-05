@@ -845,12 +845,13 @@ function CameraBridge({
   cameraOffsetRef: React.MutableRefObject<THREE.Vector3>
   targetOffsetRef: React.MutableRefObject<THREE.Vector3>
 }) {
-  const { camera } = useThree()
+  const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
 
   useEffect(() => {
     const perspectiveCamera = camera as THREE.PerspectiveCamera
     const orbitTarget = new THREE.Vector3(...viewer.orbitTarget)
+    perspectiveCamera.aspect = size.width / Math.max(size.height, 1)
     perspectiveCamera.position.set(...viewer.cameraPosition)
     perspectiveCamera.lookAt(orbitTarget)
     applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
@@ -858,7 +859,7 @@ function CameraBridge({
       controlsRef.current.target.copy(orbitTarget).add(targetOffsetRef.current)
       controlsRef.current.update()
     }
-  }, [camera, controlsRef, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
+  }, [camera, controlsRef, size.height, size.width, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
   return <ViewerSync controlsRef={controlsRef} cameraOffsetRef={cameraOffsetRef} targetOffsetRef={targetOffsetRef} />
 }
@@ -1811,6 +1812,7 @@ function ViewportScene({
   useEffect(() => {
     registerResetCamera(() => {
       const perspectiveCamera = camera as THREE.PerspectiveCamera
+      perspectiveCamera.aspect = size.width / Math.max(size.height, 1)
       applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
       applyCameraFrame(perspectiveCamera, controlsRef.current, {
         position: new THREE.Vector3(...viewer.resetCameraPosition),
@@ -1825,7 +1827,7 @@ function ViewportScene({
     return () => {
       registerResetCamera(() => {})
     }
-  }, [camera, registerResetCamera, viewer.focalLength, viewer.resetCameraPosition, viewer.resetOrbitTarget])
+  }, [camera, registerResetCamera, size.height, size.width, viewer.focalLength, viewer.resetCameraPosition, viewer.resetOrbitTarget])
 
   useEffect(() => {
     registerViewDirection((direction) => {
@@ -2127,8 +2129,9 @@ export function Viewport({
   )
   const shouldBypassPresetFrameForLockedShowcase = enforceFrameAspect && !showChrome && hasVisibleLockedShowcase
   const shouldInsetLockedShowcaseFrame = shouldBypassPresetFrameForLockedShowcase && hasPublishedFrameInsets
+  const shouldFrameGuidesConstrainCanvas = viewer.frameGuidesEnabled && viewer.frameAspectPreset !== 'auto'
   const effectiveEnforceFrameAspect =
-    ((enforceFrameAspect || viewer.frameGuidesEnabled) && !shouldBypassPresetFrameForLockedShowcase) ||
+    ((enforceFrameAspect || shouldFrameGuidesConstrainCanvas) && !shouldBypassPresetFrameForLockedShowcase) ||
     shouldInsetLockedShowcaseFrame
   const frameAspect = getFrameAspectValue(
     viewer.frameAspectPreset,
@@ -2156,6 +2159,18 @@ export function Viewport({
         height: `${frameRect.height}px`,
       }) as CSSProperties,
     [frameRect.height, frameRect.left, frameRect.top, frameRect.width],
+  )
+  const canvasStageStyle = useMemo(
+    () =>
+      effectiveEnforceFrameAspect
+        ? frameStyle
+        : ({
+            left: '0px',
+            top: '0px',
+            width: '100%',
+            height: '100%',
+          } as CSSProperties),
+    [effectiveEnforceFrameAspect, frameStyle],
   )
 
   const viewportStyle = useMemo(
@@ -2352,61 +2367,10 @@ export function Viewport({
       className={`viewport-wrap${transparentBackground ? ' viewport-wrap--transparent' : ''}`}
       style={viewportStyle}
     >
-      {effectiveEnforceFrameAspect ? (
-        <div
-          className={`viewport-stage${transparentBackground ? ' viewport-stage--transparent' : ''}`}
-          style={frameStyle}
-        >
-          <Canvas
-            className="viewport-canvas"
-            dpr={[1, 2]}
-            style={canvasStyle}
-            gl={{ alpha: true, antialias: true, premultipliedAlpha: !transparentBackground }}
-            camera={{
-              position: viewer.cameraPosition,
-              fov: DEFAULT_VIEWER_CAMERA_FOV,
-              near: 0.1,
-              far: 2000,
-            }}
-            onCreated={({ gl, scene }) => {
-              if (!transparentBackground) {
-                return
-              }
-              gl.domElement.style.background = 'transparent'
-              gl.setClearColor(0x000000, 0)
-              scene.background = null
-            }}
-            onPointerMissed={() => {
-              if (!allowSelection) {
-                return
-              }
-              setSelectedObjectId(null)
-              setHud({ transformMode: 'none' })
-            }}
-          >
-            <ViewportScene
-              allowSelection={allowSelection}
-              autoFrameOnLoad={autoFrameOnLoad}
-              clearColor={clearColor}
-              gyroSampleRef={showcaseMotion.sampleRef}
-              onCameraQuaternionChange={setCameraQuaternion}
-              onStats={setViewportMetrics}
-              onTransformDraggingChange={setIsTransformDragging}
-              registerViewDirection={(handler) => {
-                applyViewDirectionRef.current = handler
-              }}
-              registerViewOrbitDrag={(handler) => {
-                applyViewOrbitDragRef.current = handler
-              }}
-              transparentBackground={transparentBackground}
-              transformDragging={isTransformDragging}
-              registerResetCamera={(handler) => {
-                resetCameraRef.current = handler
-              }}
-            />
-          </Canvas>
-        </div>
-      ) : (
+      <div
+        className={`viewport-stage${transparentBackground ? ' viewport-stage--transparent' : ''}`}
+        style={canvasStageStyle}
+      >
         <Canvas
           className="viewport-canvas"
           dpr={[1, 2]}
@@ -2455,7 +2419,7 @@ export function Viewport({
             }}
           />
         </Canvas>
-      )}
+      </div>
       {!effectiveEnforceFrameAspect && viewer.frameGuidesEnabled ? (
         <>
           <div className="viewport-frame-mask viewport-frame-mask--top" style={{ height: `${frameRect.top}px` }} />
@@ -2479,9 +2443,9 @@ export function Viewport({
               height: `${frameRect.height}px`,
             }}
           />
-          <div className="viewport-frame-guide" style={frameStyle} />
         </>
       ) : null}
+      {viewer.frameGuidesEnabled ? <div className="viewport-frame-guide" style={frameStyle} /> : null}
       {showChrome ? <TransformToolbar /> : null}
       {showChrome ? (
         <ViewportOrientationCube
