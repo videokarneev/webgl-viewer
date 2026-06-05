@@ -41,16 +41,16 @@
     "landscape": {
       "frameAspectPreset": "16:9",
       "cameraPosition": [
-        4,
-        3,
-        5
+        -0.4333920265407986,
+        -0.1548987130441991,
+        0.4641054672336306
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        0.009288819093303454,
+        -0.002773544095706328,
+        -0.007922411702436348
       ],
-      "focalLength": 20
+      "focalLength": 50
     },
     "portrait": {
       "frameAspectPreset": "9:16",
