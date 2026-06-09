@@ -3734,6 +3734,102 @@ button {
   color: rgba(236, 183, 183, 0.88);
 }
 
+.viewport-gyro-tune {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 108px);
+  right: calc(env(safe-area-inset-right, 0px) + 18px);
+  z-index: 35;
+  width: min(320px, calc(100vw - 32px));
+  max-height: min(62vh, 430px);
+  overflow: auto;
+  border: 1px solid rgba(165, 197, 216, 0.14);
+  border-radius: 8px;
+  background: rgba(8, 11, 15, 0.9);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.28);
+  color: rgba(222, 233, 239, 0.9);
+  padding: 10px;
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.viewport-gyro-tune__header,
+.viewport-gyro-tune__row,
+.viewport-gyro-tune__actions {
+  display: flex;
+  align-items: center;
+}
+
+.viewport-gyro-tune__header {
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: rgba(237, 246, 250, 0.94);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.viewport-gyro-tune__actions {
+  gap: 6px;
+}
+
+.viewport-gyro-tune button {
+  min-height: 24px;
+  border: 1px solid rgba(165, 197, 216, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(224, 236, 242, 0.88);
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.viewport-gyro-tune__controls {
+  display: grid;
+  gap: 8px;
+}
+
+.viewport-gyro-tune__row {
+  display: grid;
+  grid-template-columns: 58px minmax(120px, 1fr) 42px;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 10px;
+  color: rgba(213, 226, 233, 0.86);
+}
+
+.viewport-gyro-tune__row input {
+  width: 100%;
+  accent-color: #8bc8e8;
+}
+
+.viewport-gyro-tune__row strong {
+  color: rgba(242, 248, 250, 0.94);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.viewport-gyro-tune__readout,
+.viewport-gyro-tune__defaults {
+  margin-top: 8px;
+  border-top: 1px solid rgba(165, 197, 216, 0.1);
+  padding-top: 8px;
+  color: rgba(197, 211, 219, 0.76);
+  font-size: 10px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.viewport-gyro-tune__defaults {
+  margin-top: 4px;
+  border-top: 0;
+  padding-top: 0;
+  color: rgba(174, 188, 196, 0.64);
+}
+
 .viewport-orientation {
   position: absolute;
   top: 8px;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { getShowcaseGyroTuning } from './showcaseGyroTuning'
 
 export type ShowcaseMotionPermissionState = 'unsupported' | 'idle' | 'granted' | 'denied'
 
@@ -123,8 +124,10 @@ function resolveSmoothedSample(
   target: ShowcaseMotionSample,
   deltaSeconds: number,
 ): ShowcaseMotionSample {
-  const smoothing = 1 - Math.exp(-SENSOR_SMOOTHING_RESPONSE * Math.max(deltaSeconds, 0.001))
-  const maxStep = SENSOR_MAX_STEP_PER_SECOND * Math.max(deltaSeconds, 0.001)
+  const tuning = getShowcaseGyroTuning()
+  const smoothingScale = Math.max(tuning.smooth, 0.1)
+  const smoothing = 1 - Math.exp(-(SENSOR_SMOOTHING_RESPONSE / smoothingScale) * Math.max(deltaSeconds, 0.001))
+  const maxStep = (SENSOR_MAX_STEP_PER_SECOND / smoothingScale) * Math.max(deltaSeconds, 0.001)
   const nextX = THREE.MathUtils.clamp(
     current.x + THREE.MathUtils.clamp((target.x - current.x) * smoothing, -maxStep, maxStep),
     -1,

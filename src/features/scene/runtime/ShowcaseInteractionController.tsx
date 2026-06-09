@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import { useEditorStore, type ObjectTransformState } from '../../../store/editorStore'
 import { resolvePhoneScreenBoxCameraFrame } from './phoneScreenBoxRuntime'
+import { getShowcaseGyroTuning } from './showcaseGyroTuning'
 import type { ShowcaseMotionSample } from './useShowcaseMotionSensor'
 
 function supportsMouseInput(mode: string) {
@@ -412,13 +413,14 @@ export function ShowcaseInteractionController({
     const rawPointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
     const rawPointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
     const rawYaw = useGyro ? gyroSample.yaw : useMouse ? THREE.MathUtils.clamp(state.pointer.x * 0.72, -1, 1) : 0
-    const gyroYaw = -rawYaw
+    const gyroTuning = getShowcaseGyroTuning()
+    const gyroYaw = -rawYaw * gyroTuning.side
     const pointerX = useGyro
-      ? THREE.MathUtils.clamp(gyroYaw * 0.9 + rawPointerX * 0.28, -1, 1)
+      ? THREE.MathUtils.clamp((gyroYaw * 0.9 + rawPointerX * 0.28 * gyroTuning.tiltX) * gyroTuning.travel, -1, 1)
       : rawPointerX
-    const pointerY = useGyro ? THREE.MathUtils.clamp(rawPointerY * 0.34, -1, 1) : rawPointerY
+    const pointerY = useGyro ? THREE.MathUtils.clamp(rawPointerY * 0.34 * gyroTuning.tiltY * gyroTuning.travel, -1, 1) : rawPointerY
     const yaw = useGyro
-      ? THREE.MathUtils.clamp(gyroYaw * 1.12 + rawPointerX * 0.16, -1, 1)
+      ? THREE.MathUtils.clamp(gyroYaw * 1.12 + rawPointerX * 0.16 * gyroTuning.tiltX, -1, 1)
       : rawYaw
     const rotationPointerX = useGyro ? pointerX * 0.16 : pointerX
     const rotationPointerY = useGyro ? pointerY * 0.42 : pointerY

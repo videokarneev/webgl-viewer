@@ -6,6 +6,15 @@ import * as THREE from 'three'
 import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
 import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
+import {
+  DEFAULT_SHOWCASE_GYRO_TUNING,
+  getShowcaseGyroTuning,
+  resetShowcaseGyroTuning,
+  setShowcaseGyroTuning,
+  shouldShowShowcaseGyroTuningPanel,
+  subscribeToShowcaseGyroTuning,
+  type ShowcaseGyroTuning,
+} from '../features/scene/runtime/showcaseGyroTuning'
 import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
 import { useShowcaseMotionSensor, type ShowcaseMotionSample } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
@@ -2074,6 +2083,100 @@ function ViewportMotionToggle({
   )
 }
 
+type GyroTuningKey = keyof ShowcaseGyroTuning
+
+const GYRO_TUNING_SLIDERS: Array<{
+  key: GyroTuningKey
+  label: string
+  min: number
+  max: number
+  step: number
+}> = [
+  { key: 'side', label: 'Side', min: 0, max: 2, step: 0.05 },
+  { key: 'tiltX', label: 'Tilt X', min: 0, max: 2, step: 0.05 },
+  { key: 'tiltY', label: 'Tilt Y', min: 0, max: 2, step: 0.05 },
+  { key: 'travel', label: 'Travel', min: 0, max: 2, step: 0.05 },
+  { key: 'smooth', label: 'Smooth', min: 0.4, max: 2.5, step: 0.05 },
+]
+
+function formatGyroTuningValue(value: number) {
+  return value.toFixed(2)
+}
+
+function ViewportGyroTuningPanel() {
+  const [isVisible] = useState(() => shouldShowShowcaseGyroTuningPanel())
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [tuning, setTuning] = useState(() => getShowcaseGyroTuning())
+
+  useEffect(() => {
+    if (!isVisible) {
+      return
+    }
+
+    return subscribeToShowcaseGyroTuning(setTuning)
+  }, [isVisible])
+
+  if (!isVisible) {
+    return null
+  }
+
+  const readout = GYRO_TUNING_SLIDERS
+    .map((entry) => `${entry.key}=${formatGyroTuningValue(tuning[entry.key])}`)
+    .join(' ')
+
+  return (
+    <section
+      className="viewport-gyro-tune"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="viewport-gyro-tune__header">
+        <span>GYRO TUNE</span>
+        <div className="viewport-gyro-tune__actions">
+          <button
+            type="button"
+            onClick={() => {
+              setTuning(resetShowcaseGyroTuning())
+            }}
+          >
+            Reset
+          </button>
+          <button type="button" onClick={() => setIsCollapsed((value) => !value)}>
+            {isCollapsed ? '+' : '-'}
+          </button>
+        </div>
+      </div>
+      {!isCollapsed ? (
+        <>
+          <div className="viewport-gyro-tune__controls">
+            {GYRO_TUNING_SLIDERS.map((entry) => (
+              <label key={entry.key} className="viewport-gyro-tune__row">
+                <span>{entry.label}</span>
+                <input
+                  type="range"
+                  min={entry.min}
+                  max={entry.max}
+                  step={entry.step}
+                  value={tuning[entry.key]}
+                  onChange={(event) => {
+                    const value = Number(event.currentTarget.value)
+                    setTuning(setShowcaseGyroTuning({ [entry.key]: value }))
+                  }}
+                />
+                <strong>{formatGyroTuningValue(tuning[entry.key])}</strong>
+              </label>
+            ))}
+          </div>
+          <div className="viewport-gyro-tune__readout">{readout}</div>
+          <div className="viewport-gyro-tune__defaults">
+            default {GYRO_TUNING_SLIDERS.map((entry) => `${entry.key}=${formatGyroTuningValue(DEFAULT_SHOWCASE_GYRO_TUNING[entry.key])}`).join(' ')}
+          </div>
+        </>
+      ) : null}
+    </section>
+  )
+}
+
 export function Viewport({
   showChrome = true,
   allowSelection = true,
@@ -2465,6 +2568,7 @@ export function Viewport({
           }}
         />
       ) : null}
+      <ViewportGyroTuningPanel />
       {showChrome && webPublishStatus ? (
         <div className="viewport-web-publish-layer" onPointerDown={() => setWebPublishStatus(null)}>
           <section
