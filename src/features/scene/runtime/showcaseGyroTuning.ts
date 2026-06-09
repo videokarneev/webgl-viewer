@@ -1,5 +1,6 @@
 export interface ShowcaseGyroTuning {
   side: number
+  top: number
   tiltX: number
   tiltY: number
   travel: number
@@ -8,6 +9,7 @@ export interface ShowcaseGyroTuning {
 
 export const DEFAULT_SHOWCASE_GYRO_TUNING: ShowcaseGyroTuning = {
   side: 1,
+  top: 1,
   tiltX: -1,
   tiltY: 1,
   travel: 1,
@@ -16,6 +18,7 @@ export const DEFAULT_SHOWCASE_GYRO_TUNING: ShowcaseGyroTuning = {
 
 const TUNING_LIMITS: Record<keyof ShowcaseGyroTuning, { min: number; max: number }> = {
   side: { min: -2, max: 2 },
+  top: { min: -2, max: 2 },
   tiltX: { min: -2, max: 2 },
   tiltY: { min: -2, max: 2 },
   travel: { min: 0, max: 2.5 },
@@ -37,6 +40,7 @@ function clampTuningValue(key: keyof ShowcaseGyroTuning, value: unknown, fallbac
 function normalizeTuning(value: Partial<ShowcaseGyroTuning> | null | undefined): ShowcaseGyroTuning {
   return {
     side: clampTuningValue('side', value?.side, DEFAULT_SHOWCASE_GYRO_TUNING.side),
+    top: clampTuningValue('top', value?.top, DEFAULT_SHOWCASE_GYRO_TUNING.top),
     tiltX: clampTuningValue('tiltX', value?.tiltX, DEFAULT_SHOWCASE_GYRO_TUNING.tiltX),
     tiltY: clampTuningValue('tiltY', value?.tiltY, DEFAULT_SHOWCASE_GYRO_TUNING.tiltY),
     travel: clampTuningValue('travel', value?.travel, DEFAULT_SHOWCASE_GYRO_TUNING.travel),

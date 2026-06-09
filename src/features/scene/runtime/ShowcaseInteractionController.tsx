@@ -415,6 +415,7 @@ export function ShowcaseInteractionController({
     const rawYaw = useGyro ? gyroSample.yaw : useMouse ? THREE.MathUtils.clamp(state.pointer.x * 0.72, -1, 1) : 0
     const gyroTuning = getShowcaseGyroTuning()
     const gyroYaw = -rawYaw * gyroTuning.side
+    const gyroPitch = rawPointerY * gyroTuning.top
     const pointerX = useGyro
       ? THREE.MathUtils.clamp((gyroYaw * 0.9 + rawPointerX * 0.28 * gyroTuning.tiltX) * gyroTuning.travel, -1, 1)
       : rawPointerX
@@ -423,7 +424,7 @@ export function ShowcaseInteractionController({
       ? THREE.MathUtils.clamp(gyroYaw * 1.12 + rawPointerX * 0.16 * gyroTuning.tiltX, -1, 1)
       : rawYaw
     const rotationPointerX = useGyro ? pointerX * 0.16 : pointerX
-    const rotationPointerY = useGyro ? pointerY * 0.42 : pointerY
+    const rotationPointerY = useGyro ? THREE.MathUtils.clamp(gyroPitch + pointerY * 0.12, -1, 1) : pointerY
 
     if (useLockedFrame) {
       desiredOffsetRef
