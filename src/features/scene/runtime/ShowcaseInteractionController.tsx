@@ -412,12 +412,13 @@ export function ShowcaseInteractionController({
     const rawPointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
     const rawPointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
     const rawYaw = useGyro ? gyroSample.yaw : useMouse ? THREE.MathUtils.clamp(state.pointer.x * 0.72, -1, 1) : 0
+    const gyroYaw = -rawYaw
     const pointerX = useGyro
-      ? THREE.MathUtils.clamp(rawYaw * 0.9 + rawPointerX * 0.28, -1, 1)
+      ? THREE.MathUtils.clamp(gyroYaw * 0.9 + rawPointerX * 0.28, -1, 1)
       : rawPointerX
     const pointerY = useGyro ? THREE.MathUtils.clamp(rawPointerY * 0.34, -1, 1) : rawPointerY
     const yaw = useGyro
-      ? THREE.MathUtils.clamp(rawYaw * 1.12 + rawPointerX * 0.16, -1, 1)
+      ? THREE.MathUtils.clamp(gyroYaw * 1.12 + rawPointerX * 0.16, -1, 1)
       : rawYaw
     const rotationPointerX = useGyro ? pointerX * 0.16 : pointerX
     const rotationPointerY = useGyro ? pointerY * 0.42 : pointerY
