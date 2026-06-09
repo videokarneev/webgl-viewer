@@ -8,6 +8,7 @@ import {
   type GodRaysBoxState,
 } from '../../../store/editorStore'
 import {
+  createSeededRandom,
   getGodRaysMaxRadius,
   getGodRaysPolygonOffset,
   samplePointInGodRaysVolume,
@@ -178,14 +179,15 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
 
     for (let index = 0; index < entry.dustCount; index += 1) {
       const offset = index * 3
-      const point = samplePointInGodRaysVolume(entry)
+      const random = createSeededRandom(`${entry.id}:dust:${index}`)
+      const point = samplePointInGodRaysVolume(entry, random)
       point.applyMatrix4(dustAnchorMatrix)
       positions[offset] = point.x
       positions[offset + 1] = point.y
       positions[offset + 2] = point.z
-      sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, Math.random())
-      seeds[index] = Math.random()
-      phases[index] = Math.random() * 6
+      sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random())
+      seeds[index] = random()
+      phases[index] = random() * 6
     }
 
     nextGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))

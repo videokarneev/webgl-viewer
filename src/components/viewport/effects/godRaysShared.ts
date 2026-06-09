@@ -37,12 +37,33 @@ export function getGodRaysVisualBoundaryRadius(angle: number, radius: number, si
   return THREE.MathUtils.lerp(polygonBoundary, radius, getGodRaysVisualRoundness(sideCount))
 }
 
-export function samplePointInGodRaysVolume(entry: Pick<GodRaysBoxState, 'bottomRadius' | 'topRadius' | 'sideCount'>) {
-  const y = Math.random()
-  const angle = Math.random() * Math.PI * 2
+export function createSeededRandom(seed: string | number) {
+  let state = typeof seed === 'number' ? seed >>> 0 : 2166136261
+  if (typeof seed === 'string') {
+    for (let index = 0; index < seed.length; index += 1) {
+      state ^= seed.charCodeAt(index)
+      state = Math.imul(state, 16777619)
+    }
+  }
+
+  return () => {
+    state += 0x6d2b79f5
+    let value = state
+    value = Math.imul(value ^ (value >>> 15), value | 1)
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61)
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+export function samplePointInGodRaysVolume(
+  entry: Pick<GodRaysBoxState, 'bottomRadius' | 'topRadius' | 'sideCount'>,
+  random = Math.random,
+) {
+  const y = random()
+  const angle = random() * Math.PI * 2
   const radiusAtY = getGodRaysRadiusAt(entry, y)
   const boundaryRadius = getGodRaysVisualBoundaryRadius(angle, radiusAtY, entry.sideCount)
-  const distance = boundaryRadius * Math.sqrt(Math.random())
+  const distance = boundaryRadius * Math.sqrt(random())
 
   return new THREE.Vector3(
     Math.cos(angle) * distance,

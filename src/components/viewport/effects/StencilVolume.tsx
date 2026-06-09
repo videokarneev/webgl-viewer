@@ -16,7 +16,7 @@ import {
   type MaskContourShape,
   type MaskDistanceFieldResult,
 } from '../../../features/stencilVolume/maskContour'
-import { getGodRaysSteps } from './godRaysShared'
+import { createSeededRandom, getGodRaysSteps } from './godRaysShared'
 
 function getStencilNoiseQualityLevel(quality: GodRaysQuality) {
   if (quality === 'high') {
@@ -888,7 +888,7 @@ function isPointInsideLoop(point: [number, number], loop: [number, number][]) {
   return inside
 }
 
-function samplePointInShape(shape: MaskContourShape) {
+function samplePointInShape(shape: MaskContourShape, random = Math.random) {
   const loops = [shape.outline]
   const bounds = shape.outline.reduce(
     (accumulator, point) => ({
@@ -907,8 +907,8 @@ function samplePointInShape(shape: MaskContourShape) {
 
   for (let attempt = 0; attempt < 64; attempt += 1) {
     const point: [number, number] = [
-      THREE.MathUtils.lerp(bounds.minX, bounds.maxX, Math.random()),
-      THREE.MathUtils.lerp(bounds.minY, bounds.maxY, Math.random()),
+      THREE.MathUtils.lerp(bounds.minX, bounds.maxX, random()),
+      THREE.MathUtils.lerp(bounds.minY, bounds.maxY, random()),
     ]
 
     if (!isPointInsideLoop(point, shape.outline)) {
@@ -938,8 +938,8 @@ function createStencilDustGeometry(
 
   const shapeWeights = shapes.map((shape) => Math.max(Math.abs(getLoopArea(shape.outline)), 0.0001))
   const totalWeight = shapeWeights.reduce((sum, value) => sum + value, 0)
-  const pickShape = () => {
-    let threshold = Math.random() * totalWeight
+  const pickShape = (random = Math.random) => {
+    let threshold = random() * totalWeight
     for (let index = 0; index < shapes.length; index += 1) {
       threshold -= shapeWeights[index]
       if (threshold <= 0) {
@@ -960,22 +960,23 @@ function createStencilDustGeometry(
   const initialPosition = new THREE.Vector3()
 
   for (let index = 0; index < dustCount; index += 1) {
-    const shape = pickShape()
-    const point = samplePointInShape(shape)
+    const random = createSeededRandom(`${entry.id}:stencil-dust:${index}`)
+    const shape = pickShape(random)
+    const point = samplePointInShape(shape, random)
     startPoint.set(point[0] * entry.sourceWidth, point[1] * entry.sourceHeight, 0)
     endPoint
       .set(point[0] * entry.sourceWidth * entry.endScaleX, point[1] * entry.sourceHeight * entry.endScaleY, 0)
       .applyQuaternion(endQuaternion)
       .add(endCenter)
-    initialPosition.copy(startPoint).lerp(endPoint, Math.random()).applyMatrix4(localToWorldMatrix)
+    initialPosition.copy(startPoint).lerp(endPoint, random()).applyMatrix4(localToWorldMatrix)
 
     const offset = index * 3
     positions[offset] = initialPosition.x
     positions[offset + 1] = initialPosition.y
     positions[offset + 2] = initialPosition.z
-    sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, Math.random())
-    seeds[index] = Math.random()
-    phases[index] = Math.random() * 6
+    sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random())
+    seeds[index] = random()
+    phases[index] = random() * 6
   }
 
   const geometry = new THREE.BufferGeometry()
