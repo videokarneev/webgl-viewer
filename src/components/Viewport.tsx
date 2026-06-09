@@ -18,6 +18,7 @@ import {
 import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
 import { useShowcaseMotionSensor, type ShowcaseMotionSample } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
+import { TouchObjectRotationController } from '../features/scene/runtime/TouchObjectRotationController'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
   DEFAULT_VIEWER_FOCAL_LENGTH,
@@ -1938,6 +1939,7 @@ function ViewportScene({
           lockOnlyWhenSelected={allowSelection}
           transformDragging={transformDragging}
         />
+        <TouchObjectRotationController enabled={!allowSelection} />
         {hud.postEffectsEnabled && hud.postEffectsVisible ? <PostEffects /> : null}
       </Suspense>
       {hud.gridVisible ? (

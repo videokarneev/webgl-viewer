@@ -9,11 +9,11 @@ export interface ShowcaseGyroTuning {
 
 export const DEFAULT_SHOWCASE_GYRO_TUNING: ShowcaseGyroTuning = {
   side: 0.3,
-  top: -1.4,
-  tiltX: -0.6,
+  top: -1.05,
+  tiltX: -0.85,
   tiltY: -0.45,
   travel: 1.05,
-  smooth: 1.85,
+  smooth: 0.8,
 }
 
 const TUNING_LIMITS: Record<keyof ShowcaseGyroTuning, { min: number; max: number }> = {
@@ -25,7 +25,7 @@ const TUNING_LIMITS: Record<keyof ShowcaseGyroTuning, { min: number; max: number
   smooth: { min: 0.4, max: 2.5 },
 }
 
-const STORAGE_KEY = 'webgl-viewer:showcase-gyro-tuning:v3'
+const STORAGE_KEY = 'webgl-viewer:showcase-gyro-tuning:v4'
 const TUNING_EVENT = 'webgl-viewer:showcase-gyro-tuning-change'
 
 let currentTuning: ShowcaseGyroTuning | null = null
