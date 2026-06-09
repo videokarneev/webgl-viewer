@@ -12,6 +12,10 @@ export interface ShowcaseMotionSample {
 
 const IDLE_SAMPLE: ShowcaseMotionSample = { x: 0, y: 0, yaw: 0, active: false }
 const YAW_RESPONSE_DEGREES = 42
+const ORIENTATION_SOURCE_TIMEOUT_MS = 320
+const SENSOR_SMOOTHING_RESPONSE = 8
+const SENSOR_MAX_STEP_PER_SECOND = 3.2
+const SENSOR_DEADZONE = 0.012
 
 function getScreenOrientationAngle() {
   if (typeof window === 'undefined') {
@@ -99,11 +103,52 @@ function resolveYawAxis(currentAlpha: number | null, baselineAlpha: number | nul
   return THREE.MathUtils.clamp(normalizeSignedAngleDelta(currentAlpha, baselineAlpha) / YAW_RESPONSE_DEGREES, -1, 1)
 }
 
+function applyDeadzone(value: number) {
+  if (Math.abs(value) <= SENSOR_DEADZONE) {
+    return 0
+  }
+
+  return value
+}
+
+function resolveSmoothedSample(
+  current: ShowcaseMotionSample,
+  target: ShowcaseMotionSample,
+  deltaSeconds: number,
+): ShowcaseMotionSample {
+  const smoothing = 1 - Math.exp(-SENSOR_SMOOTHING_RESPONSE * Math.max(deltaSeconds, 0.001))
+  const maxStep = SENSOR_MAX_STEP_PER_SECOND * Math.max(deltaSeconds, 0.001)
+  const nextX = THREE.MathUtils.clamp(
+    current.x + THREE.MathUtils.clamp((target.x - current.x) * smoothing, -maxStep, maxStep),
+    -1,
+    1,
+  )
+  const nextY = THREE.MathUtils.clamp(
+    current.y + THREE.MathUtils.clamp((target.y - current.y) * smoothing, -maxStep, maxStep),
+    -1,
+    1,
+  )
+  const nextYaw = THREE.MathUtils.clamp(
+    current.yaw + THREE.MathUtils.clamp((target.yaw - current.yaw) * smoothing, -maxStep, maxStep),
+    -1,
+    1,
+  )
+
+  return {
+    x: applyDeadzone(nextX),
+    y: applyDeadzone(nextY),
+    yaw: applyDeadzone(nextYaw),
+    active: target.active,
+  }
+}
+
 export function useShowcaseMotionSensor() {
   const sampleRef = useRef<ShowcaseMotionSample>(IDLE_SAMPLE)
+  const filteredSampleRef = useRef<ShowcaseMotionSample>(IDLE_SAMPLE)
   const baselineRef = useRef<{ beta: number; gamma: number; alpha: number | null; angle: number } | null>(null)
   const motionBaselineRef = useRef<{ x: number; y: number; angle: number } | null>(null)
   const lastOrientationSampleTimeRef = useRef(0)
+  const lastSensorUpdateTimeRef = useRef(0)
   const [supported, setSupported] = useState(false)
   const [permissionState, setPermissionState] = useState<ShowcaseMotionPermissionState>('unsupported')
   const [enabled, setEnabled] = useState(false)
@@ -138,10 +183,28 @@ export function useShowcaseMotionSensor() {
   useEffect(() => {
     if (!supported || !enabled || permissionState !== 'granted' || typeof window === 'undefined') {
       sampleRef.current = IDLE_SAMPLE
+      filteredSampleRef.current = IDLE_SAMPLE
       baselineRef.current = null
       motionBaselineRef.current = null
       lastOrientationSampleTimeRef.current = 0
+      lastSensorUpdateTimeRef.current = 0
       return
+    }
+
+    const publishSample = (target: ShowcaseMotionSample) => {
+      const now = performance.now()
+      const lastUpdateTime = lastSensorUpdateTimeRef.current || now
+      const deltaSeconds = THREE.MathUtils.clamp((now - lastUpdateTime) / 1000, 1 / 120, 0.12)
+      const nextSample = resolveSmoothedSample(filteredSampleRef.current, target, deltaSeconds)
+      filteredSampleRef.current = nextSample
+      sampleRef.current = nextSample
+      lastSensorUpdateTimeRef.current = now
+    }
+
+    const resetSample = (target: ShowcaseMotionSample) => {
+      filteredSampleRef.current = target
+      sampleRef.current = target
+      lastSensorUpdateTimeRef.current = performance.now()
     }
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
@@ -159,18 +222,22 @@ export function useShowcaseMotionSensor() {
           alpha,
           angle,
         }
-        sampleRef.current = { x: 0, y: 0, yaw: 0, active: true }
+        resetSample({ x: 0, y: 0, yaw: 0, active: true })
         lastOrientationSampleTimeRef.current = performance.now()
         return
       }
 
       const { x, y } = resolveTiltAxes(event.beta - baseline.beta, event.gamma - baseline.gamma, angle)
       const yaw = resolveYawAxis(alpha, baseline.alpha)
-      sampleRef.current = { x, y, yaw, active: true }
+      publishSample({ x, y, yaw, active: true })
       lastOrientationSampleTimeRef.current = performance.now()
     }
 
     const handleMotion = (event: DeviceMotionEvent) => {
+      if (performance.now() - lastOrientationSampleTimeRef.current < ORIENTATION_SOURCE_TIMEOUT_MS) {
+        return
+      }
+
       const gravity = event.accelerationIncludingGravity
       if (!gravity || typeof gravity.x !== 'number' || typeof gravity.y !== 'number') {
         return
@@ -184,12 +251,12 @@ export function useShowcaseMotionSensor() {
           y: gravity.y,
           angle,
         }
-        sampleRef.current = { x: 0, y: 0, yaw: sampleRef.current.yaw, active: true }
+        resetSample({ x: 0, y: 0, yaw: sampleRef.current.yaw, active: true })
         return
       }
 
       const { x, y } = resolveMotionTiltAxes(gravity.x - baseline.x, gravity.y - baseline.y, angle)
-      sampleRef.current = { x, y, yaw: sampleRef.current.yaw, active: true }
+      publishSample({ x, y, yaw: sampleRef.current.yaw, active: true })
     }
 
     window.addEventListener('deviceorientation', handleOrientation)
@@ -232,18 +299,22 @@ export function useShowcaseMotionSensor() {
         setEnabled(granted)
         if (!granted) {
           sampleRef.current = IDLE_SAMPLE
+          filteredSampleRef.current = IDLE_SAMPLE
           baselineRef.current = null
           motionBaselineRef.current = null
           lastOrientationSampleTimeRef.current = 0
+          lastSensorUpdateTimeRef.current = 0
         }
         return
       } catch {
         setPermissionState('denied')
         setEnabled(false)
         sampleRef.current = IDLE_SAMPLE
+        filteredSampleRef.current = IDLE_SAMPLE
         baselineRef.current = null
         motionBaselineRef.current = null
         lastOrientationSampleTimeRef.current = 0
+        lastSensorUpdateTimeRef.current = 0
         return
       }
     }
@@ -255,9 +326,11 @@ export function useShowcaseMotionSensor() {
   const disable = useCallback(() => {
     setEnabled(false)
     sampleRef.current = IDLE_SAMPLE
+    filteredSampleRef.current = IDLE_SAMPLE
     baselineRef.current = null
     motionBaselineRef.current = null
     lastOrientationSampleTimeRef.current = 0
+    lastSensorUpdateTimeRef.current = 0
   }, [])
 
   const toggle = useCallback(async () => {
