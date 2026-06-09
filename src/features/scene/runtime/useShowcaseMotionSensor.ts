@@ -13,9 +13,12 @@ export interface ShowcaseMotionSample {
 const IDLE_SAMPLE: ShowcaseMotionSample = { x: 0, y: 0, yaw: 0, active: false }
 const YAW_RESPONSE_DEGREES = 42
 const ORIENTATION_SOURCE_TIMEOUT_MS = 320
-const SENSOR_SMOOTHING_RESPONSE = 8
-const SENSOR_MAX_STEP_PER_SECOND = 3.2
-const SENSOR_DEADZONE = 0.012
+const RELATIVE_ORIENTATION_PRIORITY_MS = 520
+const SENSOR_SMOOTHING_RESPONSE = 5.5
+const SENSOR_MAX_STEP_PER_SECOND = 2.35
+const SENSOR_DEADZONE = 0.02
+
+type OrientationSensorSource = 'relative' | 'absolute'
 
 function getScreenOrientationAngle() {
   if (typeof window === 'undefined') {
@@ -103,6 +106,10 @@ function resolveYawAxis(currentAlpha: number | null, baselineAlpha: number | nul
   return THREE.MathUtils.clamp(normalizeSignedAngleDelta(currentAlpha, baselineAlpha) / YAW_RESPONSE_DEGREES, -1, 1)
 }
 
+function getOrientationSensorSource(event: DeviceOrientationEvent): OrientationSensorSource {
+  return event.type === 'deviceorientationabsolute' ? 'absolute' : 'relative'
+}
+
 function applyDeadzone(value: number) {
   if (Math.abs(value) <= SENSOR_DEADZONE) {
     return 0
@@ -147,7 +154,9 @@ export function useShowcaseMotionSensor() {
   const filteredSampleRef = useRef<ShowcaseMotionSample>(IDLE_SAMPLE)
   const baselineRef = useRef<{ beta: number; gamma: number; alpha: number | null; angle: number } | null>(null)
   const motionBaselineRef = useRef<{ x: number; y: number; angle: number } | null>(null)
+  const orientationSourceRef = useRef<OrientationSensorSource | null>(null)
   const lastOrientationSampleTimeRef = useRef(0)
+  const lastRelativeOrientationSampleTimeRef = useRef(0)
   const lastSensorUpdateTimeRef = useRef(0)
   const [supported, setSupported] = useState(false)
   const [permissionState, setPermissionState] = useState<ShowcaseMotionPermissionState>('unsupported')
@@ -186,7 +195,9 @@ export function useShowcaseMotionSensor() {
       filteredSampleRef.current = IDLE_SAMPLE
       baselineRef.current = null
       motionBaselineRef.current = null
+      orientationSourceRef.current = null
       lastOrientationSampleTimeRef.current = 0
+      lastRelativeOrientationSampleTimeRef.current = 0
       lastSensorUpdateTimeRef.current = 0
       return
     }
@@ -212,6 +223,29 @@ export function useShowcaseMotionSensor() {
         return
       }
 
+      const now = performance.now()
+      const source = getOrientationSensorSource(event)
+      const activeSource = orientationSourceRef.current
+      if (
+        source === 'absolute' &&
+        lastRelativeOrientationSampleTimeRef.current > 0 &&
+        now - lastRelativeOrientationSampleTimeRef.current < RELATIVE_ORIENTATION_PRIORITY_MS
+      ) {
+        return
+      }
+      if (activeSource && activeSource !== source) {
+        if (source !== 'relative' && now - lastOrientationSampleTimeRef.current < ORIENTATION_SOURCE_TIMEOUT_MS) {
+          return
+        }
+        orientationSourceRef.current = source
+        baselineRef.current = null
+      } else if (!activeSource) {
+        orientationSourceRef.current = source
+      }
+      if (source === 'relative') {
+        lastRelativeOrientationSampleTimeRef.current = now
+      }
+
       const angle = getScreenOrientationAngle()
       const alpha = typeof event.alpha === 'number' ? event.alpha : null
       const baseline = baselineRef.current
@@ -223,14 +257,14 @@ export function useShowcaseMotionSensor() {
           angle,
         }
         resetSample({ x: 0, y: 0, yaw: 0, active: true })
-        lastOrientationSampleTimeRef.current = performance.now()
+        lastOrientationSampleTimeRef.current = now
         return
       }
 
       const { x, y } = resolveTiltAxes(event.beta - baseline.beta, event.gamma - baseline.gamma, angle)
       const yaw = resolveYawAxis(alpha, baseline.alpha)
       publishSample({ x, y, yaw, active: true })
-      lastOrientationSampleTimeRef.current = performance.now()
+      lastOrientationSampleTimeRef.current = now
     }
 
     const handleMotion = (event: DeviceMotionEvent) => {
@@ -302,7 +336,9 @@ export function useShowcaseMotionSensor() {
           filteredSampleRef.current = IDLE_SAMPLE
           baselineRef.current = null
           motionBaselineRef.current = null
+          orientationSourceRef.current = null
           lastOrientationSampleTimeRef.current = 0
+          lastRelativeOrientationSampleTimeRef.current = 0
           lastSensorUpdateTimeRef.current = 0
         }
         return
@@ -313,7 +349,9 @@ export function useShowcaseMotionSensor() {
         filteredSampleRef.current = IDLE_SAMPLE
         baselineRef.current = null
         motionBaselineRef.current = null
+        orientationSourceRef.current = null
         lastOrientationSampleTimeRef.current = 0
+        lastRelativeOrientationSampleTimeRef.current = 0
         lastSensorUpdateTimeRef.current = 0
         return
       }
@@ -329,7 +367,9 @@ export function useShowcaseMotionSensor() {
     filteredSampleRef.current = IDLE_SAMPLE
     baselineRef.current = null
     motionBaselineRef.current = null
+    orientationSourceRef.current = null
     lastOrientationSampleTimeRef.current = 0
+    lastRelativeOrientationSampleTimeRef.current = 0
     lastSensorUpdateTimeRef.current = 0
   }, [])
 

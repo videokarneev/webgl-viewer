@@ -162,6 +162,8 @@ function applyPortalDepthOffsetToObject({
   shiftZ,
   pointerX,
   pointerY,
+  rotationPointerX,
+  rotationPointerY,
   yaw,
 }: {
   object: THREE.Object3D
@@ -174,6 +176,8 @@ function applyPortalDepthOffsetToObject({
   shiftZ: number
   pointerX: number
   pointerY: number
+  rotationPointerX: number
+  rotationPointerY: number
   yaw: number
 }) {
   restoreRuntimeObjectTransform(object, objectState)
@@ -206,8 +210,8 @@ function applyPortalDepthOffsetToObject({
   object.getWorldQuaternion(attachedWorldQuaternion)
   const yawDepthRatio = Math.max(depthRatio, 0.7)
   attachedYawQuaternion.setFromAxisAngle(screenUpAxis, -yaw * ATTACHED_CONTENT_YAW * yawDepthRatio)
-  attachedTiltQuaternionX.setFromAxisAngle(screenUpAxis, -pointerX * ATTACHED_CONTENT_TILT_X * depthRatio)
-  attachedTiltQuaternionY.setFromAxisAngle(rightAxis, pointerY * ATTACHED_CONTENT_TILT_Y * depthRatio)
+  attachedTiltQuaternionX.setFromAxisAngle(screenUpAxis, -rotationPointerX * ATTACHED_CONTENT_TILT_X * depthRatio)
+  attachedTiltQuaternionY.setFromAxisAngle(rightAxis, rotationPointerY * ATTACHED_CONTENT_TILT_Y * depthRatio)
   attachedNextWorldQuaternion
     .copy(attachedYawQuaternion)
     .multiply(attachedTiltQuaternionX)
@@ -405,9 +409,18 @@ export function ShowcaseInteractionController({
       activeBox.interaction.enabled &&
       supportsMouseInput(activeBox.interaction.inputMode) &&
       !useGyro
-    const pointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
-    const pointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
-    const yaw = useGyro ? gyroSample.yaw : useMouse ? THREE.MathUtils.clamp(state.pointer.x * 0.72, -1, 1) : 0
+    const rawPointerX = useGyro ? gyroSample.x : useMouse ? THREE.MathUtils.clamp(state.pointer.x, -1, 1) : 0
+    const rawPointerY = useGyro ? gyroSample.y : useMouse ? THREE.MathUtils.clamp(state.pointer.y, -1, 1) : 0
+    const rawYaw = useGyro ? gyroSample.yaw : useMouse ? THREE.MathUtils.clamp(state.pointer.x * 0.72, -1, 1) : 0
+    const pointerX = useGyro
+      ? THREE.MathUtils.clamp(rawYaw * 0.9 + rawPointerX * 0.28, -1, 1)
+      : rawPointerX
+    const pointerY = useGyro ? THREE.MathUtils.clamp(rawPointerY * 0.34, -1, 1) : rawPointerY
+    const yaw = useGyro
+      ? THREE.MathUtils.clamp(rawYaw * 1.12 + rawPointerX * 0.16, -1, 1)
+      : rawYaw
+    const rotationPointerX = useGyro ? pointerX * 0.16 : pointerX
+    const rotationPointerY = useGyro ? pointerY * 0.42 : pointerY
 
     if (useLockedFrame) {
       desiredOffsetRef
@@ -484,6 +497,8 @@ export function ShowcaseInteractionController({
             shiftZ,
             pointerX,
             pointerY,
+            rotationPointerX,
+            rotationPointerY,
             yaw,
           })
         })
