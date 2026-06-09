@@ -134,6 +134,11 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
     const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
     return new THREE.Matrix4().compose(position, quaternion, scale)
   }, [objectState])
+  const dustAnchorMatrix = useMemo(() => {
+    const position = new THREE.Vector3(...(objectState?.position ?? [0, 0, 0]))
+    const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
+    return new THREE.Matrix4().compose(position, new THREE.Quaternion(), scale)
+  }, [objectState?.position, objectState?.scale])
   const worldToLocalMatrix = useMemo(() => localToWorldMatrix.clone().invert(), [localToWorldMatrix])
   const worldBounds = useMemo(() => {
     const corners = [
@@ -145,9 +150,9 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
       new THREE.Vector3(maxRadius, 1, -maxRadius),
       new THREE.Vector3(maxRadius, 1, maxRadius),
       new THREE.Vector3(-maxRadius, 1, maxRadius),
-    ].map((point) => point.applyMatrix4(localToWorldMatrix))
+    ].map((point) => point.applyMatrix4(dustAnchorMatrix))
     return new THREE.Box3().setFromPoints(corners)
-  }, [localToWorldMatrix, maxRadius])
+  }, [dustAnchorMatrix, maxRadius])
   const effectiveWorldDirection = useMemo(
     () =>
       runtimeObject
@@ -174,7 +179,7 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
     for (let index = 0; index < entry.dustCount; index += 1) {
       const offset = index * 3
       const point = samplePointInGodRaysVolume(entry)
-      point.applyMatrix4(localToWorldMatrix)
+      point.applyMatrix4(dustAnchorMatrix)
       positions[offset] = point.x
       positions[offset + 1] = point.y
       positions[offset + 2] = point.z
@@ -193,7 +198,7 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
     entry.dustCount,
     entry.dustSizeMax,
     entry.dustSizeMin,
-    localToWorldMatrix,
+    dustAnchorMatrix,
     entry.sideCount,
     entry.topRadius,
   ])

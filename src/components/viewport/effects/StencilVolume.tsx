@@ -86,6 +86,7 @@ uniform vec4 uEndQuaternion;
 uniform vec3 uCameraLocal;
 uniform vec3 uBoundsMin;
 uniform vec3 uBoundsMax;
+uniform mat4 uLocalToWorld;
 
 varying vec3 vLocalPosition;
 varying vec3 vWorldPosition;
@@ -211,8 +212,8 @@ float crossSectionMask(vec3 position, out float beamProgress) {
   return smoothstep(-feather, feather, sdf) * planeMask;
 }
 
-float sampledNoise(vec3 samplePoint, float jitter) {
-  vec3 noisePoint = samplePoint * uNoiseScale + vec3(
+float sampledNoise(vec3 worldSamplePoint, float jitter) {
+  vec3 noisePoint = worldSamplePoint * uNoiseScale + vec3(
     uAnimatedNoiseOffsetX,
     jitter * mix(0.0, 3.0, uGrain),
     uAnimatedNoiseOffsetZ
@@ -255,18 +256,19 @@ void main() {
 
     float progressFade = pow(max(1.0 - beamProgress, 0.0), max(uFalloff, 0.0001));
     float shapeFade = smoothstep(0.04, 0.68, mask);
-    float noise = sampledNoise(samplePoint, jitter);
+    vec3 worldSamplePoint = (uLocalToWorld * vec4(samplePoint, 1.0)).xyz;
+    float noise = sampledNoise(worldSamplePoint, jitter);
     if (uNoiseQuality > 0.5) {
       noise = mix(
         noise,
-        sampledNoise(samplePoint * 1.7 + vec3(3.1, 11.0, 5.7), jitter + 0.23),
+        sampledNoise(worldSamplePoint * 1.7 + vec3(3.1, 11.0, 5.7), jitter + 0.23),
         0.35
       );
     }
     if (uNoiseQuality > 1.5) {
       noise = mix(
         noise,
-        sampledNoise(samplePoint * 2.45 + vec3(8.3, 23.0, 1.9), jitter + 0.51),
+        sampledNoise(worldSamplePoint * 2.45 + vec3(8.3, 23.0, 1.9), jitter + 0.51),
         0.22
       );
     }
@@ -1049,6 +1051,7 @@ function StencilVolumeRayPrimitive({
       uCameraLocal: { value: new THREE.Vector3() },
       uBoundsMin: { value: primitive.bounds.min.clone() },
       uBoundsMax: { value: primitive.bounds.max.clone() },
+      uLocalToWorld: { value: new THREE.Matrix4() },
     }),
     [effectiveNoise, endQuaternion, entry, localMaskTexture, primitive, primitiveCount],
   )
@@ -1105,6 +1108,7 @@ function StencilVolumeRayPrimitive({
     cameraLocal.copy(state.camera.position)
     meshRef.current.worldToLocal(cameraLocal)
     materialRef.current.uniforms.uCameraLocal.value.copy(cameraLocal)
+    materialRef.current.uniforms.uLocalToWorld.value.copy(meshRef.current.matrixWorld)
 
     if (effectiveNoise.rayNoiseMotionMode === 'soft' && effectiveNoise.rayNoiseMotionSpeed > 0) {
       animatedNoiseOffsetRef.current.x += delta * effectiveNoise.rayNoiseMotionSpeed * 1.15
@@ -1209,6 +1213,11 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
     return new THREE.Matrix4().compose(position, quaternion, scale)
   }, [objectState])
+  const dustAnchorMatrix = useMemo(() => {
+    const position = new THREE.Vector3(...(objectState?.position ?? [0, 0, 0]))
+    const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
+    return new THREE.Matrix4().compose(position, new THREE.Quaternion(), scale)
+  }, [objectState?.position, objectState?.scale])
   const worldToLocalMatrix = useMemo(() => localToWorldMatrix.clone().invert(), [localToWorldMatrix])
   const dustWorldBounds = useMemo(() => {
     const corners = [
@@ -1220,9 +1229,9 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       new THREE.Vector3(volumeBounds.max.x, volumeBounds.min.y, volumeBounds.max.z),
       new THREE.Vector3(volumeBounds.max.x, volumeBounds.max.y, volumeBounds.max.z),
       new THREE.Vector3(volumeBounds.min.x, volumeBounds.max.y, volumeBounds.max.z),
-    ].map((point) => point.applyMatrix4(localToWorldMatrix))
+    ].map((point) => point.applyMatrix4(dustAnchorMatrix))
     return new THREE.Box3().setFromPoints(corners)
-  }, [localToWorldMatrix, volumeBounds])
+  }, [dustAnchorMatrix, volumeBounds])
   const endQuaternion = useMemo(() => {
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(entry.endRotationX, entry.endRotationY, 0, 'XYZ'))
   }, [entry.endRotationX, entry.endRotationY])
@@ -1275,7 +1284,7 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     [entry.dustCount, primitiveVolumes.length],
   )
   const dustGeometry = useMemo(
-    () => createStencilDustGeometry(entry, activeVolumeShapes, effectiveDustCount, localToWorldMatrix),
+    () => createStencilDustGeometry(entry, activeVolumeShapes, effectiveDustCount, dustAnchorMatrix),
     [
       entry.dustSizeMax,
       entry.dustSizeMin,
@@ -1288,7 +1297,7 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       entry.sourceWidth,
       activeVolumeShapes,
       effectiveDustCount,
-      localToWorldMatrix,
+      dustAnchorMatrix,
     ],
   )
   const dustUniforms = useMemo(

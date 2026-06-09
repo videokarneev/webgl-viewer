@@ -43,6 +43,7 @@ uniform vec3 uCameraLocal;
 uniform vec3 uSourceFace;
 uniform vec3 uBoundsMin;
 uniform vec3 uBoundsMax;
+uniform mat4 uLocalToWorld;
 
 varying vec3 vLocalPosition;
 varying vec3 vWorldPosition;
@@ -168,8 +169,8 @@ float topDomeFactor(vec3 position) {
   return 1.0 - smoothstep(hemisphereProfile - feather, hemisphereProfile + feather * 0.3, localY);
 }
 
-float sampledNoise(vec3 samplePoint, float jitter) {
-  vec3 noisePoint = samplePoint * uNoiseScale + vec3(
+float sampledNoise(vec3 worldSamplePoint, float jitter) {
+  vec3 noisePoint = worldSamplePoint * uNoiseScale + vec3(
     uAnimatedNoiseOffsetX,
     0.0,
     uAnimatedNoiseOffsetZ + jitter * mix(0.0, 3.0, uGrain)
@@ -212,7 +213,8 @@ void main() {
     float depthFade = pow(max(1.0 - source, 0.0), max(uFalloff, 0.0001));
     float shapeFade = edgeFactor(samplePoint, max(uEdgeFade, 0.001));
     float domeFade = topDomeFactor(samplePoint);
-    float noise = mix(1.0, sampledNoise(samplePoint, jitter), uNoiseAmount);
+    vec3 worldSamplePoint = (uLocalToWorld * vec4(samplePoint, 1.0)).xyz;
+    float noise = mix(1.0, sampledNoise(worldSamplePoint, jitter), uNoiseAmount);
     float density = depthFade * shapeFade * domeFade * noise;
     float sampleAlpha = clamp(density * distanceStep * 1.6, 0.0, 1.0);
     accumulation += sampleAlpha * transmittance;
@@ -279,6 +281,7 @@ export function GodRaysVolume({ entry, disableRaycast = false }: { entry: GodRay
       uSourceFace: { value: sourceFace.clone() },
       uBoundsMin: { value: new THREE.Vector3(-maxRadius, 0, -maxRadius) },
       uBoundsMax: { value: new THREE.Vector3(maxRadius, 1, maxRadius) },
+      uLocalToWorld: { value: new THREE.Matrix4() },
     }),
     [
       entry.bottomRadius,
@@ -361,6 +364,7 @@ export function GodRaysVolume({ entry, disableRaycast = false }: { entry: GodRay
     cameraLocal.copy(camera.position)
     mesh.worldToLocal(cameraLocal)
     material.uniforms.uCameraLocal.value.copy(cameraLocal)
+    material.uniforms.uLocalToWorld.value.copy(mesh.matrixWorld)
 
     if (effectiveNoise.rayNoiseMotionMode === 'soft' && effectiveNoise.rayNoiseMotionSpeed > 0) {
       animatedNoiseOffsetRef.current.x += delta * effectiveNoise.rayNoiseMotionSpeed * 1.15
