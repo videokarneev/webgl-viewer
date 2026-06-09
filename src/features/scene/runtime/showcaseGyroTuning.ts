@@ -8,28 +8,39 @@ export interface ShowcaseGyroTuning {
 
 export const DEFAULT_SHOWCASE_GYRO_TUNING: ShowcaseGyroTuning = {
   side: 1,
-  tiltX: 1,
+  tiltX: -1,
   tiltY: 1,
   travel: 1,
   smooth: 1,
 }
 
-const STORAGE_KEY = 'webgl-viewer:showcase-gyro-tuning'
+const TUNING_LIMITS: Record<keyof ShowcaseGyroTuning, { min: number; max: number }> = {
+  side: { min: -2, max: 2 },
+  tiltX: { min: -2, max: 2 },
+  tiltY: { min: -2, max: 2 },
+  travel: { min: 0, max: 2.5 },
+  smooth: { min: 0.4, max: 2.5 },
+}
+
+const STORAGE_KEY = 'webgl-viewer:showcase-gyro-tuning:v2'
 const TUNING_EVENT = 'webgl-viewer:showcase-gyro-tuning-change'
 
 let currentTuning: ShowcaseGyroTuning | null = null
 
-function clampTuningValue(value: unknown, fallback: number) {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.min(Math.max(value, 0), 2.5) : fallback
+function clampTuningValue(key: keyof ShowcaseGyroTuning, value: unknown, fallback: number) {
+  const limits = TUNING_LIMITS[key]
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(Math.max(value, limits.min), limits.max)
+    : fallback
 }
 
 function normalizeTuning(value: Partial<ShowcaseGyroTuning> | null | undefined): ShowcaseGyroTuning {
   return {
-    side: clampTuningValue(value?.side, DEFAULT_SHOWCASE_GYRO_TUNING.side),
-    tiltX: clampTuningValue(value?.tiltX, DEFAULT_SHOWCASE_GYRO_TUNING.tiltX),
-    tiltY: clampTuningValue(value?.tiltY, DEFAULT_SHOWCASE_GYRO_TUNING.tiltY),
-    travel: clampTuningValue(value?.travel, DEFAULT_SHOWCASE_GYRO_TUNING.travel),
-    smooth: clampTuningValue(value?.smooth, DEFAULT_SHOWCASE_GYRO_TUNING.smooth),
+    side: clampTuningValue('side', value?.side, DEFAULT_SHOWCASE_GYRO_TUNING.side),
+    tiltX: clampTuningValue('tiltX', value?.tiltX, DEFAULT_SHOWCASE_GYRO_TUNING.tiltX),
+    tiltY: clampTuningValue('tiltY', value?.tiltY, DEFAULT_SHOWCASE_GYRO_TUNING.tiltY),
+    travel: clampTuningValue('travel', value?.travel, DEFAULT_SHOWCASE_GYRO_TUNING.travel),
+    smooth: clampTuningValue('smooth', value?.smooth, DEFAULT_SHOWCASE_GYRO_TUNING.smooth),
   }
 }
 

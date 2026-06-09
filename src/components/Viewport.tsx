@@ -2092,9 +2092,9 @@ const GYRO_TUNING_SLIDERS: Array<{
   max: number
   step: number
 }> = [
-  { key: 'side', label: 'Side', min: 0, max: 2, step: 0.05 },
-  { key: 'tiltX', label: 'Tilt X', min: 0, max: 2, step: 0.05 },
-  { key: 'tiltY', label: 'Tilt Y', min: 0, max: 2, step: 0.05 },
+  { key: 'side', label: 'Side', min: -2, max: 2, step: 0.05 },
+  { key: 'tiltX', label: 'Tilt X', min: -2, max: 2, step: 0.05 },
+  { key: 'tiltY', label: 'Tilt Y', min: -2, max: 2, step: 0.05 },
   { key: 'travel', label: 'Travel', min: 0, max: 2, step: 0.05 },
   { key: 'smooth', label: 'Smooth', min: 0.4, max: 2.5, step: 0.05 },
 ]
