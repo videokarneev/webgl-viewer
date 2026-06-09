@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import { useEditorStore, type ObjectTransformState } from '../../../store/editorStore'
+import { useEditorStore } from '../../../store/editorStore'
 
 const DRAG_ROTATION_X = 0.008
 const DRAG_ROTATION_Y = 0.007
@@ -24,9 +24,9 @@ function getVisibleLoadedModelEntries() {
     .map((model) => {
       const objectState = store.objects[model.rootNodeId] ?? null
       const object = store.runtime.objectById[model.rootNodeId] ?? null
-      return object && objectState?.visible ? { object, objectState } : null
+      return object && objectState?.visible ? object : null
     })
-    .filter((entry): entry is { object: THREE.Object3D; objectState: ObjectTransformState } => Boolean(entry))
+    .filter((entry): entry is THREE.Object3D => Boolean(entry))
 }
 
 function stopPointerEvent(event: PointerEvent) {
@@ -44,8 +44,11 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
   const upAxis = useMemo(() => new THREE.Vector3(), [])
   const yawQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const pitchQuaternion = useMemo(() => new THREE.Quaternion(), [])
-  const baseQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const manualQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const currentWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const nextWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const parentWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const parentInverseQuaternion = useMemo(() => new THREE.Quaternion(), [])
 
   useEffect(() => {
     if (!enabled) {
@@ -125,12 +128,19 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
     pitchQuaternion.setFromAxisAngle(rightAxis, pitchRef.current)
     manualQuaternion.copy(yawQuaternion).multiply(pitchQuaternion)
 
-    getVisibleLoadedModelEntries().forEach(({ object, objectState }) => {
-      object.position.fromArray(objectState.position)
-      object.scale.fromArray(objectState.scale)
-      baseQuaternion.setFromEuler(new THREE.Euler(...objectState.rotation, 'XYZ'))
-      object.quaternion.copy(manualQuaternion).multiply(baseQuaternion)
-      object.visible = objectState.visible
+    getVisibleLoadedModelEntries().forEach((object) => {
+      object.updateWorldMatrix(true, true)
+      object.getWorldQuaternion(currentWorldQuaternion)
+      nextWorldQuaternion.copy(manualQuaternion).multiply(currentWorldQuaternion)
+
+      if (object.parent) {
+        object.parent.getWorldQuaternion(parentWorldQuaternion)
+        parentInverseQuaternion.copy(parentWorldQuaternion).invert()
+        object.quaternion.copy(parentInverseQuaternion.multiply(nextWorldQuaternion))
+      } else {
+        object.quaternion.copy(nextWorldQuaternion)
+      }
+
       object.updateMatrixWorld(true)
     })
   })
