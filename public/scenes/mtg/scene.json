@@ -1,0 +1,505 @@
+{
+  "version": 17,
+  "scene": {
+    "background": {
+      "mode": "none",
+      "color": "#808080",
+      "rotation": 0
+    },
+    "environment": {
+      "enabled": true,
+      "kind": "hdri",
+      "assetLabel": "Studio",
+      "assetUrl": "assets/environment/scene-environment-studio.exr",
+      "intensity": 1.5,
+      "rotation": 0,
+      "backgroundMode": "color",
+      "backgroundVisible": true,
+      "backgroundAssetLabel": null,
+      "backgroundAssetUrl": null,
+      "backgroundIntensity": 1,
+      "backgroundBlur": 0
+    }
+  },
+  "camera": {
+    "mode": "orbit",
+    "position": [
+      0.9356228304469715,
+      0.10967535805351569,
+      1.876005233678887
+    ],
+    "target": [
+      0.08988229532732846,
+      0.5360380320783064,
+      -0.2962469589413317
+    ],
+    "focalLength": 20,
+    "frameAspectPreset": "auto",
+    "exposure": 1
+  },
+  "responsiveFrame": {
+    "landscape": {
+      "frameAspectPreset": "16:9",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "portrait": {
+      "frameAspectPreset": "9:16",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "square": {
+      "frameAspectPreset": "1:1",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    }
+  },
+  "viewer": {
+    "postEffectsEnabled": false,
+    "bloomIntensity": 0.95,
+    "bloomRadius": 0.32,
+    "bloomThreshold": 0.18,
+    "toneMappingWhitePoint": 4,
+    "toneMappingAdaptation": 1,
+    "dofEnabled": false,
+    "dofFocusDistance": 5,
+    "dofAperture": 2,
+    "dofManualBlur": 1.2
+  },
+  "audio": {
+    "isAdded": false,
+    "enabled": false,
+    "assetLabel": null,
+    "assetUrl": null,
+    "volume": 0.16,
+    "loop": true
+  },
+  "lights": {
+    "ambient": {
+      "exists": true,
+      "visible": true,
+      "color": "#ffffff",
+      "intensity": 0.5
+    },
+    "rig": {
+      "hemisphere": 0.9,
+      "key": 1.8,
+      "fill": 0.85,
+      "rim": 0.65
+    },
+    "extra": []
+  },
+  "phoneScreenBoxes": [],
+  "godRaysGlobals": {
+    "noise": {
+      "amount": 0.6,
+      "scale": 5,
+      "grain": 0.33,
+      "motionMode": "soft",
+      "motionSpeed": 0.73,
+      "quality": "low"
+    },
+    "direction": {
+      "vector": [
+        0,
+        1,
+        0
+      ]
+    }
+  },
+  "godRaysBoxes": [
+    {
+      "id": "effect:god-rays:1:1781049108968",
+      "label": "God Rays",
+      "visible": true,
+      "sideCount": 12,
+      "bottomRadius": 0.22,
+      "topRadius": 0.45,
+      "linkTopRadius": false,
+      "helperVisible": true,
+      "topDome": 10,
+      "transform": {
+        "position": [
+          0.01791574933212825,
+          6.708919288176288,
+          0
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          0
+        ],
+        "scale": [
+          1.5,
+          7.71,
+          1.5
+        ]
+      },
+      "sourceFace": "-y",
+      "rays": {
+        "enabled": true,
+        "color": "#d1e0ff",
+        "intensity": 1.2,
+        "falloff": 0.96,
+        "edgeFade": 0.53,
+        "useGlobalSettings": true,
+        "noiseAmount": 0.6,
+        "noiseScale": 5,
+        "grain": 0.18,
+        "noiseMotionMode": "off",
+        "noiseMotionSpeed": 1.6,
+        "quality": "low"
+      },
+      "dust": {
+        "enabled": true,
+        "count": 288,
+        "sizeMin": 0.005,
+        "sizeMax": 0.035,
+        "speed": 0.0042575232,
+        "colorLinked": true,
+        "color": "#d1e0ff",
+        "strength": 0.72,
+        "directionMode": "global",
+        "directionLocal": [
+          0,
+          1,
+          0
+        ],
+        "drift": 0.07,
+        "edgeFade": 0.16
+      }
+    }
+  ],
+  "stencilVolumes": [],
+  "model": {
+    "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+    "assetLabel": "MTG.glb",
+    "assetUrl": "assets/model/scene-model-mtg.glb",
+    "visible": true,
+    "transform": {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "objects": [
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "parentId": null,
+      "type": "group",
+      "label": "Loaded Model",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:0",
+      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "type": "mesh",
+      "label": "3",
+      "visible": true,
+      "transform": {
+        "position": [
+          0.006826569,
+          0.675148845,
+          -0.02823794
+        ],
+        "rotation": [
+          1.5707963800073816,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:1",
+      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "type": "mesh",
+      "label": "1",
+      "visible": true,
+      "transform": {
+        "position": [
+          0.006826569,
+          0.675148845,
+          -0.0270746667
+        ],
+        "rotation": [
+          1.5707963800073816,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:2",
+      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "type": "mesh",
+      "label": "2",
+      "visible": true,
+      "transform": {
+        "position": [
+          0.006826569,
+          0.675148845,
+          -0.0294011142
+        ],
+        "rotation": [
+          1.5707963800073816,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:3",
+      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "type": "mesh",
+      "label": "Face",
+      "visible": true,
+      "transform": {
+        "position": [
+          0.007442017,
+          0.8223617,
+          -0.0270746611
+        ],
+        "rotation": [
+          1.5707963800073816,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:effect:god-rays:1:1781049108968",
+      "parentId": null,
+      "type": "effect",
+      "label": "God Rays",
+      "visible": true,
+      "transform": {
+        "position": [
+          0.01791574933212825,
+          6.708919288176288,
+          0
+        ],
+        "rotation": [
+          -3.141592653589793,
+          0,
+          0
+        ],
+        "scale": [
+          1.5,
+          7.71,
+          1.5
+        ]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:0/material:0",
+      "name": "Black",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#000000",
+      "emissive": "#000000",
+      "metalness": 0,
+      "roughness": 0,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {},
+      "effects": {
+        "flipbook": null
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:1/material:0",
+      "name": "1",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0,
+      "roughness": 0,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "map": {
+          "source": "original",
+          "label": "MTG.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:2/material:0",
+      "name": "2",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0,
+      "roughness": 0,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "map": {
+          "source": "original",
+          "label": "MTG2.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null
+      }
+    },
+    {
+      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:3/material:0",
+      "name": "Face",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0,
+      "roughness": 0,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "map": {
+          "source": "flipbook",
+          "label": "MTG_done.jpg",
+          "assetUrl": "assets/atlas/4-face-map-mtg-done.jpg"
+        }
+      },
+      "effects": {
+        "flipbook": {
+          "enabled": true,
+          "atlasAssetLabel": "MTG_done.jpg",
+          "atlasAssetUrl": "assets/atlas/4-face-map-mtg-done.jpg",
+          "targetSlot": "baseColor",
+          "frameOrder": "row",
+          "gridX": 7,
+          "gridY": 8,
+          "fps": 6,
+          "frameCount": 56,
+          "currentFrame": 15,
+          "opacity": 0.85,
+          "frameBlend": true,
+          "loop": true,
+          "uvChannel": "auto",
+          "wrapMode": "repeat",
+          "offsetX": 0,
+          "offsetY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "swapXY": false
+        }
+      }
+    }
+  ],
+  "animations": [
+    {
+      "type": "float",
+      "targetObjectId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "enabled": true,
+      "loop": true,
+      "amplitude": 0.04,
+      "speed": 0.08,
+      "tilt": 1,
+      "startProgress": 0,
+      "progress": 70.96079993343399
+    },
+    {
+      "type": "focus",
+      "targetObjectId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "enabled": true,
+      "frontFace": "+z",
+      "distance": 1.25,
+      "duration": 1
+    }
+  ]
+}
