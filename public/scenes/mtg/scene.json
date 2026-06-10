@@ -24,14 +24,14 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.9356228304469715,
-      0.10967535805351569,
-      1.876005233678887
+      0.69267114282446,
+      1.1895322753683453,
+      0.65760663382446
     ],
     "target": [
-      0.08988229532732846,
-      0.5360380320783064,
-      -0.2962469589413317
+      0.0068265690000000046,
+      0.675148845,
+      -0.02823794
     ],
     "focalLength": 20,
     "frameAspectPreset": "auto",
@@ -121,9 +121,9 @@
     "noise": {
       "amount": 0.6,
       "scale": 5,
-      "grain": 0.33,
-      "motionMode": "soft",
-      "motionSpeed": 0.73,
+      "grain": 0.18,
+      "motionMode": "off",
+      "motionSpeed": 1.6,
       "quality": "low"
     },
     "direction": {
@@ -134,72 +134,10 @@
       ]
     }
   },
-  "godRaysBoxes": [
-    {
-      "id": "effect:god-rays:1:1781049108968",
-      "label": "God Rays",
-      "visible": true,
-      "sideCount": 12,
-      "bottomRadius": 0.22,
-      "topRadius": 0.45,
-      "linkTopRadius": false,
-      "helperVisible": true,
-      "topDome": 10,
-      "transform": {
-        "position": [
-          0.01791574933212825,
-          6.708919288176288,
-          0
-        ],
-        "rotation": [
-          -3.141592653589793,
-          0,
-          0
-        ],
-        "scale": [
-          1.5,
-          7.71,
-          1.5
-        ]
-      },
-      "sourceFace": "-y",
-      "rays": {
-        "enabled": true,
-        "color": "#d1e0ff",
-        "intensity": 1.2,
-        "falloff": 0.96,
-        "edgeFade": 0.53,
-        "useGlobalSettings": true,
-        "noiseAmount": 0.6,
-        "noiseScale": 5,
-        "grain": 0.18,
-        "noiseMotionMode": "off",
-        "noiseMotionSpeed": 1.6,
-        "quality": "low"
-      },
-      "dust": {
-        "enabled": true,
-        "count": 288,
-        "sizeMin": 0.005,
-        "sizeMax": 0.035,
-        "speed": 0.0042575232,
-        "colorLinked": true,
-        "color": "#d1e0ff",
-        "strength": 0.72,
-        "directionMode": "global",
-        "directionLocal": [
-          0,
-          1,
-          0
-        ],
-        "drift": 0.07,
-        "edgeFade": 0.16
-      }
-    }
-  ],
+  "godRaysBoxes": [],
   "stencilVolumes": [],
   "model": {
-    "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+    "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
     "assetLabel": "MTG.glb",
     "assetUrl": "assets/model/scene-model-mtg.glb",
     "visible": true,
@@ -223,7 +161,7 @@
   },
   "objects": [
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -247,8 +185,8 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:0",
-      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:0",
+      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "type": "mesh",
       "label": "3",
       "visible": true,
@@ -271,8 +209,8 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:1",
-      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:1",
+      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "type": "mesh",
       "label": "1",
       "visible": true,
@@ -295,8 +233,8 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:2",
-      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:2",
+      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "type": "mesh",
       "label": "2",
       "visible": true,
@@ -319,8 +257,8 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:3",
-      "parentId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:3",
+      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "type": "mesh",
       "label": "Face",
       "visible": true,
@@ -341,35 +279,11 @@
           1
         ]
       }
-    },
-    {
-      "id": "root:effect:god-rays:1:1781049108968",
-      "parentId": null,
-      "type": "effect",
-      "label": "God Rays",
-      "visible": true,
-      "transform": {
-        "position": [
-          0.01791574933212825,
-          6.708919288176288,
-          0
-        ],
-        "rotation": [
-          -3.141592653589793,
-          0,
-          0
-        ],
-        "scale": [
-          1.5,
-          7.71,
-          1.5
-        ]
-      }
     }
   ],
   "materials": [
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:0/material:0",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:0/material:0",
       "name": "Black",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -387,7 +301,7 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:1/material:0",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:1/material:0",
       "name": "1",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -411,7 +325,7 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:2/material:0",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:2/material:0",
       "name": "2",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -435,7 +349,7 @@
       }
     },
     {
-      "id": "root:98768362-7794-43d6-80cd-9334dbb8b7c3/node:3/material:0",
+      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:3/material:0",
       "name": "Face",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -447,55 +361,27 @@
       "emissiveIntensity": 1,
       "clearcoat": null,
       "environmentOverride": null,
-      "textureSlots": {
-        "map": {
-          "source": "flipbook",
-          "label": "MTG_done.jpg",
-          "assetUrl": "assets/atlas/4-face-map-mtg-done.jpg"
-        }
-      },
+      "textureSlots": {},
       "effects": {
-        "flipbook": {
-          "enabled": true,
-          "atlasAssetLabel": "MTG_done.jpg",
-          "atlasAssetUrl": "assets/atlas/4-face-map-mtg-done.jpg",
-          "targetSlot": "baseColor",
-          "frameOrder": "row",
-          "gridX": 7,
-          "gridY": 8,
-          "fps": 6,
-          "frameCount": 56,
-          "currentFrame": 15,
-          "opacity": 0.85,
-          "frameBlend": true,
-          "loop": true,
-          "uvChannel": "auto",
-          "wrapMode": "repeat",
-          "offsetX": 0,
-          "offsetY": 0,
-          "scaleX": 1,
-          "scaleY": 1,
-          "rotation": 0,
-          "swapXY": false
-        }
+        "flipbook": null
       }
     }
   ],
   "animations": [
     {
       "type": "float",
-      "targetObjectId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "targetObjectId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "enabled": true,
       "loop": true,
       "amplitude": 0.04,
       "speed": 0.08,
       "tilt": 1,
       "startProgress": 0,
-      "progress": 93.49679989147283
+      "progress": 0
     },
     {
       "type": "focus",
-      "targetObjectId": "root:98768362-7794-43d6-80cd-9334dbb8b7c3",
+      "targetObjectId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
       "enabled": true,
       "frontFace": "+z",
       "distance": 1.25,
