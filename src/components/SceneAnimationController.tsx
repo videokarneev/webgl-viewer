@@ -13,9 +13,9 @@ import {
 
 const FULL_TURN_RADIANS = Math.PI * 2
 const FOCUS_RETURN_POINTER_SUPPRESSION_PADDING_MS = 180
-const FOCUS_FRAME_EDGE_MARGIN_RATIO = 0.045
-const FOCUS_FRAME_MIN_EDGE_MARGIN_PX = 14
-const FOCUS_FRAME_MAX_EDGE_MARGIN_PX = 56
+const FOCUS_FRAME_EDGE_MARGIN_RATIO = 0.09
+const FOCUS_FRAME_MIN_EDGE_MARGIN_PX = 24
+const FOCUS_FRAME_MAX_EDGE_MARGIN_PX = 96
 const FOCUS_FRAME_DISTANCE_GROWTH = 1.35
 const FOCUS_FRAME_DISTANCE_SEARCH_STEPS = 20
 
@@ -173,7 +173,7 @@ function getFocusFrameInsets(viewportWidth: number): FocusFrameInsets {
   }
 
   const params = new URL(window.location.href).searchParams
-  const autoTopInset = viewportWidth <= 960 ? 52 : 64
+  const autoTopInset = viewportWidth <= 960 ? 72 : 96
   const responsiveTopKey = viewportWidth <= 960 ? 'frameInsetTopMobile' : 'frameInsetTopDesktop'
   const responsiveTop = params.has(responsiveTopKey) ? getUrlFrameInsetParam(params, responsiveTopKey) : null
   const transparentPlayerFallbackTop = params.get('transparent') === '1' ? autoTopInset : 0
@@ -233,6 +233,10 @@ export function SceneAnimationController() {
   const tempFloatQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const tempFloatTiltX = useMemo(() => new THREE.Quaternion(), [])
   const tempFloatTiltZ = useMemo(() => new THREE.Quaternion(), [])
+  const tempFloatLocalPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempFloatLocalQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempFloatWorldPosition = useMemo(() => new THREE.Vector3(), [])
+  const tempFloatWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const tempFocusForward = useMemo(() => new THREE.Vector3(), [])
   const tempFocusTargetPosition = useMemo(() => new THREE.Vector3(), [])
   const tempFocusMatrix = useMemo(() => new THREE.Matrix4(), [])
@@ -373,17 +377,55 @@ export function SceneAnimationController() {
     }
   }
 
-  const applyFloatPhase = (session: FloatSession, animation: FloatAnimationState) => {
+  const resolveFloatLocalPose = (
+    session: FloatSession,
+    animation: FloatAnimationState,
+    position: THREE.Vector3,
+    quaternion: THREE.Quaternion,
+  ) => {
     const bob = Math.sin(session.phase) * animation.amplitude
     const tiltRadians = THREE.MathUtils.degToRad(animation.tilt)
     const tiltX = Math.sin(session.phase + Math.PI * 0.5) * tiltRadians
     const tiltZ = Math.sin(session.phase + Math.PI * 0.18) * tiltRadians * 0.65
 
-    session.object.position.copy(session.baseLocalPosition)
-    session.object.position.y += bob
+    position.copy(session.baseLocalPosition)
+    position.y += bob
     tempFloatTiltX.setFromAxisAngle(tempAxis.set(1, 0, 0), tiltX)
     tempFloatTiltZ.setFromAxisAngle(tempAxis.set(0, 0, 1), tiltZ)
-    tempFloatQuaternion.copy(session.baseLocalQuaternion).multiply(tempFloatTiltX).multiply(tempFloatTiltZ)
+    quaternion.copy(session.baseLocalQuaternion).multiply(tempFloatTiltX).multiply(tempFloatTiltZ)
+  }
+
+  const getFloatWorldPose = (
+    session: FloatSession,
+    animation: FloatAnimationState,
+    worldPosition: THREE.Vector3,
+    worldQuaternion: THREE.Quaternion,
+  ) => {
+    resolveFloatLocalPose(session, animation, tempFloatLocalPosition, tempFloatLocalQuaternion)
+
+    const parent = session.object.parent
+    if (parent) {
+      parent.updateWorldMatrix(true, true)
+      parent.getWorldQuaternion(tempParentQuaternion)
+      parent.getWorldPosition(tempParentPosition)
+      parent.getWorldScale(tempParentScale)
+      worldPosition
+        .copy(tempFloatLocalPosition)
+        .multiply(tempParentScale)
+        .applyQuaternion(tempParentQuaternion)
+        .add(tempParentPosition)
+      worldQuaternion.copy(tempParentQuaternion).multiply(tempFloatLocalQuaternion)
+      return
+    }
+
+    worldPosition.copy(tempFloatLocalPosition)
+    worldQuaternion.copy(tempFloatLocalQuaternion)
+  }
+
+  const applyFloatPhase = (session: FloatSession, animation: FloatAnimationState) => {
+    resolveFloatLocalPose(session, animation, tempFloatLocalPosition, tempFloatQuaternion)
+
+    session.object.position.copy(tempFloatLocalPosition)
     session.object.quaternion.copy(tempFloatQuaternion)
     session.object.scale.copy(session.baseLocalScale)
     session.object.updateMatrixWorld(true)
@@ -570,6 +612,17 @@ export function SceneAnimationController() {
     }
   }, [])
 
+  const isFocusControllingObject = (store: ReturnType<typeof useEditorStore.getState>, targetObjectId: string | null) => {
+    const focus = store.focusAnimation
+    return Boolean(
+      targetObjectId &&
+      focus.isAdded &&
+      focus.enabled &&
+      focus.targetObjectId === targetObjectId &&
+      (focus.focused || focusSessionRef.current?.targetObjectId === targetObjectId),
+    )
+  }
+
   useFrame((_, delta) => {
     const store = useEditorStore.getState()
     const animation = store.rotateAnimation
@@ -665,20 +718,29 @@ export function SceneAnimationController() {
       floatSessionRef.current = null
     }
 
+    const focusControlsFloatTarget = isFocusControllingObject(store, animation.targetObjectId)
+
     if (!animation.play) {
       if (!floatSessionRef.current) {
+        if (focusControlsFloatTarget) {
+          return
+        }
         captureFloatSession(targetObject, animation)
       }
 
       if (floatSessionRef.current) {
         floatSessionRef.current.phase = progressToPhase(animation.progress)
-        applyFloatPhase(floatSessionRef.current, animation)
+        if (!focusControlsFloatTarget) {
+          applyFloatPhase(floatSessionRef.current, animation)
+        }
       }
       return
     }
 
     if (floatSessionRef.current?.completed) {
-      restoreFloatSessionPose(floatSessionRef.current)
+      if (!focusControlsFloatTarget) {
+        restoreFloatSessionPose(floatSessionRef.current)
+      }
       floatSessionRef.current = null
     }
 
@@ -694,14 +756,18 @@ export function SceneAnimationController() {
     const phaseStep = Math.max(animation.speed, 0) * FULL_TURN_RADIANS * delta
     if (animation.loop) {
       session.phase = (session.phase + phaseStep) % FULL_TURN_RADIANS
-      applyFloatPhase(session, animation)
+      if (!focusControlsFloatTarget) {
+        applyFloatPhase(session, animation)
+      }
       useEditorStore.getState().updateFloatAnimation({ progress: phaseToProgress(session.phase) })
       return
     }
 
     const nextPhase = session.phase + phaseStep
     if (nextPhase >= FULL_TURN_RADIANS) {
-      restoreFloatSessionPose(session)
+      if (!focusControlsFloatTarget) {
+        restoreFloatSessionPose(session)
+      }
       session.phase = FULL_TURN_RADIANS
       session.completed = true
       useEditorStore.getState().updateFloatAnimation({ play: false, progress: 100 })
@@ -709,7 +775,9 @@ export function SceneAnimationController() {
     }
 
     session.phase = nextPhase
-    applyFloatPhase(session, animation)
+    if (!focusControlsFloatTarget) {
+      applyFloatPhase(session, animation)
+    }
     useEditorStore.getState().updateFloatAnimation({ progress: phaseToProgress(session.phase) })
   })
 
@@ -852,15 +920,23 @@ export function SceneAnimationController() {
       store.floatAnimation.isAdded &&
       store.floatAnimation.enabled &&
       store.floatAnimation.targetObjectId === animation.targetObjectId
+    if (shouldReturnToLiveFloatPose && floatSessionRef.current) {
+      getFloatWorldPose(
+        floatSessionRef.current,
+        store.floatAnimation,
+        tempFloatWorldPosition,
+        tempFloatWorldQuaternion,
+      )
+    }
     const targetWorldPosition = desiredFocused
       ? getWorldPositionForFocusedCenter(targetObject, tempFocusParallaxPosition, tempFocusLookQuaternion, session.localCenter)
       : shouldReturnToLiveFloatPose
-        ? tempWorldPosition
+        ? tempFloatWorldPosition
         : session.restWorldPosition
     const targetWorldQuaternion = desiredFocused
       ? tempFocusLookQuaternion
       : shouldReturnToLiveFloatPose
-        ? tempWorldQuaternion
+        ? tempFloatWorldQuaternion
         : session.restWorldQuaternion
     const progress = easeInOutCubic(session.elapsed / session.duration)
     tempFocusCurrentPosition.copy(session.startWorldPosition).lerp(targetWorldPosition, progress)
