@@ -13,6 +13,31 @@ import {
 
 const FULL_TURN_RADIANS = Math.PI * 2
 const FOCUS_RETURN_POINTER_SUPPRESSION_PADDING_MS = 180
+const FOCUS_FRAME_EDGE_MARGIN_RATIO = 0.045
+const FOCUS_FRAME_MIN_EDGE_MARGIN_PX = 14
+const FOCUS_FRAME_MAX_EDGE_MARGIN_PX = 56
+const FOCUS_FRAME_DISTANCE_GROWTH = 1.35
+const FOCUS_FRAME_DISTANCE_SEARCH_STEPS = 20
+
+type FocusFrameInsets = {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+
+type FocusNdcRect = {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+type FocusFramingResult = {
+  distance: number
+  offsetX: number
+  offsetY: number
+}
 
 type RotateSession = {
   targetObjectId: string
@@ -48,6 +73,8 @@ type FocusSession = {
   restWorldPosition: THREE.Vector3
   restWorldQuaternion: THREE.Quaternion
   localCenter: THREE.Vector3
+  localBoundsMin: THREE.Vector3
+  localBoundsMax: THREE.Vector3
   startWorldPosition: THREE.Vector3
   startWorldQuaternion: THREE.Quaternion
   currentWorldPosition: THREE.Vector3
@@ -111,6 +138,81 @@ function phaseToProgress(phase: number) {
   return (THREE.MathUtils.euclideanModulo(phase, FULL_TURN_RADIANS) / FULL_TURN_RADIANS) * 100
 }
 
+function getUrlFrameInsetParam(params: URLSearchParams, key: string) {
+  const value = params.get(key)
+  if (!value) {
+    return 0
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+}
+
+function getUrlFrameInsetParamWithAuto(
+  params: URLSearchParams,
+  key: string,
+  autoValue: number,
+  defaultValue = 0,
+) {
+  const value = params.get(key)
+  if (!value) {
+    return defaultValue
+  }
+
+  if (value.toLowerCase() === 'auto') {
+    return autoValue
+  }
+
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0
+}
+
+function getFocusFrameInsets(viewportWidth: number): FocusFrameInsets {
+  if (typeof window === 'undefined') {
+    return { top: 0, right: 0, bottom: 0, left: 0 }
+  }
+
+  const params = new URL(window.location.href).searchParams
+  const autoTopInset = viewportWidth <= 960 ? 52 : 64
+  const responsiveTopKey = viewportWidth <= 960 ? 'frameInsetTopMobile' : 'frameInsetTopDesktop'
+  const responsiveTop = params.has(responsiveTopKey) ? getUrlFrameInsetParam(params, responsiveTopKey) : null
+  const transparentPlayerFallbackTop = params.get('transparent') === '1' ? autoTopInset : 0
+
+  return {
+    top: responsiveTop ?? getUrlFrameInsetParamWithAuto(
+      params,
+      'frameInsetTop',
+      autoTopInset,
+      transparentPlayerFallbackTop,
+    ),
+    right: getUrlFrameInsetParam(params, 'frameInsetRight'),
+    bottom: getUrlFrameInsetParam(params, 'frameInsetBottom'),
+    left: getUrlFrameInsetParam(params, 'frameInsetLeft'),
+  }
+}
+
+function getFocusSafeNdcRect(width: number, height: number): FocusNdcRect {
+  const safeWidth = Math.max(width, 1)
+  const safeHeight = Math.max(height, 1)
+  const insets = getFocusFrameInsets(safeWidth)
+  const edgeMargin = THREE.MathUtils.clamp(
+    Math.min(safeWidth, safeHeight) * FOCUS_FRAME_EDGE_MARGIN_RATIO,
+    FOCUS_FRAME_MIN_EDGE_MARGIN_PX,
+    FOCUS_FRAME_MAX_EDGE_MARGIN_PX,
+  )
+  const leftPx = THREE.MathUtils.clamp(insets.left + edgeMargin, 0, safeWidth - 1)
+  const rightPx = THREE.MathUtils.clamp(safeWidth - insets.right - edgeMargin, leftPx + 1, safeWidth)
+  const topPx = THREE.MathUtils.clamp(insets.top + edgeMargin, 0, safeHeight - 1)
+  const bottomPx = THREE.MathUtils.clamp(safeHeight - insets.bottom - edgeMargin, topPx + 1, safeHeight)
+
+  return {
+    left: (leftPx / safeWidth) * 2 - 1,
+    right: (rightPx / safeWidth) * 2 - 1,
+    top: 1 - (topPx / safeHeight) * 2,
+    bottom: 1 - (bottomPx / safeHeight) * 2,
+  }
+}
+
 export function SceneAnimationController() {
   const sessionRef = useRef<RotateSession | null>(null)
   const floatSessionRef = useRef<FloatSession | null>(null)
@@ -142,6 +244,9 @@ export function SceneAnimationController() {
   const tempFocusObjectScale = useMemo(() => new THREE.Vector3(), [])
   const tempFocusCenter = useMemo(() => new THREE.Vector3(), [])
   const tempFocusLocalCenter = useMemo(() => new THREE.Vector3(), [])
+  const tempFocusLocalBoundsMin = useMemo(() => new THREE.Vector3(), [])
+  const tempFocusLocalBoundsMax = useMemo(() => new THREE.Vector3(), [])
+  const tempFocusBoundsCorner = useMemo(() => new THREE.Vector3(), [])
   const tempFocusCenterOffset = useMemo(() => new THREE.Vector3(), [])
   const tempFocusInverseMatrix = useMemo(() => new THREE.Matrix4(), [])
   const tempFocusRight = useMemo(() => new THREE.Vector3(), [])
@@ -150,6 +255,7 @@ export function SceneAnimationController() {
   const tempFocusTiltX = useMemo(() => new THREE.Quaternion(), [])
   const tempFocusTiltY = useMemo(() => new THREE.Quaternion(), [])
   const tempFocusParallaxQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempFocusCameraInverseQuaternion = useMemo(() => new THREE.Quaternion(), [])
 
   const restoreSessionPose = (session: RotateSession | null) => {
     if (!session) {
@@ -293,6 +399,154 @@ export function SceneAnimationController() {
     tempBox.getCenter(tempFocusCenter)
     tempFocusInverseMatrix.copy(object.matrixWorld).invert()
     return tempFocusLocalCenter.copy(tempFocusCenter).applyMatrix4(tempFocusInverseMatrix)
+  }
+
+  const captureLocalBounds = (object: THREE.Object3D) => {
+    tempBox.setFromObject(object)
+    if (tempBox.isEmpty()) {
+      tempFocusLocalBoundsMin.set(0, 0, 0)
+      tempFocusLocalBoundsMax.set(0, 0, 0)
+      return
+    }
+
+    const minX = tempBox.min.x
+    const minY = tempBox.min.y
+    const minZ = tempBox.min.z
+    const maxX = tempBox.max.x
+    const maxY = tempBox.max.y
+    const maxZ = tempBox.max.z
+    tempFocusInverseMatrix.copy(object.matrixWorld).invert()
+    tempFocusLocalBoundsMin.set(Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY)
+    tempFocusLocalBoundsMax.set(Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY)
+
+    for (let index = 0; index < 8; index += 1) {
+      tempFocusBoundsCorner
+        .set(
+          index & 1 ? maxX : minX,
+          index & 2 ? maxY : minY,
+          index & 4 ? maxZ : minZ,
+        )
+        .applyMatrix4(tempFocusInverseMatrix)
+      tempFocusLocalBoundsMin.min(tempFocusBoundsCorner)
+      tempFocusLocalBoundsMax.max(tempFocusBoundsCorner)
+    }
+  }
+
+  const getFocusedFraming = (
+    camera: THREE.Camera,
+    viewportWidth: number,
+    viewportHeight: number,
+    object: THREE.Object3D,
+    worldQuaternion: THREE.Quaternion,
+    localCenter: THREE.Vector3,
+    localBoundsMin: THREE.Vector3,
+    localBoundsMax: THREE.Vector3,
+    requestedDistance: number,
+    preferredOffsetX: number,
+    preferredOffsetY: number,
+  ): FocusFramingResult => {
+    const minimumDistance = Math.max(requestedDistance, 0.01)
+    if (!(camera instanceof THREE.PerspectiveCamera)) {
+      return {
+        distance: minimumDistance,
+        offsetX: preferredOffsetX,
+        offsetY: preferredOffsetY,
+      }
+    }
+
+    object.getWorldScale(tempFocusObjectScale)
+    tempFocusCameraInverseQuaternion.copy(camera.quaternion).invert()
+    const safeRect = getFocusSafeNdcRect(viewportWidth, viewportHeight)
+    const verticalTan = Math.max(Math.tan(THREE.MathUtils.degToRad(camera.fov) * 0.5), 0.0001)
+    const horizontalTan = verticalTan * Math.max(camera.aspect, 0.001)
+    const minimumDepth = Math.max(camera.near + 0.01, 0.01)
+    const candidate: FocusFramingResult = {
+      distance: minimumDistance,
+      offsetX: preferredOffsetX,
+      offsetY: preferredOffsetY,
+    }
+
+    const resolveAtDistance = (distance: number, result: FocusFramingResult) => {
+      let minOffsetX = Number.NEGATIVE_INFINITY
+      let maxOffsetX = Number.POSITIVE_INFINITY
+      let minOffsetY = Number.NEGATIVE_INFINITY
+      let maxOffsetY = Number.POSITIVE_INFINITY
+
+      for (let index = 0; index < 8; index += 1) {
+        tempFocusBoundsCorner
+          .set(
+            index & 1 ? localBoundsMax.x : localBoundsMin.x,
+            index & 2 ? localBoundsMax.y : localBoundsMin.y,
+            index & 4 ? localBoundsMax.z : localBoundsMin.z,
+          )
+          .sub(localCenter)
+          .multiply(tempFocusObjectScale)
+          .applyQuaternion(worldQuaternion)
+          .applyQuaternion(tempFocusCameraInverseQuaternion)
+
+        const depth = distance - tempFocusBoundsCorner.z
+        if (depth <= minimumDepth) {
+          return false
+        }
+
+        const horizontalDepth = depth * horizontalTan
+        const verticalDepth = depth * verticalTan
+        minOffsetX = Math.max(minOffsetX, safeRect.left * horizontalDepth - tempFocusBoundsCorner.x)
+        maxOffsetX = Math.min(maxOffsetX, safeRect.right * horizontalDepth - tempFocusBoundsCorner.x)
+        minOffsetY = Math.max(minOffsetY, safeRect.bottom * verticalDepth - tempFocusBoundsCorner.y)
+        maxOffsetY = Math.min(maxOffsetY, safeRect.top * verticalDepth - tempFocusBoundsCorner.y)
+      }
+
+      if (minOffsetX > maxOffsetX || minOffsetY > maxOffsetY) {
+        return false
+      }
+
+      const balancedOffsetX = (minOffsetX + maxOffsetX) * 0.5
+      const balancedOffsetY = (minOffsetY + maxOffsetY) * 0.5
+      result.distance = distance
+      result.offsetX = THREE.MathUtils.clamp(balancedOffsetX + preferredOffsetX, minOffsetX, maxOffsetX)
+      result.offsetY = THREE.MathUtils.clamp(balancedOffsetY + preferredOffsetY, minOffsetY, maxOffsetY)
+      return true
+    }
+
+    if (resolveAtDistance(minimumDistance, candidate)) {
+      return { ...candidate }
+    }
+
+    let lowDistance = minimumDistance
+    let highDistance = Math.max(minimumDistance * FOCUS_FRAME_DISTANCE_GROWTH, minimumDistance + 0.1)
+    let found = false
+    for (let attempt = 0; attempt < FOCUS_FRAME_DISTANCE_SEARCH_STEPS; attempt += 1) {
+      if (resolveAtDistance(highDistance, candidate)) {
+        found = true
+        break
+      }
+      lowDistance = highDistance
+      highDistance = highDistance * FOCUS_FRAME_DISTANCE_GROWTH + 0.05
+    }
+
+    if (!found) {
+      return {
+        distance: highDistance,
+        offsetX: preferredOffsetX,
+        offsetY: preferredOffsetY,
+      }
+    }
+
+    const best = { ...candidate }
+    for (let step = 0; step < FOCUS_FRAME_DISTANCE_SEARCH_STEPS; step += 1) {
+      const midDistance = (lowDistance + highDistance) * 0.5
+      if (resolveAtDistance(midDistance, candidate)) {
+        highDistance = midDistance
+        best.distance = candidate.distance
+        best.offsetX = candidate.offsetX
+        best.offsetY = candidate.offsetY
+      } else {
+        lowDistance = midDistance
+      }
+    }
+
+    return best
   }
 
   const getWorldPositionForFocusedCenter = (
@@ -459,7 +713,7 @@ export function SceneAnimationController() {
     useEditorStore.getState().updateFloatAnimation({ progress: phaseToProgress(session.phase) })
   })
 
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera, size }, delta) => {
     const store = useEditorStore.getState()
     const animation = store.focusAnimation
     const targetNode = animation.targetObjectId ? store.sceneGraph[animation.targetObjectId] ?? null : null
@@ -497,6 +751,15 @@ export function SceneAnimationController() {
       const localCenter = session
         ? session.localCenter.clone()
         : getLocalBoundingCenter(targetObject).clone()
+      if (!session) {
+        captureLocalBounds(targetObject)
+      }
+      const localBoundsMin = session
+        ? session.localBoundsMin.clone()
+        : tempFocusLocalBoundsMin.clone()
+      const localBoundsMax = session
+        ? session.localBoundsMax.clone()
+        : tempFocusLocalBoundsMax.clone()
       const restWorldPosition = session
         ? session.restWorldPosition.clone()
         : tempWorldPosition.clone()
@@ -519,6 +782,8 @@ export function SceneAnimationController() {
         restWorldPosition,
         restWorldQuaternion,
         localCenter,
+        localBoundsMin,
+        localBoundsMax,
         startWorldPosition,
         startWorldQuaternion,
         currentWorldPosition: startWorldPosition.clone(),
@@ -533,7 +798,7 @@ export function SceneAnimationController() {
     camera.getWorldDirection(tempFocusForward)
     tempFocusTargetPosition.copy(camera.position).addScaledVector(tempFocusForward, Math.max(animation.distance, 0.01))
     tempFocusRight.set(1, 0, 0).applyQuaternion(camera.quaternion).normalize()
-    tempFocusUp.copy(camera.up).normalize()
+    tempFocusUp.set(0, 1, 0).applyQuaternion(camera.quaternion).normalize()
     focusPointerRef.current.x = THREE.MathUtils.lerp(
       focusPointerRef.current.x,
       desiredFocused ? focusPointerState.targetX : 0,
@@ -544,14 +809,7 @@ export function SceneAnimationController() {
       desiredFocused ? focusPointerState.targetY : 0,
       Math.min(delta * 8, 1),
     )
-    tempFocusParallaxPosition.copy(tempFocusTargetPosition)
-    if (desiredFocused) {
-      tempFocusParallaxPosition
-        .addScaledVector(tempFocusRight, focusPointerRef.current.x * 0.0225)
-        .addScaledVector(tempFocusUp, focusPointerRef.current.y * 0.0175)
-    }
-
-    tempFocusMatrix.lookAt(tempFocusTargetPosition, camera.position, camera.up)
+    tempFocusMatrix.lookAt(tempFocusTargetPosition, camera.position, tempFocusUp)
     tempFocusLookQuaternion.setFromRotationMatrix(tempFocusMatrix)
     tempFocusFront.copy(getFrontFaceVector(animation.frontFace)).normalize()
     tempFocusFrontCorrection.setFromUnitVectors(tempFocusFront, tempAxis.set(0, 0, -1))
@@ -563,10 +821,47 @@ export function SceneAnimationController() {
       tempFocusLookQuaternion.premultiply(tempFocusParallaxQuaternion)
     }
 
+    const focusFraming = desiredFocused
+      ? getFocusedFraming(
+        camera,
+        size.width,
+        size.height,
+        targetObject,
+        tempFocusLookQuaternion,
+        session.localCenter,
+        session.localBoundsMin,
+        session.localBoundsMax,
+        animation.distance,
+        focusPointerRef.current.x * 0.0225,
+        focusPointerRef.current.y * 0.0175,
+      )
+      : null
+    tempFocusParallaxPosition
+      .copy(camera.position)
+      .addScaledVector(tempFocusForward, Math.max(focusFraming?.distance ?? animation.distance, 0.01))
+    if (desiredFocused) {
+      tempFocusParallaxPosition
+        .addScaledVector(tempFocusRight, focusFraming?.offsetX ?? 0)
+        .addScaledVector(tempFocusUp, focusFraming?.offsetY ?? 0)
+    }
+
+    const shouldReturnToLiveFloatPose =
+      !desiredFocused &&
+      floatSessionRef.current?.targetObjectId === animation.targetObjectId &&
+      floatSessionRef.current.object === targetObject &&
+      store.floatAnimation.isAdded &&
+      store.floatAnimation.enabled &&
+      store.floatAnimation.targetObjectId === animation.targetObjectId
     const targetWorldPosition = desiredFocused
       ? getWorldPositionForFocusedCenter(targetObject, tempFocusParallaxPosition, tempFocusLookQuaternion, session.localCenter)
-      : session.restWorldPosition
-    const targetWorldQuaternion = desiredFocused ? tempFocusLookQuaternion : session.restWorldQuaternion
+      : shouldReturnToLiveFloatPose
+        ? tempWorldPosition
+        : session.restWorldPosition
+    const targetWorldQuaternion = desiredFocused
+      ? tempFocusLookQuaternion
+      : shouldReturnToLiveFloatPose
+        ? tempWorldQuaternion
+        : session.restWorldQuaternion
     const progress = easeInOutCubic(session.elapsed / session.duration)
     tempFocusCurrentPosition.copy(session.startWorldPosition).lerp(targetWorldPosition, progress)
     tempFocusCurrentQuaternion.copy(session.startWorldQuaternion).slerp(targetWorldQuaternion, progress)
