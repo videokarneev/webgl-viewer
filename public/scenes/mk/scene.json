@@ -4290,7 +4290,7 @@
         "count": 180,
         "sizeMin": 0.015,
         "sizeMax": 0.05,
-        "speed": 0.01,
+        "speed": 0.0005555555555555556,
         "colorLinked": true,
         "color": "#fff4cf",
         "strength": 0.54,
@@ -4300,7 +4300,7 @@
           1,
           0
         ],
-        "drift": 0.18,
+        "drift": 0.06,
         "edgeFade": 0.16
       }
     }
