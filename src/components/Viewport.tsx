@@ -5,6 +5,7 @@ import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
+import { FocusInteractionController } from '../features/scene/runtime/FocusInteractionController'
 import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
 import {
   DEFAULT_SHOWCASE_GYRO_TUNING,
@@ -1733,6 +1734,9 @@ function ViewportScene({
   const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
   const hud = useEditorStore((state) => state.hud)
+  const focusOrbitBlocked = useEditorStore((state) =>
+    Boolean(state.focusAnimation.isAdded && state.focusAnimation.enabled && state.focusAnimation.focused),
+  )
   const rootNodeId = useEditorStore((state) => state.rootNodeId)
   const gridSize = useEditorStore((state) => state.transformSettings.gridSize)
   const root = useEditorStore((state) =>
@@ -1925,12 +1929,13 @@ function ViewportScene({
         <SceneBridge allowSelection={allowSelection} />
         <CustomSceneBoxes selectable={allowSelection} />
         <StencilVolumes />
-        <GodRaysBoxes />
+        <GodRaysBoxes selectable={allowSelection} />
         {allowSelection ? <SelectionHighlight /> : null}
         {allowSelection ? <AnchorHandles /> : null}
         {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
         <MaterialEffectController />
         <SceneAnimationController />
+        <FocusInteractionController enabled={!allowSelection} />
         <ShowcaseInteractionController
           controlsRef={controlsRef}
           cameraOffsetRef={showcaseCameraOffsetRef}
@@ -1971,7 +1976,7 @@ function ViewportScene({
       ) : null}
       {hud.axesVisible ? <axesHelper args={[2]} /> : null}
       {viewer.cameraMode === 'orbit' ? (
-        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled && !transformDragging} makeDefault />
+        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled && !transformDragging && !focusOrbitBlocked} makeDefault />
       ) : null}
       <FlightController />
     </>

@@ -9,7 +9,7 @@ import { GodRaysDust } from './GodRaysDust'
 import { GodRaysVolume } from './GodRaysVolume'
 import { createGodRaysOutlineGeometry, createGodRaysPrismGeometry } from './godRaysShared'
 
-export function GodRaysBox({ entry }: { entry: GodRaysBoxState }) {
+export function GodRaysBox({ entry, selectable = true }: { entry: GodRaysBoxState; selectable?: boolean }) {
   const groupRef = useRef<THREE.Group | null>(null)
   const objectState = useEditorStore((state) => state.objects[entry.id] ?? null)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
@@ -53,12 +53,16 @@ export function GodRaysBox({ entry }: { entry: GodRaysBoxState }) {
     return null
   }
 
-  const disableSelectionRaycast = anchorModeEnabled && selectedObjectId === entry.id
+  const disableSelectionRaycast = !selectable || (anchorModeEnabled && selectedObjectId === entry.id)
 
   return (
     <group
       ref={groupRef}
       onClick={(event: ThreeEvent<MouseEvent>) => {
+        if (!selectable) {
+          return
+        }
+
         if (event.delta > 2) {
           return
         }
@@ -74,7 +78,9 @@ export function GodRaysBox({ entry }: { entry: GodRaysBoxState }) {
         setSelectedObjectId(selectedObjectId === entry.id ? null : entry.id)
       }}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
-        event.stopPropagation()
+        if (selectable) {
+          event.stopPropagation()
+        }
       }}
     >
       <mesh
@@ -85,7 +91,7 @@ export function GodRaysBox({ entry }: { entry: GodRaysBoxState }) {
       </mesh>
       {entry.raysEnabled ? <GodRaysVolume entry={entry} disableRaycast /> : null}
       {entry.dustEnabled && entry.dustCount > 0 ? <GodRaysDust entry={entry} disableRaycast /> : null}
-      {(isSelected || isDirectionEditing) && entry.helperVisible ? (
+      {selectable && (isSelected || isDirectionEditing) && entry.helperVisible ? (
         <lineSegments geometry={helperGeometry} renderOrder={4}>
           <lineBasicMaterial color="#9ed8ff" transparent opacity={0.95} depthWrite={false} toneMapped={false} />
         </lineSegments>

@@ -15,6 +15,7 @@ export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metaln
 export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
+export type FocusFrontFace = '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
 export type FrameAspectPreset = 'auto' | '1:1' | '3:2' | '2:3' | '16:9' | '21:9' | '9:16'
 export type ResponsiveFramePresetKind = 'landscape' | 'portrait' | 'square'
 export type PhoneScreenBoxBindingMode = 'fixed' | 'viewport' | 'responsivePreset' | 'phonePortrait'
@@ -619,6 +620,29 @@ export interface RotateAnimationState {
   speed: number
 }
 
+export interface FloatAnimationState {
+  isAdded: boolean
+  enabled: boolean
+  play: boolean
+  loop: boolean
+  startProgress: number
+  progress: number
+  targetObjectId: string | null
+  amplitude: number
+  speed: number
+  tilt: number
+}
+
+export interface FocusAnimationState {
+  isAdded: boolean
+  enabled: boolean
+  focused: boolean
+  targetObjectId: string | null
+  frontFace: FocusFrontFace
+  distance: number
+  duration: number
+}
+
 export const DEFAULT_ROTATE_ANIMATION: RotateAnimationState = {
   isAdded: false,
   enabled: true,
@@ -630,6 +654,29 @@ export const DEFAULT_ROTATE_ANIMATION: RotateAnimationState = {
   pivot: 'pivot',
   axis: 'y',
   speed: 45,
+}
+
+export const DEFAULT_FLOAT_ANIMATION: FloatAnimationState = {
+  isAdded: false,
+  enabled: true,
+  play: false,
+  loop: true,
+  startProgress: 0,
+  progress: 0,
+  targetObjectId: null,
+  amplitude: 0.04,
+  speed: 0.08,
+  tilt: 1,
+}
+
+export const DEFAULT_FOCUS_ANIMATION: FocusAnimationState = {
+  isAdded: false,
+  enabled: true,
+  focused: false,
+  targetObjectId: null,
+  frontFace: '+z',
+  distance: 1.25,
+  duration: 1,
 }
 
 export interface BackgroundAudioState {
@@ -848,12 +895,12 @@ export const DEFAULT_STENCIL_VOLUME: Omit<StencilVolumeState, 'id'> = {
   dustCount: 180,
   dustSizeMin: 0.015,
   dustSizeMax: 0.05,
-  dustSpeed: 0.01,
+  dustSpeed: 0.0005555555555555556,
   dustColorLinked: true,
   dustColor: '#fff4cf',
   dustDirectionMode: 'global',
   dustDirectionLocal: [0, 1, 0],
-  dustDrift: 0.18,
+  dustDrift: 0.06,
   dustStrength: 0.54,
   dustEdgeFade: DEFAULT_GOD_RAYS_BOX.dustEdgeFade,
   helperVisible: true,
@@ -961,6 +1008,8 @@ interface HistorySnapshot {
   godRaysGlobalNoise: GodRaysGlobalNoiseState
   godRaysGlobalDirection: [number, number, number]
   rotateAnimation: RotateAnimationState
+  floatAnimation: FloatAnimationState
+  focusAnimation: FocusAnimationState
   backgroundAudio: BackgroundAudioState
 }
 
@@ -1008,6 +1057,8 @@ interface EditorState {
   godRaysGlobalNoise: GodRaysGlobalNoiseState
   godRaysGlobalDirection: [number, number, number]
   rotateAnimation: RotateAnimationState
+  floatAnimation: FloatAnimationState
+  focusAnimation: FocusAnimationState
   backgroundAudio: BackgroundAudioState
   status: string
   runtimeTextures: RuntimeTextureState
@@ -1091,6 +1142,12 @@ interface EditorState {
   addRotateAnimation: (targetObjectId: string | null) => void
   updateRotateAnimation: (patch: Partial<RotateAnimationState>) => void
   removeRotateAnimation: () => void
+  addFloatAnimation: (targetObjectId: string | null) => void
+  updateFloatAnimation: (patch: Partial<FloatAnimationState>) => void
+  removeFloatAnimation: () => void
+  addFocusAnimation: (targetObjectId: string | null) => void
+  updateFocusAnimation: (patch: Partial<FocusAnimationState>) => void
+  removeFocusAnimation: () => void
   setBackgroundAudio: (patch: Partial<BackgroundAudioState>) => void
   setStatus: (status: string) => void
   registerObjectRef: (id: string, object: THREE.Object3D | null) => void
@@ -1265,7 +1322,7 @@ function clampStencilVolume(entry: StencilVolumeState): StencilVolumeState {
     dustCount: Math.round(THREE.MathUtils.clamp(entry.dustCount, 0, 5000)),
     dustSizeMin: THREE.MathUtils.clamp(entry.dustSizeMin, 0.001, 1),
     dustSizeMax: THREE.MathUtils.clamp(Math.max(entry.dustSizeMax, entry.dustSizeMin), 0.001, 1),
-    dustSpeed: THREE.MathUtils.clamp(entry.dustSpeed, 0, GOD_RAYS_DUST_SPEED_MAX),
+    dustSpeed: THREE.MathUtils.clamp(entry.dustSpeed ?? DEFAULT_STENCIL_VOLUME.dustSpeed, 0, GOD_RAYS_DUST_SPEED_MAX),
     dustColorLinked,
     dustColor: dustColorLinked ? volumeColor : entry.dustColor ?? volumeColor,
     dustDirectionMode: entry.dustDirectionMode ?? DEFAULT_STENCIL_VOLUME.dustDirectionMode,
@@ -1642,6 +1699,14 @@ function cloneRotateAnimationState(rotateAnimation: RotateAnimationState): Rotat
   return { ...DEFAULT_ROTATE_ANIMATION, ...rotateAnimation }
 }
 
+function cloneFloatAnimationState(floatAnimation: FloatAnimationState): FloatAnimationState {
+  return { ...DEFAULT_FLOAT_ANIMATION, ...floatAnimation }
+}
+
+function cloneFocusAnimationState(focusAnimation: FocusAnimationState): FocusAnimationState {
+  return { ...DEFAULT_FOCUS_ANIMATION, ...focusAnimation }
+}
+
 function cloneBackgroundAudioState(backgroundAudio: BackgroundAudioState): BackgroundAudioState {
   return { ...backgroundAudio }
 }
@@ -1684,6 +1749,8 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(state.godRaysGlobalNoise),
     godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(state.godRaysGlobalDirection),
     rotateAnimation: cloneRotateAnimationState(state.rotateAnimation),
+    floatAnimation: cloneFloatAnimationState(state.floatAnimation),
+    focusAnimation: cloneFocusAnimationState(state.focusAnimation),
     backgroundAudio: cloneBackgroundAudioState(state.backgroundAudio),
   }
 }
@@ -2015,6 +2082,12 @@ function buildDeletePatch(state: EditorState, id: string) {
   const rotateAnimationTargetWasRemoved =
     state.rotateAnimation.targetObjectId === id ||
     (state.rotateAnimation.targetObjectId ? idsToRemove.has(state.rotateAnimation.targetObjectId) : false)
+  const floatAnimationTargetWasRemoved =
+    state.floatAnimation.targetObjectId === id ||
+    (state.floatAnimation.targetObjectId ? idsToRemove.has(state.floatAnimation.targetObjectId) : false)
+  const focusAnimationTargetWasRemoved =
+    state.focusAnimation.targetObjectId === id ||
+    (state.focusAnimation.targetObjectId ? idsToRemove.has(state.focusAnimation.targetObjectId) : false)
   const activeGodRaysDirectionWasRemoved =
     state.hud.activeGodRaysDirectionBoxId != null && idsToRemove.has(state.hud.activeGodRaysDirectionBoxId)
   const activeStencilVolumeEndWasRemoved =
@@ -2068,6 +2141,18 @@ function buildDeletePatch(state: EditorState, id: string) {
           enabled: false,
         }
       : state.rotateAnimation,
+    floatAnimation: floatAnimationTargetWasRemoved
+      ? {
+          ...DEFAULT_FLOAT_ANIMATION,
+          enabled: false,
+        }
+      : state.floatAnimation,
+    focusAnimation: focusAnimationTargetWasRemoved
+      ? {
+          ...DEFAULT_FOCUS_ANIMATION,
+          enabled: false,
+        }
+      : state.focusAnimation,
   }
 }
 
@@ -2187,6 +2272,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   godRaysGlobalNoise: DEFAULT_GOD_RAYS_GLOBAL_NOISE,
   godRaysGlobalDirection: DEFAULT_GOD_RAYS_GLOBAL_DIRECTION,
   rotateAnimation: DEFAULT_ROTATE_ANIMATION,
+  floatAnimation: DEFAULT_FLOAT_ANIMATION,
+  focusAnimation: DEFAULT_FOCUS_ANIMATION,
   backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
   runtimeTextures: {
@@ -2349,6 +2436,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedAnchorIndex: null,
         selectedMaterialId: resolveSelectedMaterialId(nextSelectedObjectId, nextSceneGraph),
         rotateAnimation: DEFAULT_ROTATE_ANIMATION,
+        floatAnimation: DEFAULT_FLOAT_ANIMATION,
+        focusAnimation: DEFAULT_FOCUS_ANIMATION,
         history: clearHistory(),
       }
     }),
@@ -2953,6 +3042,20 @@ export const useEditorStore = create<EditorState>((set, get) => ({
                 enabled: false,
               }
             : state.rotateAnimation,
+        floatAnimation:
+          state.floatAnimation.targetObjectId === targetId
+            ? {
+                ...DEFAULT_FLOAT_ANIMATION,
+                enabled: false,
+              }
+            : state.floatAnimation,
+        focusAnimation:
+          state.focusAnimation.targetObjectId === targetId
+            ? {
+                ...DEFAULT_FOCUS_ANIMATION,
+                enabled: false,
+              }
+            : state.focusAnimation,
         history: clearHistory(),
       }
     }),
@@ -3560,6 +3663,52 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         enabled: false,
       },
     })),
+  addFloatAnimation: (targetObjectId) =>
+    set(() => ({
+      floatAnimation: {
+        ...DEFAULT_FLOAT_ANIMATION,
+        isAdded: true,
+        enabled: true,
+        targetObjectId,
+      },
+    })),
+  updateFloatAnimation: (patch) =>
+    set((state) => ({
+      floatAnimation: {
+        ...state.floatAnimation,
+        ...patch,
+      },
+    })),
+  removeFloatAnimation: () =>
+    set(() => ({
+      floatAnimation: {
+        ...DEFAULT_FLOAT_ANIMATION,
+        enabled: false,
+      },
+    })),
+  addFocusAnimation: (targetObjectId) =>
+    set(() => ({
+      focusAnimation: {
+        ...DEFAULT_FOCUS_ANIMATION,
+        isAdded: true,
+        enabled: true,
+        targetObjectId,
+      },
+    })),
+  updateFocusAnimation: (patch) =>
+    set((state) => ({
+      focusAnimation: {
+        ...state.focusAnimation,
+        ...patch,
+      },
+    })),
+  removeFocusAnimation: () =>
+    set(() => ({
+      focusAnimation: {
+        ...DEFAULT_FOCUS_ANIMATION,
+        enabled: false,
+      },
+    })),
   setBackgroundAudio: (patch) =>
     set((state) =>
       withHistory(
@@ -3881,6 +4030,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         godRaysGlobalNoise: { ...DEFAULT_GOD_RAYS_GLOBAL_NOISE },
         godRaysGlobalDirection: [...DEFAULT_GOD_RAYS_GLOBAL_DIRECTION] as [number, number, number],
         rotateAnimation: DEFAULT_ROTATE_ANIMATION,
+        floatAnimation: DEFAULT_FLOAT_ANIMATION,
+        focusAnimation: DEFAULT_FOCUS_ANIMATION,
         backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
         runtimeTextures: {
           atlasTexture: null,
@@ -3981,6 +4132,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(previous.godRaysGlobalNoise),
         godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(previous.godRaysGlobalDirection),
         rotateAnimation: cloneRotateAnimationState(previous.rotateAnimation),
+        floatAnimation: cloneFloatAnimationState(previous.floatAnimation),
+        focusAnimation: cloneFocusAnimationState(previous.focusAnimation),
         backgroundAudio: cloneBackgroundAudioState(previous.backgroundAudio),
         history: {
           past: state.history.past.slice(0, -1),
@@ -4022,6 +4175,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         godRaysGlobalNoise: cloneGodRaysGlobalNoiseState(next.godRaysGlobalNoise),
         godRaysGlobalDirection: cloneGodRaysGlobalDirectionState(next.godRaysGlobalDirection),
         rotateAnimation: cloneRotateAnimationState(next.rotateAnimation),
+        floatAnimation: cloneFloatAnimationState(next.floatAnimation),
+        focusAnimation: cloneFocusAnimationState(next.focusAnimation),
         backgroundAudio: cloneBackgroundAudioState(next.backgroundAudio),
         history: {
           past: [...state.history.past, current].slice(-HISTORY_LIMIT),

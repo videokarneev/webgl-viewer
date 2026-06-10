@@ -4,6 +4,7 @@ import { OrbitControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { CustomSceneBoxes } from '../features/scene/runtime/CustomSceneBoxes'
+import { FocusInteractionController } from '../features/scene/runtime/FocusInteractionController'
 import { LoadedSceneRoot } from '../features/scene/runtime/LoadedSceneRoot'
 import { ShowcaseInteractionController } from '../features/scene/runtime/ShowcaseInteractionController'
 import { applyViewerCameraOptics } from '../features/scene/runtime/shared'
@@ -169,6 +170,9 @@ function TransparentPublishedScene() {
   const showcaseTargetOffsetRef = useRef(new THREE.Vector3())
   const showcaseMotion = useShowcaseMotionSensor()
   const viewer = useEditorStore((state) => state.viewer)
+  const focusOrbitBlocked = useEditorStore((state) =>
+    Boolean(state.focusAnimation.isAdded && state.focusAnimation.enabled && state.focusAnimation.focused),
+  )
 
   return (
     <>
@@ -185,6 +189,7 @@ function TransparentPublishedScene() {
         <CustomSceneBoxes selectable={false} />
         <MaterialEffectController />
         <SceneAnimationController />
+        <FocusInteractionController />
         <ShowcaseInteractionController
           controlsRef={controlsRef}
           cameraOffsetRef={showcaseCameraOffsetRef}
@@ -192,7 +197,7 @@ function TransparentPublishedScene() {
           gyroSampleRef={showcaseMotion.sampleRef}
         />
       </Suspense>
-      {viewer.cameraMode === 'orbit' ? <OrbitControls ref={controlsRef} makeDefault /> : null}
+      {viewer.cameraMode === 'orbit' ? <OrbitControls ref={controlsRef} enabled={!focusOrbitBlocked} makeDefault /> : null}
     </>
   )
 }

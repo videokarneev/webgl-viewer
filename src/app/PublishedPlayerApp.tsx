@@ -18,6 +18,7 @@ import {
   DEFAULT_VIEWER_ORBIT_TARGET,
   DEFAULT_GOD_RAYS_GLOBAL_DIRECTION,
   DEFAULT_GOD_RAYS_GLOBAL_NOISE,
+  DEFAULT_STENCIL_VOLUME,
   getGodRaysDustStrengthValue,
   getPhoneScreenBoxMaterialId,
   normalizePhoneScreenBoxState,
@@ -420,6 +421,10 @@ function PublishedSceneController({
   const upsertMaterialEnvironment = useEditorStore((state) => state.upsertMaterialEnvironment)
   const addRotateAnimation = useEditorStore((state) => state.addRotateAnimation)
   const updateRotateAnimation = useEditorStore((state) => state.updateRotateAnimation)
+  const addFloatAnimation = useEditorStore((state) => state.addFloatAnimation)
+  const updateFloatAnimation = useEditorStore((state) => state.updateFloatAnimation)
+  const addFocusAnimation = useEditorStore((state) => state.addFocusAnimation)
+  const updateFocusAnimation = useEditorStore((state) => state.updateFocusAnimation)
   const setStatus = useEditorStore((state) => state.setStatus)
   const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
@@ -527,7 +532,7 @@ function PublishedSceneController({
         bottomRadius: entry.bottomRadius ?? 0.7071067811865476,
         topRadius: entry.topRadius ?? entry.bottomRadius ?? 0.7071067811865476,
         linkTopRadius: entry.linkTopRadius ?? true,
-        helperVisible: entry.helperVisible ?? true,
+        helperVisible: false,
         topDome: entry.topDome ?? 10,
         transform: {
           position: [...entry.transform.position] as [number, number, number],
@@ -605,12 +610,12 @@ function PublishedSceneController({
         dustCount: entry.dust.count,
         dustSizeMin: entry.dust.sizeMin,
         dustSizeMax: entry.dust.sizeMax,
-        dustSpeed: entry.dust.speed ?? 0.01,
+        dustSpeed: entry.dust.speed ?? DEFAULT_STENCIL_VOLUME.dustSpeed,
         dustColorLinked: entry.dust.colorLinked ?? true,
         dustColor: entry.dust.color ?? entry.rays.color,
         dustDirectionMode: entry.dust.directionMode ?? 'global',
         dustDirectionLocal: [...(entry.dust.directionLocal ?? [0, 1, 0])] as [number, number, number],
-        dustDrift: entry.dust.drift,
+        dustDrift: entry.dust.drift ?? DEFAULT_STENCIL_VOLUME.dustDrift,
         dustStrength: getGodRaysDustStrengthValue(entry.dust.strength),
         dustEdgeFade: entry.dust.edgeFade,
         helperVisible: false,
@@ -935,6 +940,39 @@ function PublishedSceneController({
         })
       }
 
+      const floatEntry = scene.animations.find((entry) => entry.type === 'float')
+      if (floatEntry) {
+        const targetObjectId = reversePublishIdMap.get(normalizePublishId(floatEntry.targetObjectId)) ?? null
+        const startProgress = floatEntry.startProgress ?? floatEntry.progress
+        addFloatAnimation(targetObjectId)
+        updateFloatAnimation({
+          enabled: floatEntry.enabled,
+          // The published player has no playback controls, so enabled animations should start automatically.
+          play: floatEntry.enabled,
+          loop: floatEntry.loop,
+          amplitude: floatEntry.amplitude,
+          speed: floatEntry.speed,
+          tilt: floatEntry.tilt,
+          startProgress,
+          progress: startProgress,
+          targetObjectId,
+        })
+      }
+
+      const focusEntry = scene.animations.find((entry) => entry.type === 'focus')
+      if (focusEntry) {
+        const targetObjectId = reversePublishIdMap.get(normalizePublishId(focusEntry.targetObjectId)) ?? null
+        addFocusAnimation(targetObjectId)
+        updateFocusAnimation({
+          enabled: focusEntry.enabled,
+          focused: false,
+          frontFace: focusEntry.frontFace as never,
+          distance: focusEntry.distance,
+          duration: focusEntry.duration,
+          targetObjectId,
+        })
+      }
+
       setViewer({
         cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
         cameraPosition: publishedCameraState.cameraPosition,
@@ -951,7 +989,7 @@ function PublishedSceneController({
       console.error(error)
       setStatus('Failed to apply published scene.')
     })
-  }, [addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateMaterial, updateMaterialEffect, updateObjectTransform, updatePhoneScreenBox, updateRotateAnimation, upsertMaterialEnvironment])
+  }, [addFloatAnimation, addFocusAnimation, addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateFloatAnimation, updateFocusAnimation, updateMaterial, updateMaterialEffect, updateObjectTransform, updatePhoneScreenBox, updateRotateAnimation, upsertMaterialEnvironment])
 
   return null
 }

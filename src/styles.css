@@ -1667,6 +1667,13 @@ button {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.focus-toggle-button {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 8px;
+  justify-content: center;
+}
+
 .left-note {
   margin: -2px 0 12px;
   color: rgba(170, 187, 197, 0.7);

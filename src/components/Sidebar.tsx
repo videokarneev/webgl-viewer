@@ -18,6 +18,7 @@ import {
   normalizeGodRaysDirection,
   useEditorStore,
   type ExtraLightState,
+  type FocusFrontFace,
   type FrameAspectPreset,
   type ResponsiveFramePresetKind,
   type RotateAnimationAxis,
@@ -2493,16 +2494,29 @@ function FxTabContent() {
 
 function AnimTabContent() {
   const rotateAnimation = useEditorStore((state) => state.rotateAnimation)
+  const floatAnimation = useEditorStore((state) => state.floatAnimation)
+  const focusAnimation = useEditorStore((state) => state.focusAnimation)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const addRotateAnimation = useEditorStore((state) => state.addRotateAnimation)
   const updateRotateAnimation = useEditorStore((state) => state.updateRotateAnimation)
   const removeRotateAnimation = useEditorStore((state) => state.removeRotateAnimation)
+  const addFloatAnimation = useEditorStore((state) => state.addFloatAnimation)
+  const updateFloatAnimation = useEditorStore((state) => state.updateFloatAnimation)
+  const removeFloatAnimation = useEditorStore((state) => state.removeFloatAnimation)
+  const addFocusAnimation = useEditorStore((state) => state.addFocusAnimation)
+  const updateFocusAnimation = useEditorStore((state) => state.updateFocusAnimation)
+  const removeFocusAnimation = useEditorStore((state) => state.removeFocusAnimation)
   const selectedNode = selectedObjectId ? sceneGraph[selectedObjectId] ?? null : null
   const selectedNodeIsAnimatable = isAnimatableNode(selectedNode)
   const rotateTargetNode = rotateAnimation.targetObjectId ? sceneGraph[rotateAnimation.targetObjectId] ?? null : null
   const rotateTargetLabel = rotateTargetNode?.label || rotateAnimation.targetObjectId || 'No target'
+  const floatTargetNode = floatAnimation.targetObjectId ? sceneGraph[floatAnimation.targetObjectId] ?? null : null
+  const floatTargetLabel = floatTargetNode?.label || floatAnimation.targetObjectId || 'No target'
+  const focusTargetNode = focusAnimation.targetObjectId ? sceneGraph[focusAnimation.targetObjectId] ?? null : null
+  const focusTargetLabel = focusTargetNode?.label || focusAnimation.targetObjectId || 'No target'
   const axisOptions: RotateAnimationAxis[] = ['x', 'y', 'z']
+  const frontFaceOptions: FocusFrontFace[] = ['+z', '-z', '+x', '-x', '+y', '-y']
 
   const handleCreateRotate = () => {
     if (!selectedObjectId || !selectedNodeIsAnimatable) {
@@ -2510,6 +2524,22 @@ function AnimTabContent() {
     }
 
     addRotateAnimation(selectedObjectId)
+  }
+
+  const handleCreateFloat = () => {
+    if (!selectedObjectId || !selectedNodeIsAnimatable) {
+      return
+    }
+
+    addFloatAnimation(selectedObjectId)
+  }
+
+  const handleCreateFocus = () => {
+    if (!selectedObjectId || !selectedNodeIsAnimatable) {
+      return
+    }
+
+    addFocusAnimation(selectedObjectId)
   }
 
   const animationButtons = [
@@ -2525,11 +2555,20 @@ function AnimTabContent() {
     {
       id: 'float',
       label: 'FLOAT',
-      status: 'Soon',
-      disabled: true,
-      active: false,
-      onClick: () => {},
-      title: 'Float animation will be added later',
+      status: floatAnimation.isAdded ? 'Added' : 'Create',
+      disabled: !selectedNodeIsAnimatable,
+      active: floatAnimation.isAdded,
+      onClick: handleCreateFloat,
+      title: selectedNodeIsAnimatable ? 'Add float animation to selected object' : 'Select a model object first',
+    },
+    {
+      id: 'focus',
+      label: 'FOCUS',
+      status: focusAnimation.isAdded ? 'Added' : 'Create',
+      disabled: !selectedNodeIsAnimatable,
+      active: focusAnimation.isAdded,
+      onClick: handleCreateFocus,
+      title: selectedNodeIsAnimatable ? 'Add tap focus interaction to selected object' : 'Select a model object first',
     },
     {
       id: 'pulse',
@@ -2561,7 +2600,7 @@ function AnimTabContent() {
             </button>
           ))}
         </div>
-        {!selectedNodeIsAnimatable ? <p className="left-note">Select a mesh, group, or scene object to add rotation.</p> : null}
+        {!selectedNodeIsAnimatable ? <p className="left-note">Select a mesh, group, or scene object to add animation.</p> : null}
 
         <div className="material-effects-list" aria-label="Animation list">
           {rotateAnimation.isAdded ? (
@@ -2595,9 +2634,74 @@ function AnimTabContent() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : null}
+          {floatAnimation.isAdded ? (
+            <div className="material-effects-list__row is-selected" role="button" tabIndex={0}>
+              <span className="material-effects-list__label">Float Animation</span>
+              <div className="material-effects-list__actions">
+                <button
+                  type="button"
+                  className={`material-effects-list__icon-button${floatAnimation.enabled ? ' is-active' : ''}`}
+                  aria-label={floatAnimation.enabled ? 'Hide Float Animation' : 'Show Float Animation'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    updateFloatAnimation({
+                      enabled: !floatAnimation.enabled,
+                      play: floatAnimation.enabled ? false : floatAnimation.play,
+                    })
+                  }}
+                >
+                  <EyeIcon isOpen={floatAnimation.enabled} />
+                </button>
+                <button
+                  type="button"
+                  className="material-effects-list__icon-button"
+                  aria-label="Remove Float Animation"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeFloatAnimation()
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {focusAnimation.isAdded ? (
+            <div className="material-effects-list__row is-selected" role="button" tabIndex={0}>
+              <span className="material-effects-list__label">Focus Interaction</span>
+              <div className="material-effects-list__actions">
+                <button
+                  type="button"
+                  className={`material-effects-list__icon-button${focusAnimation.enabled ? ' is-active' : ''}`}
+                  aria-label={focusAnimation.enabled ? 'Hide Focus Interaction' : 'Show Focus Interaction'}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    updateFocusAnimation({
+                      enabled: !focusAnimation.enabled,
+                      focused: focusAnimation.enabled ? false : focusAnimation.focused,
+                    })
+                  }}
+                >
+                  <EyeIcon isOpen={focusAnimation.enabled} />
+                </button>
+                <button
+                  type="button"
+                  className="material-effects-list__icon-button"
+                  aria-label="Remove Focus Interaction"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    removeFocusAnimation()
+                  }}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {!rotateAnimation.isAdded && !floatAnimation.isAdded && !focusAnimation.isAdded ? (
             <div className="material-effects-list__row material-effects-list__row--empty" aria-hidden="true" />
-          )}
+          ) : null}
         </div>
 
         {rotateAnimation.isAdded ? (
@@ -2701,6 +2805,157 @@ function AnimTabContent() {
                 <span>Loop</span>
               </label>
             </div>
+          </>
+        ) : null}
+        {floatAnimation.isAdded ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">Float Animation</p>
+            <div className="readout-row">
+              <span>Target</span>
+              <strong>{floatTargetLabel}</strong>
+            </div>
+            <label className="left-slider">
+              <span>Height</span>
+              <input
+                type="range"
+                min="0"
+                max="0.5"
+                step="0.005"
+                value={floatAnimation.amplitude}
+                onInput={(event) => updateFloatAnimation({ amplitude: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(floatAnimation.amplitude, 2)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Speed</span>
+              <input
+                type="range"
+                min="0.01"
+                max="1"
+                step="0.005"
+                value={floatAnimation.speed}
+                onInput={(event) => updateFloatAnimation({ speed: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(floatAnimation.speed, 2)}x</strong>
+            </label>
+            <label className="left-slider">
+              <span>Tilt</span>
+              <input
+                type="range"
+                min="0"
+                max="8"
+                step="0.1"
+                value={floatAnimation.tilt}
+                onInput={(event) => updateFloatAnimation({ tilt: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatDegrees(floatAnimation.tilt)}</strong>
+            </label>
+            <label className="field field--inline-range material-effect-current-frame">
+              <span>
+                Start Phase <output>{Math.round(floatAnimation.startProgress)}%</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={floatAnimation.startProgress}
+                onInput={(event) =>
+                  updateFloatAnimation({
+                    startProgress: Number(event.currentTarget.value),
+                    progress: Number(event.currentTarget.value),
+                    play: false,
+                  })
+                }
+              />
+            </label>
+            <div className="material-effect-playback-row">
+              <button
+                type="button"
+                className={`tool-button material-effect-play-button${floatAnimation.play ? ' is-active' : ''}`}
+                aria-label={floatAnimation.play ? 'Pause float' : 'Play float'}
+                title={floatAnimation.play ? 'Pause float' : 'Play float'}
+                disabled={!floatAnimation.enabled || !floatAnimation.targetObjectId}
+                onClick={() =>
+                  updateFloatAnimation({
+                    play: !floatAnimation.play,
+                    progress:
+                      !floatAnimation.play && !floatAnimation.loop && floatAnimation.progress >= 100
+                        ? floatAnimation.startProgress
+                        : floatAnimation.progress,
+                  })
+                }
+              >
+                <PlayIcon isPlaying={floatAnimation.play} />
+              </button>
+              <label className="checkbox checkbox--bare material-effect-toggle material-effect-loop">
+                <input
+                  type="checkbox"
+                  checked={floatAnimation.loop}
+                  onChange={(event) => updateFloatAnimation({ loop: event.currentTarget.checked })}
+                />
+                <span>Loop</span>
+              </label>
+            </div>
+          </>
+        ) : null}
+        {focusAnimation.isAdded ? (
+          <>
+            <p className="left-controls__label material-effect-active-title">Focus Interaction</p>
+            <div className="readout-row">
+              <span>Target</span>
+              <strong>{focusTargetLabel}</strong>
+            </div>
+            <label className="left-select">
+              <span>Front Face</span>
+              <select
+                value={focusAnimation.frontFace}
+                onChange={(event) =>
+                  updateFocusAnimation({
+                    frontFace: event.currentTarget.value as FocusFrontFace,
+                    focused: false,
+                  })
+                }
+              >
+                {frontFaceOptions.map((face) => (
+                  <option key={face} value={face}>
+                    {face.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="left-slider">
+              <span>Distance</span>
+              <input
+                type="range"
+                min="0.35"
+                max="4"
+                step="0.01"
+                value={focusAnimation.distance}
+                onInput={(event) => updateFocusAnimation({ distance: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(focusAnimation.distance, 2)}</strong>
+            </label>
+            <label className="left-slider">
+              <span>Duration</span>
+              <input
+                type="range"
+                min="0.15"
+                max="2"
+                step="0.05"
+                value={focusAnimation.duration}
+                onInput={(event) => updateFocusAnimation({ duration: Number(event.currentTarget.value) })}
+              />
+              <strong>{formatNumber(focusAnimation.duration, 2)}s</strong>
+            </label>
+            <button
+              type="button"
+              className={`tool-button focus-toggle-button${focusAnimation.focused ? ' is-active' : ''}`}
+              disabled={!focusAnimation.enabled || !focusAnimation.targetObjectId}
+              onClick={() => updateFocusAnimation({ focused: !focusAnimation.focused })}
+            >
+              {focusAnimation.focused ? 'RETURN' : 'FOCUS'}
+            </button>
           </>
         ) : null}
       </div>

@@ -9,6 +9,7 @@ import {
 } from '../../../store/editorStore'
 import {
   createSeededRandom,
+  getGodRaysVisualBoundaryRadius,
   getGodRaysMaxRadius,
   getGodRaysPolygonOffset,
   samplePointInGodRaysVolume,
@@ -35,11 +36,6 @@ uniform vec3 uBoundsMax;
 uniform mat4 uWorldToLocal;
 
 varying float vAlpha;
-
-vec3 wrapBox(vec3 position) {
-  vec3 size = max(uBoundsMax - uBoundsMin, vec3(0.0001));
-  return mod(position - uBoundsMin, size) + uBoundsMin;
-}
 
 float polygonBoundaryRadius(float angle, float radius, float sideCount, float polygonOffset) {
   float sector = 6.28318530718 / sideCount;
@@ -70,19 +66,6 @@ float edgeFactor(vec3 position, float fadeWidth) {
 
 void main() {
   vec3 animatedPosition = position;
-  vec3 drift = vec3(
-    sin(uTime * (0.7 + aSeed * 0.4) + aSeed * 11.0),
-    cos(uTime * (0.5 + aSeed * 0.3) + aSeed * 19.0),
-    sin(uTime * (0.9 + aSeed * 0.2) + aSeed * 7.0)
-  ) * uDrift * 0.22;
-
-  animatedPosition = wrapBox(animatedPosition + drift);
-
-  if (uSpeed > 0.0001) {
-    float travel = uTime * uSpeed * 6.0 * (0.65 + aSeed * 0.75) + aPhase;
-    animatedPosition = wrapBox(animatedPosition + uDirection * travel);
-  }
-
   vec3 localPosition = (uWorldToLocal * vec4(animatedPosition, 1.0)).xyz;
   float strength = pow(clamp(uStrength, 0.0, 1.0), 0.9);
   vAlpha = edgeFactor(localPosition, uEdgeFade) * strength;
@@ -170,6 +153,19 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
     [entry, godRaysGlobalDirection, runtimeObject],
   )
 
+  const updateSizeAttribute = (targetGeometry: THREE.BufferGeometry) => {
+    const sizeAttribute = targetGeometry.getAttribute('aSize') as THREE.BufferAttribute | undefined
+    if (!sizeAttribute) {
+      return
+    }
+
+    for (let index = 0; index < sizeAttribute.count; index += 1) {
+      const random = createSeededRandom(`${entry.id}:dust:${index}:size`)
+      sizeAttribute.setX(index, THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random()))
+    }
+    sizeAttribute.needsUpdate = true
+  }
+
   const geometry = useMemo(() => {
     const nextGeometry = new THREE.BufferGeometry()
     const positions = new Float32Array(entry.dustCount * 3)
@@ -185,7 +181,11 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
       positions[offset] = point.x
       positions[offset + 1] = point.y
       positions[offset + 2] = point.z
-      sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random())
+      sizes[index] = THREE.MathUtils.lerp(
+        entry.dustSizeMin,
+        entry.dustSizeMax,
+        createSeededRandom(`${entry.id}:dust:${index}:size`)(),
+      )
       seeds[index] = random()
       phases[index] = random() * 6
     }
@@ -198,12 +198,27 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
   }, [
     entry.bottomRadius,
     entry.dustCount,
-    entry.dustSizeMax,
-    entry.dustSizeMin,
     dustAnchorMatrix,
     entry.sideCount,
     entry.topRadius,
   ])
+
+  const streamRandomRef = useRef(createSeededRandom(`${entry.id}:dust:stream`))
+  const streamScratchRef = useRef({
+    worldPosition: new THREE.Vector3(),
+    localPosition: new THREE.Vector3(),
+    localSpawn: new THREE.Vector3(),
+    direction: new THREE.Vector3(),
+    drift: new THREE.Vector3(),
+  })
+
+  useEffect(() => {
+    streamRandomRef.current = createSeededRandom(`${entry.id}:dust:stream:${entry.dustCount}`)
+  }, [entry.id, entry.dustCount])
+
+  useEffect(() => {
+    updateSizeAttribute(geometry)
+  }, [entry.dustSizeMax, entry.dustSizeMin, geometry])
 
   const uniforms = useMemo(
     () => ({
@@ -277,7 +292,7 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
 
   useEffect(() => () => geometry.dispose(), [geometry])
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     if (pointsRef.current) {
       pointsRef.current.matrixAutoUpdate = false
       pointsRef.current.matrix.copy(worldToLocalMatrix)
@@ -289,6 +304,66 @@ export function GodRaysDust({ entry, disableRaycast = false }: { entry: GodRaysB
     }
 
     materialRef.current.uniforms.uTime.value = clock.getElapsedTime()
+
+    const positionAttribute = geometry.getAttribute('position') as THREE.BufferAttribute | undefined
+    const seedAttribute = geometry.getAttribute('aSeed') as THREE.BufferAttribute | undefined
+    if (!positionAttribute || !seedAttribute) {
+      return
+    }
+
+    const positions = positionAttribute.array as Float32Array
+    const seeds = seedAttribute.array as Float32Array
+    const scratch = streamScratchRef.current
+    const elapsedTime = clock.getElapsedTime()
+    const frameDelta = Math.min(delta, 1 / 20)
+    const speed = Math.max(entry.dustSpeed, 0)
+    const driftAmount = Math.max(entry.dustDrift, 0)
+
+    scratch.direction.set(...effectiveWorldDirection).normalize()
+
+    for (let index = 0; index < positionAttribute.count; index += 1) {
+      const offset = index * 3
+      const seed = seeds[index]
+      scratch.worldPosition.set(positions[offset], positions[offset + 1], positions[offset + 2])
+
+      if (speed > 0.0001) {
+        scratch.worldPosition.addScaledVector(scratch.direction, frameDelta * speed * 6 * (0.65 + seed * 0.75))
+      }
+
+      if (driftAmount > 0.0001) {
+        scratch.drift.set(
+          Math.sin(elapsedTime * (0.7 + seed * 0.4) + seed * 11),
+          Math.cos(elapsedTime * (0.5 + seed * 0.3) + seed * 19),
+          Math.sin(elapsedTime * (0.9 + seed * 0.2) + seed * 7),
+        )
+        scratch.worldPosition.addScaledVector(scratch.drift, frameDelta * driftAmount * 0.7)
+      }
+
+      scratch.localPosition.copy(scratch.worldPosition).applyMatrix4(worldToLocalMatrix)
+      const angle = Math.atan2(scratch.localPosition.z, scratch.localPosition.x)
+      const radiusAtY = THREE.MathUtils.lerp(
+        entry.bottomRadius,
+        entry.topRadius,
+        THREE.MathUtils.clamp(scratch.localPosition.y, 0, 1),
+      )
+      const boundaryRadius = getGodRaysVisualBoundaryRadius(angle, radiusAtY, entry.sideCount)
+      const insideVolume =
+        scratch.localPosition.y >= 0 &&
+        scratch.localPosition.y <= 1 &&
+        Math.hypot(scratch.localPosition.x, scratch.localPosition.z) <= boundaryRadius
+
+      if (!insideVolume) {
+        const nextRandom = streamRandomRef.current
+        scratch.localSpawn.copy(samplePointInGodRaysVolume(entry, nextRandom)).applyMatrix4(localToWorldMatrix)
+        scratch.worldPosition.copy(scratch.localSpawn)
+      }
+
+      positions[offset] = scratch.worldPosition.x
+      positions[offset + 1] = scratch.worldPosition.y
+      positions[offset + 2] = scratch.worldPosition.z
+    }
+
+    positionAttribute.needsUpdate = true
   })
 
   return (

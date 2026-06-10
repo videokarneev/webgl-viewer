@@ -10,7 +10,7 @@ import {
 } from '../../../store/editorStore'
 import { GodRaysBox } from './GodRaysBox'
 
-function GodRaysDirectionArrow({ effectId }: { effectId: string }) {
+function GodRaysDirectionArrow({ effectId, selectable = true }: { effectId: string; selectable?: boolean }) {
   const arrowRef = useRef<THREE.Group | null>(null)
   const arrowId = useMemo(() => getGodRaysDirectionArrowId(effectId), [effectId])
   const activeGodRaysDirectionBoxId = useEditorStore((state) => state.hud.activeGodRaysDirectionBoxId)
@@ -20,7 +20,7 @@ function GodRaysDirectionArrow({ effectId }: { effectId: string }) {
   const registerObjectRef = useEditorStore((state) => state.registerObjectRef)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setHud = useEditorStore((state) => state.setHud)
-  const isActive = activeGodRaysDirectionBoxId === effectId
+  const isActive = selectable && activeGodRaysDirectionBoxId === effectId
   const worldPosition = useMemo(() => new THREE.Vector3(), [])
   const worldQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const cameraPosition = useMemo(() => new THREE.Vector3(), [])
@@ -85,11 +85,19 @@ function GodRaysDirectionArrow({ effectId }: { effectId: string }) {
       ref={arrowRef}
       visible={isActive}
       onPointerDown={(event: ThreeEvent<PointerEvent>) => {
+        if (!selectable) {
+          return
+        }
+
         event.stopPropagation()
         setSelectedObjectId(effectId)
         setHud({ transformMode: 'rotate', activeGodRaysDirectionBoxId: effectId })
       }}
       onClick={(event: ThreeEvent<MouseEvent>) => {
+        if (!selectable) {
+          return
+        }
+
         event.stopPropagation()
         setSelectedObjectId(effectId)
         setHud({ transformMode: 'rotate', activeGodRaysDirectionBoxId: effectId })
@@ -123,16 +131,16 @@ function GodRaysDirectionArrow({ effectId }: { effectId: string }) {
   )
 }
 
-export function GodRaysBoxes() {
+export function GodRaysBoxes({ selectable = true }: { selectable?: boolean }) {
   const entries = useEditorStore((state) => state.godRaysBoxes)
 
   return (
     <>
       {entries.map((entry) => (
-        <GodRaysBox key={entry.id} entry={entry} />
+        <GodRaysBox key={entry.id} entry={entry} selectable={selectable} />
       ))}
       {entries.map((entry) => (
-        <GodRaysDirectionArrow key={getGodRaysDirectionArrowId(entry.id)} effectId={entry.id} />
+        <GodRaysDirectionArrow key={getGodRaysDirectionArrowId(entry.id)} effectId={entry.id} selectable={selectable} />
       ))}
     </>
   )

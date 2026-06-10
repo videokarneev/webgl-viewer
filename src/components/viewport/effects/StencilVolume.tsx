@@ -326,18 +326,6 @@ float edgeFactor(vec3 position, float fadeWidth) {
 
 void main() {
   vec3 animatedPosition = position;
-  vec3 drift = vec3(
-    sin(uTime * (0.7 + aSeed * 0.4) + aSeed * 11.0),
-    cos(uTime * (0.5 + aSeed * 0.3) + aSeed * 19.0),
-    sin(uTime * (0.9 + aSeed * 0.2) + aSeed * 7.0)
-  ) * uDrift * 0.22;
-  animatedPosition = wrapBox(animatedPosition + drift);
-
-  if (uSpeed > 0.0001) {
-    float travel = uTime * uSpeed * 6.0 * (0.65 + aSeed * 0.75) + aPhase;
-    animatedPosition = wrapBox(animatedPosition + uDirection * travel);
-  }
-
   vec4 mvPosition = modelViewMatrix * vec4(animatedPosition, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   gl_PointSize = max(1.0, aSize * 180.0 / max(-mvPosition.z, 0.001));
@@ -926,6 +914,63 @@ function samplePointInShape(shape: MaskContourShape, random = Math.random) {
   return loops[0][0] ?? [0, 0]
 }
 
+function createStencilShapeSampler(shapes: MaskContourShape[]) {
+  if (!shapes.length) {
+    return null
+  }
+
+  const shapeWeights = shapes.map((shape) => Math.max(Math.abs(getLoopArea(shape.outline)), 0.0001))
+  const totalWeight = shapeWeights.reduce((sum, value) => sum + value, 0)
+
+  return (random = Math.random) => {
+    let threshold = random() * totalWeight
+    for (let index = 0; index < shapes.length; index += 1) {
+      threshold -= shapeWeights[index]
+      if (threshold <= 0) {
+        return shapes[index]
+      }
+    }
+    return shapes[0]
+  }
+}
+
+function isPointInsideStencilShape(point: [number, number], shapes: MaskContourShape[]) {
+  return shapes.some((shape) => {
+    if (!isPointInsideLoop(point, shape.outline)) {
+      return false
+    }
+
+    return !shape.holes.some((hole) => isPointInsideLoop(point, hole))
+  })
+}
+
+function samplePointInStencilVolume(
+  entry: StencilVolumeState,
+  pickShape: ((random?: () => number) => MaskContourShape) | null,
+  random: () => number,
+  target: THREE.Vector3,
+) {
+  if (!pickShape) {
+    target.set(0, 0, 0)
+    return target
+  }
+
+  const endQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(entry.endRotationX, entry.endRotationY, 0, 'XYZ'))
+  const endCenter = new THREE.Vector3(...entry.extrudeEnd)
+  const startPoint = new THREE.Vector3()
+  const endPoint = new THREE.Vector3()
+  const shape = pickShape(random)
+  const point = samplePointInShape(shape, random)
+
+  startPoint.set(point[0] * entry.sourceWidth, point[1] * entry.sourceHeight, 0)
+  endPoint
+    .set(point[0] * entry.sourceWidth * entry.endScaleX, point[1] * entry.sourceHeight * entry.endScaleY, 0)
+    .applyQuaternion(endQuaternion)
+    .add(endCenter)
+
+  return target.copy(startPoint).lerp(endPoint, random())
+}
+
 function createStencilDustGeometry(
   entry: StencilVolumeState,
   shapes: MaskContourShape[],
@@ -936,23 +981,7 @@ function createStencilDustGeometry(
     return null
   }
 
-  const shapeWeights = shapes.map((shape) => Math.max(Math.abs(getLoopArea(shape.outline)), 0.0001))
-  const totalWeight = shapeWeights.reduce((sum, value) => sum + value, 0)
-  const pickShape = (random = Math.random) => {
-    let threshold = random() * totalWeight
-    for (let index = 0; index < shapes.length; index += 1) {
-      threshold -= shapeWeights[index]
-      if (threshold <= 0) {
-        return shapes[index]
-      }
-    }
-    return shapes[0]
-  }
-
-  const endQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(entry.endRotationX, entry.endRotationY, 0, 'XYZ'))
-  const endCenter = new THREE.Vector3(...entry.extrudeEnd)
-  const startPoint = new THREE.Vector3()
-  const endPoint = new THREE.Vector3()
+  const pickShape = createStencilShapeSampler(shapes)
   const positions = new Float32Array(dustCount * 3)
   const sizes = new Float32Array(dustCount)
   const seeds = new Float32Array(dustCount)
@@ -961,20 +990,17 @@ function createStencilDustGeometry(
 
   for (let index = 0; index < dustCount; index += 1) {
     const random = createSeededRandom(`${entry.id}:stencil-dust:${index}`)
-    const shape = pickShape(random)
-    const point = samplePointInShape(shape, random)
-    startPoint.set(point[0] * entry.sourceWidth, point[1] * entry.sourceHeight, 0)
-    endPoint
-      .set(point[0] * entry.sourceWidth * entry.endScaleX, point[1] * entry.sourceHeight * entry.endScaleY, 0)
-      .applyQuaternion(endQuaternion)
-      .add(endCenter)
-    initialPosition.copy(startPoint).lerp(endPoint, random()).applyMatrix4(localToWorldMatrix)
+    samplePointInStencilVolume(entry, pickShape, random, initialPosition).applyMatrix4(localToWorldMatrix)
 
     const offset = index * 3
     positions[offset] = initialPosition.x
     positions[offset + 1] = initialPosition.y
     positions[offset + 2] = initialPosition.z
-    sizes[index] = THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random())
+    sizes[index] = THREE.MathUtils.lerp(
+      entry.dustSizeMin,
+      entry.dustSizeMax,
+      createSeededRandom(`${entry.id}:stencil-dust:${index}:size`)(),
+    )
     seeds[index] = random()
     phases[index] = random() * 6
   }
@@ -1214,11 +1240,6 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
     return new THREE.Matrix4().compose(position, quaternion, scale)
   }, [objectState])
-  const dustAnchorMatrix = useMemo(() => {
-    const position = new THREE.Vector3(...(objectState?.position ?? [0, 0, 0]))
-    const scale = new THREE.Vector3(...(objectState?.scale ?? [1, 1, 1]))
-    return new THREE.Matrix4().compose(position, new THREE.Quaternion(), scale)
-  }, [objectState?.position, objectState?.scale])
   const worldToLocalMatrix = useMemo(() => localToWorldMatrix.clone().invert(), [localToWorldMatrix])
   const dustWorldBounds = useMemo(() => {
     const corners = [
@@ -1230,9 +1251,9 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       new THREE.Vector3(volumeBounds.max.x, volumeBounds.min.y, volumeBounds.max.z),
       new THREE.Vector3(volumeBounds.max.x, volumeBounds.max.y, volumeBounds.max.z),
       new THREE.Vector3(volumeBounds.min.x, volumeBounds.max.y, volumeBounds.max.z),
-    ].map((point) => point.applyMatrix4(dustAnchorMatrix))
+    ].map((point) => point.applyMatrix4(localToWorldMatrix))
     return new THREE.Box3().setFromPoints(corners)
-  }, [dustAnchorMatrix, volumeBounds])
+  }, [localToWorldMatrix, volumeBounds])
   const endQuaternion = useMemo(() => {
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(entry.endRotationX, entry.endRotationY, 0, 'XYZ'))
   }, [entry.endRotationX, entry.endRotationY])
@@ -1284,11 +1305,25 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     () => getStencilEffectiveDustCount(entry.dustCount, primitiveVolumes.length),
     [entry.dustCount, primitiveVolumes.length],
   )
+  const dustShapeSampler = useMemo(
+    () => createStencilShapeSampler(activeVolumeShapes),
+    [activeVolumeShapes],
+  )
+  const updateDustSizeAttribute = (targetGeometry: THREE.BufferGeometry) => {
+    const sizeAttribute = targetGeometry.getAttribute('aSize') as THREE.BufferAttribute | undefined
+    if (!sizeAttribute) {
+      return
+    }
+
+    for (let index = 0; index < sizeAttribute.count; index += 1) {
+      const random = createSeededRandom(`${entry.id}:stencil-dust:${index}:size`)
+      sizeAttribute.setX(index, THREE.MathUtils.lerp(entry.dustSizeMin, entry.dustSizeMax, random()))
+    }
+    sizeAttribute.needsUpdate = true
+  }
   const dustGeometry = useMemo(
-    () => createStencilDustGeometry(entry, activeVolumeShapes, effectiveDustCount, dustAnchorMatrix),
+    () => createStencilDustGeometry(entry, activeVolumeShapes, effectiveDustCount, localToWorldMatrix),
     [
-      entry.dustSizeMax,
-      entry.dustSizeMin,
       entry.endRotationX,
       entry.endRotationY,
       entry.endScaleX,
@@ -1298,7 +1333,7 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       entry.sourceWidth,
       activeVolumeShapes,
       effectiveDustCount,
-      dustAnchorMatrix,
+      localToWorldMatrix,
     ],
   )
   const dustUniforms = useMemo(
@@ -1325,6 +1360,35 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       dustWorldBounds,
     ],
   )
+  const dustStreamRandomRef = useRef(createSeededRandom(`${entry.id}:stencil-dust:stream`))
+  const dustStreamScratchRef = useRef({
+    worldPosition: new THREE.Vector3(),
+    localPosition: new THREE.Vector3(),
+    localOffset: new THREE.Vector3(),
+    localSpawn: new THREE.Vector3(),
+    direction: new THREE.Vector3(),
+    drift: new THREE.Vector3(),
+    axis: new THREE.Vector3(),
+    center: new THREE.Vector3(),
+    startBasisX: new THREE.Vector3(),
+    startBasisY: new THREE.Vector3(),
+    endBasisX: new THREE.Vector3(),
+    endBasisY: new THREE.Vector3(),
+    basisX: new THREE.Vector3(),
+    basisY: new THREE.Vector3(),
+  })
+
+  useEffect(() => {
+    dustStreamRandomRef.current = createSeededRandom(`${entry.id}:stencil-dust:stream:${effectiveDustCount}`)
+  }, [effectiveDustCount, entry.id])
+
+  useEffect(() => {
+    if (!dustGeometry) {
+      return
+    }
+
+    updateDustSizeAttribute(dustGeometry)
+  }, [dustGeometry, entry.dustSizeMax, entry.dustSizeMin])
 
   useEffect(() => {
     registerObjectRef(entry.id, groupRef.current)
@@ -1545,6 +1609,89 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
 
     if (dustMaterialRef.current) {
       dustMaterialRef.current.uniforms.uTime.value = state.clock.getElapsedTime()
+    }
+
+    if (entry.dustEnabled && dustGeometry && activeVolumeShapes.length && dustShapeSampler) {
+      const positionAttribute = dustGeometry.getAttribute('position') as THREE.BufferAttribute | undefined
+      const seedAttribute = dustGeometry.getAttribute('aSeed') as THREE.BufferAttribute | undefined
+      if (positionAttribute && seedAttribute) {
+        const positions = positionAttribute.array as Float32Array
+        const seeds = seedAttribute.array as Float32Array
+        const scratch = dustStreamScratchRef.current
+        const elapsedTime = state.clock.getElapsedTime()
+        const frameDelta = Math.min(delta, 1 / 20)
+        const speed = Math.max(entry.dustSpeed, 0)
+        const driftAmount = Math.max(entry.dustDrift, 0)
+
+        scratch.direction.set(...effectiveDustWorldDirection).normalize()
+        scratch.axis.set(...entry.extrudeEnd)
+        scratch.startBasisX.set(entry.sourceWidth * 0.5, 0, 0)
+        scratch.startBasisY.set(0, entry.sourceHeight * 0.5, 0)
+        scratch.endBasisX
+          .set(entry.sourceWidth * entry.endScaleX * 0.5, 0, 0)
+          .applyQuaternion(endQuaternion)
+        scratch.endBasisY
+          .set(0, entry.sourceHeight * entry.endScaleY * 0.5, 0)
+          .applyQuaternion(endQuaternion)
+
+        const axisLengthSq = Math.max(scratch.axis.lengthSq(), 0.0001)
+        const depthRange = entry.extrudeEnd[2]
+
+        for (let index = 0; index < positionAttribute.count; index += 1) {
+          const offset = index * 3
+          const seed = seeds[index]
+          scratch.worldPosition.set(positions[offset], positions[offset + 1], positions[offset + 2])
+
+          if (speed > 0.0001) {
+            scratch.worldPosition.addScaledVector(scratch.direction, frameDelta * speed * 6 * (0.65 + seed * 0.75))
+          }
+
+          if (driftAmount > 0.0001) {
+            scratch.drift.set(
+              Math.sin(elapsedTime * (0.7 + seed * 0.4) + seed * 11),
+              Math.cos(elapsedTime * (0.5 + seed * 0.3) + seed * 19),
+              Math.sin(elapsedTime * (0.9 + seed * 0.2) + seed * 7),
+            )
+            scratch.worldPosition.addScaledVector(scratch.drift, frameDelta * driftAmount * 0.7)
+          }
+
+          scratch.localPosition.copy(scratch.worldPosition).applyMatrix4(worldToLocalMatrix)
+          const rawProgress = Math.abs(depthRange) > 0.0001
+            ? scratch.localPosition.z / depthRange
+            : scratch.localPosition.dot(scratch.axis) / axisLengthSq
+          const progress = THREE.MathUtils.clamp(rawProgress, 0, 1)
+          scratch.center.copy(scratch.axis).multiplyScalar(progress)
+          scratch.basisX.lerpVectors(scratch.startBasisX, scratch.endBasisX, progress)
+          scratch.basisY.lerpVectors(scratch.startBasisY, scratch.endBasisY, progress)
+          scratch.localOffset.copy(scratch.localPosition).sub(scratch.center)
+
+          const gramXX = Math.max(scratch.basisX.dot(scratch.basisX), 0.0001)
+          const gramXY = scratch.basisX.dot(scratch.basisY)
+          const gramYY = Math.max(scratch.basisY.dot(scratch.basisY), 0.0001)
+          const determinant = Math.max(gramXX * gramYY - gramXY * gramXY, 0.0001)
+          const projectionX = scratch.localOffset.dot(scratch.basisX)
+          const projectionY = scratch.localOffset.dot(scratch.basisY)
+          const localX = (projectionX * gramYY - projectionY * gramXY) / determinant
+          const localY = (projectionY * gramXX - projectionX * gramXY) / determinant
+          const shapeX = localX * 0.5
+          const shapeY = localY * 0.5
+          const insideVolume =
+            rawProgress >= 0 &&
+            rawProgress <= 1 &&
+            isPointInsideStencilShape([shapeX, shapeY], activeVolumeShapes)
+
+          if (!insideVolume) {
+            samplePointInStencilVolume(entry, dustShapeSampler, dustStreamRandomRef.current, scratch.localSpawn)
+            scratch.worldPosition.copy(scratch.localSpawn).applyMatrix4(localToWorldMatrix)
+          }
+
+          positions[offset] = scratch.worldPosition.x
+          positions[offset + 1] = scratch.worldPosition.y
+          positions[offset + 2] = scratch.worldPosition.z
+        }
+
+        positionAttribute.needsUpdate = true
+      }
     }
 
     if (!endHandleRef.current || !endHandleVisualRef.current || !isEditingEnd) {

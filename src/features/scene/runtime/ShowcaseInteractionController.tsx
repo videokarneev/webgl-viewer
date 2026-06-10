@@ -2,7 +2,8 @@ import { useFrame } from '@react-three/fiber'
 import { useRef, type MutableRefObject, type RefObject } from 'react'
 import * as THREE from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { useEditorStore, type ObjectTransformState } from '../../../store/editorStore'
+import { useEditorStore, type ObjectTransformState, type SceneGraphNode } from '../../../store/editorStore'
+import { isFocusScenePointerInputSuppressed } from './FocusInteractionController'
 import { resolvePhoneScreenBoxCameraFrame } from './phoneScreenBoxRuntime'
 import { getShowcaseGyroTuning } from './showcaseGyroTuning'
 import type { ShowcaseMotionSample } from './useShowcaseMotionSensor'
@@ -13,6 +14,34 @@ function supportsMouseInput(mode: string) {
 
 function supportsGyroInput(mode: string) {
   return mode === 'gyro' || mode === 'mouse+gyro'
+}
+
+function isSceneGraphNodeOrDescendant(
+  objectId: string,
+  ancestorId: string | null,
+  sceneGraph: Record<string, SceneGraphNode>,
+) {
+  if (!ancestorId) {
+    return false
+  }
+
+  let currentId: string | null = objectId
+  while (currentId) {
+    if (currentId === ancestorId) {
+      return true
+    }
+    currentId = sceneGraph[currentId]?.parentId ?? null
+  }
+
+  return false
+}
+
+function isSceneGraphNodeOrDescendantOfAny(
+  objectId: string,
+  ancestorIds: Array<string | null>,
+  sceneGraph: Record<string, SceneGraphNode>,
+) {
+  return ancestorIds.some((ancestorId) => isSceneGraphNodeOrDescendant(objectId, ancestorId, sceneGraph))
 }
 
 const LOCKED_FRAME_PARALLAX_SCALE = 1.625
@@ -293,6 +322,19 @@ export function ShowcaseInteractionController({
   useFrame((state, delta) => {
     const store = useEditorStore.getState()
     const activeBox = resolveActiveBox()
+    const focus = store.focusAnimation
+    const focusInteractionActive = Boolean(
+      focus.isAdded &&
+      focus.enabled &&
+      focus.targetObjectId &&
+      (focus.focused || isFocusScenePointerInputSuppressed()),
+    )
+    const focusTargetObjectId = focusInteractionActive ? focus.targetObjectId : null
+    const animationTargetObjectIds = [
+      store.rotateAnimation.isAdded && store.rotateAnimation.enabled ? store.rotateAnimation.targetObjectId : null,
+      store.floatAnimation.isAdded && store.floatAnimation.enabled ? store.floatAnimation.targetObjectId : null,
+      focusTargetObjectId,
+    ]
     const attachedObjectIds = new Set(lastPortalObjectIdsRef.current)
     store.phoneScreenBoxes.forEach((entry) => {
       entry.content.attachedObjectIds.forEach((objectId) => {
@@ -303,7 +345,11 @@ export function ShowcaseInteractionController({
     attachedObjectIds.forEach((objectId) => {
       const object = store.runtime.objectById[objectId]
       const objectState = store.objects[objectId]
-      if (object && objectState) {
+      if (
+        object &&
+        objectState &&
+        !isSceneGraphNodeOrDescendantOfAny(objectId, animationTargetObjectIds, store.sceneGraph)
+      ) {
         restoreRuntimeObjectTransform(object, objectState)
       }
     })
@@ -405,8 +451,10 @@ export function ShowcaseInteractionController({
 
     const gyroSample = gyroSampleRef.current
     const useGyro =
+      !focusInteractionActive &&
       activeBox.interaction.enabled && supportsGyroInput(activeBox.interaction.inputMode) && gyroSample.active
     const useMouse =
+      !focusInteractionActive &&
       activeBox.interaction.enabled &&
       supportsMouseInput(activeBox.interaction.inputMode) &&
       !useGyro
@@ -484,6 +532,7 @@ export function ShowcaseInteractionController({
           if (
             !attachedObject ||
             !attachedObjectState ||
+            isSceneGraphNodeOrDescendantOfAny(objectId, animationTargetObjectIds, store.sceneGraph) ||
             (transformDragging && objectId === store.selectedObjectId && store.hud.transformMode !== 'none')
           ) {
             return

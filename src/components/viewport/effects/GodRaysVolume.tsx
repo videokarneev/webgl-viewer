@@ -153,7 +153,7 @@ float topDomeFactor(vec3 position) {
 
   float domeStrength = clamp(uTopDome / 10.0, 0.0, 1.0);
   float topRadius = max(radiusAt(1.0), 0.0001);
-  float domeDepth = mix(0.0, min(topRadius * 1.25, 0.95), domeStrength);
+  float domeDepth = mix(0.0, clamp(topRadius * 0.12, 0.05, 0.18), domeStrength);
   float domeStart = 1.0 - domeDepth;
 
   if (position.y <= domeStart) {

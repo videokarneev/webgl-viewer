@@ -442,17 +442,38 @@ export interface PublishedSceneV2 {
       } | null
     }
   }>
-  animations: Array<{
-    type: 'rotate'
-    targetObjectId: string
-    enabled: boolean
-    loop: boolean
-    pivot: string
-    axis: string
-    speed: number
-    startProgress?: number
-    progress: number
-  }>
+  animations: Array<
+    | {
+        type: 'rotate'
+        targetObjectId: string
+        enabled: boolean
+        loop: boolean
+        pivot: string
+        axis: string
+        speed: number
+        startProgress?: number
+        progress: number
+      }
+    | {
+        type: 'float'
+        targetObjectId: string
+        enabled: boolean
+        loop: boolean
+        amplitude: number
+        speed: number
+        tilt: number
+        startProgress?: number
+        progress: number
+      }
+    | {
+        type: 'focus'
+        targetObjectId: string
+        enabled: boolean
+        frontFace: string
+        distance: number
+        duration: number
+      }
+  >
 }
 
 function buildPublishedResponsiveFrame(
@@ -815,6 +836,29 @@ async function buildPublishedSceneInternal() {
       speed: state.rotateAnimation.speed,
       startProgress: state.rotateAnimation.startProgress,
       progress: state.rotateAnimation.progress,
+    })
+  }
+  if (state.floatAnimation.isAdded && state.floatAnimation.targetObjectId) {
+    animations.push({
+      type: 'float',
+      targetObjectId: getPublishNodeId(state.floatAnimation.targetObjectId, state.sceneGraph, nodeIdCache),
+      enabled: state.floatAnimation.enabled,
+      loop: state.floatAnimation.loop,
+      amplitude: state.floatAnimation.amplitude,
+      speed: state.floatAnimation.speed,
+      tilt: state.floatAnimation.tilt,
+      startProgress: state.floatAnimation.startProgress,
+      progress: state.floatAnimation.progress,
+    })
+  }
+  if (state.focusAnimation.isAdded && state.focusAnimation.targetObjectId) {
+    animations.push({
+      type: 'focus',
+      targetObjectId: getPublishNodeId(state.focusAnimation.targetObjectId, state.sceneGraph, nodeIdCache),
+      enabled: state.focusAnimation.enabled,
+      frontFace: state.focusAnimation.frontFace,
+      distance: state.focusAnimation.distance,
+      duration: state.focusAnimation.duration,
     })
   }
 

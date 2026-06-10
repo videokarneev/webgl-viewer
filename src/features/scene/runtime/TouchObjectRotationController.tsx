@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useEditorStore } from '../../../store/editorStore'
+import { isFocusScenePointerInputSuppressed } from './FocusInteractionController'
 
 const DRAG_ROTATION_X = 0.008
 const DRAG_ROTATION_Y = 0.007
@@ -35,6 +36,12 @@ function stopPointerEvent(event: PointerEvent) {
   event.stopImmediatePropagation()
 }
 
+function isFocusBlockingObjectRotation() {
+  const focus = useEditorStore.getState().focusAnimation
+  return Boolean(focus.isAdded && focus.enabled && focus.targetObjectId && focus.focused) ||
+    isFocusScenePointerInputSuppressed()
+}
+
 export function TouchObjectRotationController({ enabled }: { enabled: boolean }) {
   const { gl, camera } = useThree()
   const dragRef = useRef<DragState | null>(null)
@@ -59,7 +66,20 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
     const previousTouchAction = element.style.touchAction
     element.style.touchAction = 'none'
 
-    const canRotate = () => hasVisibleLockedPhoneBox() && getVisibleLoadedModelEntries().length > 0
+    const clearDrag = (event?: PointerEvent) => {
+      const drag = dragRef.current
+      dragRef.current = null
+      yawRef.current = 0
+      pitchRef.current = 0
+      if (event && drag?.pointerId === event.pointerId && element.hasPointerCapture?.(event.pointerId)) {
+        element.releasePointerCapture(event.pointerId)
+      }
+    }
+
+    const canRotate = () =>
+      !isFocusBlockingObjectRotation() &&
+      hasVisibleLockedPhoneBox() &&
+      getVisibleLoadedModelEntries().length > 0
 
     const handlePointerDown = (event: PointerEvent) => {
       if (!event.isPrimary || !canRotate()) {
@@ -76,6 +96,11 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
     }
 
     const handlePointerMove = (event: PointerEvent) => {
+      if (isFocusBlockingObjectRotation()) {
+        clearDrag(event)
+        return
+      }
+
       const drag = dragRef.current
       if (!drag || drag.pointerId !== event.pointerId) {
         return
@@ -97,10 +122,7 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
       }
 
       stopPointerEvent(event)
-      dragRef.current = null
-      if (element.hasPointerCapture?.(event.pointerId)) {
-        element.releasePointerCapture(event.pointerId)
-      }
+      clearDrag(event)
     }
 
     element.addEventListener('pointerdown', handlePointerDown, { capture: true })
@@ -114,11 +136,16 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
       element.removeEventListener('pointermove', handlePointerMove, { capture: true })
       element.removeEventListener('pointerup', stopDragging, { capture: true })
       element.removeEventListener('pointercancel', stopDragging, { capture: true })
+      clearDrag()
     }
   }, [enabled, gl.domElement])
 
   useFrame(() => {
-    if (!enabled || (yawRef.current === 0 && pitchRef.current === 0) || !hasVisibleLockedPhoneBox()) {
+    if (!enabled || isFocusBlockingObjectRotation() || (yawRef.current === 0 && pitchRef.current === 0) || !hasVisibleLockedPhoneBox()) {
+      if (isFocusBlockingObjectRotation()) {
+        yawRef.current = 0
+        pitchRef.current = 0
+      }
       return
     }
 
@@ -143,6 +170,9 @@ export function TouchObjectRotationController({ enabled }: { enabled: boolean })
 
       object.updateMatrixWorld(true)
     })
+
+    yawRef.current = 0
+    pitchRef.current = 0
   })
 
   return null
