@@ -919,6 +919,18 @@ function PublishedSceneController({
             swapXY: materialEntry.effects.flipbook.swapXY,
           })
         }
+
+        if (materialEntry.effects.rainImpacts) {
+          updateMaterialEffect(storeMaterialId, {
+            rainImpactsAdded: true,
+            rainImpactsEnabled: materialEntry.effects.rainImpacts.enabled,
+            rainImpactRate: materialEntry.effects.rainImpacts.rate,
+            rainImpactSize: materialEntry.effects.rainImpacts.size,
+            rainImpactStrength: materialEntry.effects.rainImpacts.strength,
+            rainImpactLifetime: materialEntry.effects.rainImpacts.lifetime,
+            rainImpactCount: materialEntry.effects.rainImpacts.count,
+          })
+        }
       }
 
       const rotateEntry = scene.animations.find((entry) => entry.type === 'rotate')

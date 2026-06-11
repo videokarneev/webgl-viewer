@@ -125,7 +125,7 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18
   scene: {
     background: {
       mode: string
@@ -440,6 +440,14 @@ export interface PublishedSceneV2 {
         rotation: number
         swapXY: boolean
       } | null
+      rainImpacts?: {
+        enabled: boolean
+        rate: number
+        size: number
+        strength: number
+        lifetime: number
+        count: number
+      } | null
     }
   }>
   animations: Array<
@@ -631,6 +639,16 @@ async function buildPublishedSceneInternal() {
               scaleY: material.effect.scaleY,
               rotation: material.effect.rotation,
               swapXY: material.effect.swapXY,
+            }
+          : null,
+        rainImpacts: material.effect.rainImpactsAdded
+          ? {
+              enabled: material.effect.rainImpactsEnabled,
+              rate: material.effect.rainImpactRate,
+              size: material.effect.rainImpactSize,
+              strength: material.effect.rainImpactStrength,
+              lifetime: material.effect.rainImpactLifetime,
+              count: material.effect.rainImpactCount,
             }
           : null,
       },
@@ -870,7 +888,7 @@ async function buildPublishedSceneInternal() {
     state.assets.reflections ?? state.environment.source ?? publishedEnvironmentPreset?.label ?? null
 
   const scene: PublishedSceneV2 = {
-    version: 17,
+    version: 18,
     scene: {
       background: {
         mode: state.backgroundMode,

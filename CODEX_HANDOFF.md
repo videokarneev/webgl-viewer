@@ -29,6 +29,7 @@ Branch:
 
 Latest important commits:
 
+- `a3be82b` `Update Codex handoff notes`
 - `e61248e` `Update scene mk dust tuning`
 - `5b0c402` `Update scene mtg`
 - `24f9129` `Stabilize focus return with floating animation`
@@ -41,24 +42,34 @@ Latest important commits:
 
 Latest push/deploy notes:
 
+- `a3be82b` was pushed to `origin/main`.
 - `e61248e` was pushed to `origin/main`.
 - `5b0c402` became the ready Production deployment for the latest `mtg` scene update after the Vercel queue cleared.
 - The user explicitly asked to update and push this handoff on 2026-06-11.
 
-Expected local state after this handoff commit:
+Recent local work:
 
-- worktree should be clean unless the user made new local edits.
+- Rain Impacts MVP is implemented and visually confirmed by the user on 2026-06-11.
+- The confirmed working path uses a `CanvasTexture` overlay, not the earlier shader-only path.
+- Modified files:
+  - `src/store/editorStore.ts`
+  - `src/components/Inspector.tsx`
+  - `src/components/MaterialEffectController.tsx`
+  - `src/features/publish/buildPublishedScene.ts`
+  - `src/app/PublishedPlayerApp.tsx`
+  - `src/features/scene/runtime/materialRuntime.ts`
+  - `CODEX_HANDOFF.md`
 
 ## Validation
 
-Passing after the latest runtime/editor Focus work:
+Passing after the latest Rain Impacts work:
 
 - `npx tsc --noEmit`
 - `npx vite build`
 
 Vite still prints the usual chunk-size warning, but the build succeeds.
 
-No new runtime tests were needed for the markdown-only handoff update.
+User confirmed the Rain Impacts visual after the canvas-overlay fix. The confirmed preview showed clear animated circular ripples on the MTG card.
 
 ## Current Published Site Setup
 
@@ -140,6 +151,114 @@ Current `mtg` animation setup:
 - Focus duration: `1.00s`
 
 If this regresses, do not patch by adding random offsets. First inspect the Focus/Floating ownership path in `SceneAnimationController.tsx`.
+
+## Material Rain Impacts
+
+Goal:
+
+- First MVP of a rain material effect: animated circular ripples from water drops on a selected material.
+- This belongs in `Material Effects`, not scene-level FX.
+- Falling rain streaks are intentionally deferred to a later separate emitter/tool.
+
+Relevant files:
+
+- `src/store/editorStore.ts`
+- `src/components/Inspector.tsx`
+- `src/components/MaterialEffectController.tsx`
+- `src/features/publish/buildPublishedScene.ts`
+- `src/app/PublishedPlayerApp.tsx`
+
+Current UI:
+
+- Select a material.
+- Open `Material Effects`.
+- Click `RAIN`.
+- Active effect row is `Rain Impacts`.
+- Controls:
+  - `Rate`
+  - `Size`
+  - `Strength`
+  - `Lifetime`
+  - `Max Rings`
+
+Important behavior:
+
+- There is no Play button for Rain Impacts.
+- The effect should animate automatically whenever `rainImpactsAdded` and `rainImpactsEnabled` are true.
+- The eye button in the effect row toggles `rainImpactsEnabled`.
+- The trash button removes it with `rainImpactsAdded: false`.
+
+Implementation:
+
+- State is currently added onto `AtlasEffectState`:
+  - `rainImpactsAdded`
+  - `rainImpactsEnabled`
+  - `rainImpactRate`
+  - `rainImpactSize`
+  - `rainImpactStrength`
+  - `rainImpactLifetime`
+  - `rainImpactCount`
+- `MaterialEffectController` now uses a runtime `CanvasTexture` overlay for the working MVP.
+- The canvas redraws the selected original/custom base color texture and paints animated circular wet rings on top.
+- The old `onBeforeCompile` shader path remains in the file but is no longer the active render path after the selected mesh kept disappearing.
+- It uses fixed effect capacity of 32 rings.
+- Active visible ring count is computed from `rate * lifetime`, capped by `Max Rings` and 32.
+- Uses one reusable canvas texture per affected material; no particle meshes.
+- Requires mesh UVs; if none are found for the material's mesh IDs, the effect is skipped.
+- Shader adds both:
+  - normal perturbation for ripple relief;
+  - subtle color mask so the rings are visible even without strong reflections.
+
+Recent bug and fixes:
+
+- User enabled `RAIN` and the MTG card texture disappeared while no visible rain appeared.
+- First likely cause: `ensureMaterialTextureBackup()` could store null original texture slots too early, then restore material maps to null.
+- First fix added: when a real texture is later present and is not the custom texture, original backup is repaired.
+- User clarified the center white rectangle is a normal separate mesh and should not be fixed.
+- Actual remaining symptom after enabling `RAIN`: the selected mesh becomes transparent/invisible and no visible drops appear.
+- Follow-up fix added:
+  - original texture backups now verify against `originalLabel` / `originalUrl`, so stale white backups can be replaced by the current real original texture;
+  - the same backup repair logic was added to `src/features/scene/runtime/materialRuntime.ts` for runtime/published material restores;
+  - the rain ring shader no longer uses reversed-edge `smoothstep`, which is undefined GLSL behavior and could produce NaN/white output on some GPUs.
+- Second follow-up fix added:
+  - rain shader no longer sets custom `USE_UV` in `material.defines`;
+  - it now injects its own `vRainImpactUv` varying in vertex/fragment shader chunks and reads directly from geometry `uv`;
+  - shader signature includes `RAIN_IMPACT_SHADER_VERSION` so Three recompiles after shader-internal fixes;
+  - color overlay was strengthened so rings are visible even before a stronger normal/reflection pass.
+- User retested and still saw no visible rain/divorces on the card.
+- Third follow-up fix added:
+  - active Rain preview now bypasses shader patching and uses a `CanvasTexture` overlay;
+  - frame loop order was changed so base/flipbook texture restoration runs before rain overlay drawing, otherwise the rain map could be immediately overwritten;
+  - the canvas overlay draws high-contrast dark/light circular ripples directly over `MTG.jpg`.
+- User confirmed this canvas-overlay version looked very good.
+- Confirmed example settings:
+  - Rate: `48.0/s`
+  - Size: `0.14`
+  - Strength: `0.82`
+  - Lifetime: `0.70s`
+  - Max Rings: `24`
+- Shader was also changed from normal-only to normal plus subtle wet/color ring overlay.
+
+Publish/runtime:
+
+- Published scene version is now `18`.
+- `effects.rainImpacts` serializes:
+  - `enabled`
+  - `rate`
+  - `size`
+  - `strength`
+  - `lifetime`
+  - `count`
+- `PublishedPlayerApp` restores those values into `updateMaterialEffect()`.
+
+Retest checklist:
+
+1. Hard refresh `localhost:5173`.
+2. Load/select MTG material with `Original: MTG.jpg`.
+3. Add `RAIN`.
+4. Verify the original card texture remains visible.
+5. Use the confirmed settings above if the ripples are subtle.
+6. Verify rings animate without any Play button.
 
 ## Vercel / Publish Workflow
 

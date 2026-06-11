@@ -23,7 +23,56 @@ export type RuntimeMeshMaterial = THREE.MeshStandardMaterial & {
   }
 }
 
-export function ensureMaterialTextureBackup(material: THREE.Material) {
+function getTextureSourceUrl(texture: THREE.Texture) {
+  const imageSource = texture.source?.data as { currentSrc?: string; src?: string } | undefined
+  const sourceUrl = imageSource?.currentSrc || imageSource?.src
+  return typeof sourceUrl === 'string' && sourceUrl ? sourceUrl : null
+}
+
+function getTextureDisplayName(texture: THREE.Texture, fallback: string) {
+  const explicitName = texture.name?.trim()
+  if (explicitName) {
+    return explicitName
+  }
+
+  const sourceUrl = getTextureSourceUrl(texture)
+  if (sourceUrl) {
+    const sanitized = sourceUrl.split('#')[0]?.split('?')[0] ?? sourceUrl
+    const pieces = sanitized.split(/[\\/]/)
+    const fileName = pieces[pieces.length - 1]
+    if (fileName) {
+      return decodeURIComponent(fileName)
+    }
+  }
+
+  return fallback
+}
+
+function textureMatchesOriginalSlot(
+  texture: THREE.Texture | null | undefined,
+  textureState: Pick<PbrMaterialState, 'textureSlots'>['textureSlots'][MaterialTextureSlot] | undefined,
+  slot: MaterialTextureSlot,
+) {
+  if (!texture || !textureState) {
+    return false
+  }
+
+  const sourceUrl = getTextureSourceUrl(texture)
+  if (textureState.originalUrl && sourceUrl === textureState.originalUrl) {
+    return true
+  }
+
+  if (!textureState.originalLabel) {
+    return false
+  }
+
+  return getTextureDisplayName(texture, `${slot} Texture`) === textureState.originalLabel
+}
+
+export function ensureMaterialTextureBackup(
+  material: THREE.Material,
+  materialState?: Pick<PbrMaterialState, 'textureSlots'>,
+) {
   const standardMaterial = material as RuntimeMeshMaterial
 
   if (!standardMaterial.userData.originalTextureSlots) {
@@ -33,6 +82,27 @@ export function ensureMaterialTextureBackup(material: THREE.Material) {
   }
 
   standardMaterial.userData.customTextureSlots ??= {}
+
+  MATERIAL_TEXTURE_SLOTS.forEach((slot) => {
+    const currentTexture = standardMaterial[slot] ?? null
+    const customTexture = standardMaterial.userData.customTextureSlots?.[slot] ?? null
+    const textureState = materialState?.textureSlots[slot]
+    const currentMatchesOriginal = textureState
+      ? textureMatchesOriginalSlot(currentTexture, textureState, slot)
+      : Boolean(currentTexture)
+    const backupMatchesOriginal = textureState
+      ? textureMatchesOriginalSlot(standardMaterial.userData.originalTextureSlots?.[slot], textureState, slot)
+      : Boolean(standardMaterial.userData.originalTextureSlots?.[slot])
+
+    if (
+      currentTexture &&
+      currentTexture !== customTexture &&
+      currentMatchesOriginal &&
+      (!backupMatchesOriginal || standardMaterial.userData.originalTextureSlots?.[slot] === customTexture)
+    ) {
+      standardMaterial.userData.originalTextureSlots![slot] = currentTexture
+    }
+  })
 
   if (!standardMaterial.userData.originalEnvMapRotation) {
     standardMaterial.userData.originalEnvMapRotation = [
@@ -120,7 +190,7 @@ export function applyMaterialTextureSelections(
   material: RuntimeMeshMaterial,
   materialState: Pick<PbrMaterialState, 'textureSlots'>,
 ) {
-  ensureMaterialTextureBackup(material)
+  ensureMaterialTextureBackup(material, materialState)
 
   MATERIAL_TEXTURE_SLOTS.forEach((slot) => {
     const selectedSource = materialState.textureSlots[slot]?.selectedSource ?? null

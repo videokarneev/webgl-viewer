@@ -2201,15 +2201,26 @@ function AtlasEffectSection({
 
   const totalFrames = Math.max(1, material.effect.gridX * material.effect.gridY)
 
-  const activeEffects = material.effect.isAdded
+  const activeEffects = [
+    ...(material.effect.isAdded
       ? [
-        {
-          id: 'anim',
-          label: 'Flipbook Animation',
-          enabled: material.effect.enabled,
-        },
-      ]
-    : []
+          {
+            id: 'flipbook' as const,
+            label: 'Flipbook Animation',
+            enabled: material.effect.enabled,
+          },
+        ]
+      : []),
+    ...(material.effect.rainImpactsAdded
+      ? [
+          {
+            id: 'rainImpacts' as const,
+            label: 'Rain Impacts',
+            enabled: material.effect.rainImpactsEnabled,
+          },
+        ]
+      : []),
+  ]
 
   return (
     <SectionPanel title="Material Effects" isCollapsed={isCollapsed} onToggle={onToggle}>
@@ -2221,6 +2232,14 @@ function AtlasEffectSection({
         >
           <span className="tool-button__glyph">FLIPBOOK</span>
           <span className="tool-button__label">{material.effect.isAdded ? 'Added' : 'Create'}</span>
+        </button>
+        <button
+          type="button"
+          className={`tool-button effect-create-button ${material.effect.rainImpactsAdded ? 'is-active' : ''}`}
+          onClick={() => updateMaterialEffect(materialId, { rainImpactsAdded: true, rainImpactsEnabled: true })}
+        >
+          <span className="tool-button__glyph">RAIN</span>
+          <span className="tool-button__label">{material.effect.rainImpactsAdded ? 'Added' : 'Create'}</span>
         </button>
       </div>
 
@@ -2235,7 +2254,14 @@ function AtlasEffectSection({
                   className={`material-effects-list__icon-button${effect.enabled ? ' is-active' : ''}`}
                   aria-label={effect.enabled ? `Hide ${effect.label}` : `Show ${effect.label}`}
                   title={effect.enabled ? `Hide ${effect.label}` : `Show ${effect.label}`}
-                  onClick={() => updateMaterialEffect(materialId, { enabled: !effect.enabled })}
+                  onClick={() =>
+                    updateMaterialEffect(
+                      materialId,
+                      effect.id === 'flipbook'
+                        ? { enabled: !effect.enabled }
+                        : { rainImpactsEnabled: !effect.enabled },
+                    )
+                  }
                 >
                   <EyeIcon isOpen={effect.enabled} />
                 </button>
@@ -2244,7 +2270,14 @@ function AtlasEffectSection({
                   className="material-effects-list__icon-button"
                   aria-label={`Remove ${effect.label}`}
                   title={`Remove ${effect.label}`}
-                  onClick={() => updateMaterialEffect(materialId, { isAdded: false, enabled: false })}
+                  onClick={() =>
+                    updateMaterialEffect(
+                      materialId,
+                      effect.id === 'flipbook'
+                        ? { isAdded: false, enabled: false }
+                        : { rainImpactsAdded: false, rainImpactsEnabled: false },
+                    )
+                  }
                 >
                   <TrashIcon />
                 </button>
@@ -2540,6 +2573,87 @@ function AtlasEffectSection({
               />
             </label>
           </details>
+        </>
+      ) : null}
+
+      {material.effect.rainImpactsAdded ? (
+        <>
+          <p className="left-controls__label material-effect-active-title">Rain Impacts</p>
+
+          <label className="field">
+            <span>
+              Rate <output>{formatNumber(material.effect.rainImpactRate, 1)}/s</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="60"
+              step="0.5"
+              value={material.effect.rainImpactRate}
+              onInput={(event) => updateMaterialEffect(materialId, { rainImpactRate: Number(event.currentTarget.value) })}
+            />
+          </label>
+
+          <label className="field">
+            <span>
+              Size <output>{formatNumber(material.effect.rainImpactSize)}</output>
+            </span>
+            <input
+              type="range"
+              min="0.005"
+              max="0.5"
+              step="0.005"
+              value={material.effect.rainImpactSize}
+              onInput={(event) => updateMaterialEffect(materialId, { rainImpactSize: Number(event.currentTarget.value) })}
+            />
+          </label>
+
+          <label className="field">
+            <span>
+              Strength <output>{formatNumber(material.effect.rainImpactStrength)}</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.01"
+              value={material.effect.rainImpactStrength}
+              onInput={(event) =>
+                updateMaterialEffect(materialId, { rainImpactStrength: Number(event.currentTarget.value) })
+              }
+            />
+          </label>
+
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Lifetime <output>{formatNumber(material.effect.rainImpactLifetime)}s</output>
+              </span>
+              <input
+                type="range"
+                min="0.2"
+                max="6"
+                step="0.05"
+                value={material.effect.rainImpactLifetime}
+                onInput={(event) =>
+                  updateMaterialEffect(materialId, { rainImpactLifetime: Number(event.currentTarget.value) })
+                }
+              />
+            </label>
+            <label className="field field--compact-number">
+              <span>Max Rings</span>
+              <input
+                type="number"
+                min="1"
+                max="32"
+                step="1"
+                value={material.effect.rainImpactCount}
+                onChange={(event) =>
+                  updateMaterialEffect(materialId, { rainImpactCount: Number(event.currentTarget.value) || 1 })
+                }
+              />
+            </label>
+          </div>
         </>
       ) : null}
 
