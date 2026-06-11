@@ -1,0 +1,444 @@
+{
+  "version": 18,
+  "scene": {
+    "background": {
+      "mode": "color",
+      "color": "#171717",
+      "rotation": 0
+    },
+    "environment": {
+      "enabled": true,
+      "kind": "hdri",
+      "assetLabel": "Studio",
+      "assetUrl": "assets/environment/scene-environment-studio.exr",
+      "intensity": 0,
+      "rotation": -12,
+      "backgroundMode": "color",
+      "backgroundVisible": true,
+      "backgroundAssetLabel": null,
+      "backgroundAssetUrl": null,
+      "backgroundIntensity": 1,
+      "backgroundBlur": 0
+    }
+  },
+  "camera": {
+    "mode": "orbit",
+    "position": [
+      12.076211991867645,
+      2.473383923931747,
+      -4.5080172769356075
+    ],
+    "target": [
+      -2.31697140122794,
+      2.1142497949604557,
+      3.779337790215076
+    ],
+    "focalLength": 20,
+    "frameAspectPreset": "auto",
+    "exposure": 3
+  },
+  "responsiveFrame": {
+    "landscape": {
+      "frameAspectPreset": "16:9",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "portrait": {
+      "frameAspectPreset": "9:16",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    },
+    "square": {
+      "frameAspectPreset": "1:1",
+      "cameraPosition": [
+        4,
+        3,
+        5
+      ],
+      "orbitTarget": [
+        0,
+        0,
+        0
+      ],
+      "focalLength": 20
+    }
+  },
+  "viewer": {
+    "postEffectsEnabled": true,
+    "bloomIntensity": 1.03,
+    "bloomRadius": 0.45,
+    "bloomThreshold": 0.18,
+    "toneMappingWhitePoint": 4,
+    "toneMappingAdaptation": 1,
+    "dofEnabled": false,
+    "dofFocusDistance": 5,
+    "dofAperture": 2,
+    "dofManualBlur": 1.2
+  },
+  "audio": {
+    "isAdded": false,
+    "enabled": false,
+    "assetLabel": null,
+    "assetUrl": null,
+    "volume": 0.16,
+    "loop": true
+  },
+  "lights": {
+    "ambient": {
+      "exists": true,
+      "visible": true,
+      "color": "#ffffff",
+      "intensity": 2.39
+    },
+    "rig": {
+      "hemisphere": 0.9,
+      "key": 1.8,
+      "fill": 0.85,
+      "rim": 0.65
+    },
+    "extra": []
+  },
+  "phoneScreenBoxes": [],
+  "godRaysGlobals": {
+    "noise": {
+      "amount": 0.6,
+      "scale": 5,
+      "grain": 0.18,
+      "motionMode": "off",
+      "motionSpeed": 1.6,
+      "quality": "low"
+    },
+    "direction": {
+      "vector": [
+        0,
+        1,
+        0
+      ]
+    }
+  },
+  "godRaysBoxes": [],
+  "stencilVolumes": [],
+  "model": {
+    "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d",
+    "assetLabel": "church.glb",
+    "assetUrl": "assets/model/scene-model-church.glb",
+    "visible": true,
+    "transform": {
+      "position": [
+        0,
+        0,
+        0
+      ],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "scale": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  "objects": [
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d",
+      "parentId": null,
+      "type": "group",
+      "label": "Loaded Model",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0",
+      "parentId": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d",
+      "type": "group",
+      "label": "wall",
+      "visible": true,
+      "transform": {
+        "position": [
+          -15.00242,
+          3.19692588,
+          -3.26393414
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1.81786966,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:0",
+      "parentId": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0",
+      "type": "mesh",
+      "label": "wall_1",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:1",
+      "parentId": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0",
+      "type": "mesh",
+      "label": "wall_2",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:2",
+      "parentId": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0",
+      "type": "mesh",
+      "label": "wall_3",
+      "visible": true,
+      "transform": {
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:1",
+      "parentId": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d",
+      "type": "group",
+      "label": "Corona_Light001",
+      "visible": true,
+      "transform": {
+        "position": [
+          -19.4972687,
+          12.8124723,
+          -0.0457791723
+        ],
+        "rotation": [
+          3.1415926098784035,
+          7.571034547729658e-8,
+          2.0943952389128597
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
+    }
+  ],
+  "materials": [
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:0/material:0",
+      "name": "wall",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0.21,
+      "roughness": 0.58,
+      "envMapIntensity": 10,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "map": {
+          "source": "original",
+          "label": "wall.jpg",
+          "assetUrl": null
+        },
+        "normalMap": {
+          "source": "original",
+          "label": "wall_NRM.jpg",
+          "assetUrl": null
+        },
+        "aoMap": {
+          "source": "original",
+          "label": "light.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null,
+        "rainImpacts": {
+          "enabled": false,
+          "rate": 20.869565217391305,
+          "size": 0.08,
+          "strength": 0.45,
+          "opacity": 1,
+          "normalStrength": 0.65,
+          "wetness": 0.35,
+          "noise": 0.35,
+          "flow": 0.65,
+          "lifetime": 1.15,
+          "count": 24
+        }
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:1/material:0",
+      "name": "floor",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0.44,
+      "roughness": 0.57,
+      "envMapIntensity": 0,
+      "emissiveIntensity": 2.23,
+      "clearcoat": null,
+      "environmentOverride": {
+        "assetLabel": "Studio",
+        "assetUrl": "assets/environment/scene-environment-studio.exr",
+        "rotation": 0
+      },
+      "textureSlots": {
+        "map": {
+          "source": "original",
+          "label": "floor.jpg",
+          "assetUrl": null
+        },
+        "normalMap": {
+          "source": "original",
+          "label": "floor_NRM.jpg",
+          "assetUrl": null
+        },
+        "aoMap": {
+          "source": "original",
+          "label": "light.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null,
+        "rainImpacts": {
+          "enabled": true,
+          "rate": 26.956521739130437,
+          "size": 0.08,
+          "strength": 0.45,
+          "opacity": 0.23,
+          "normalStrength": 1.41,
+          "wetness": 0.63,
+          "noise": 0.35,
+          "flow": 0.65,
+          "lifetime": 1.15,
+          "count": 31
+        }
+      }
+    },
+    {
+      "id": "root:91282c53-2316-4bee-8ccc-7f75d2c6fd2d/node:0/node:2/material:0",
+      "name": "wood",
+      "type": "MeshStandardMaterial",
+      "useSystemMaterial": false,
+      "color": "#ffffff",
+      "emissive": "#000000",
+      "metalness": 0,
+      "roughness": 1,
+      "envMapIntensity": 1,
+      "emissiveIntensity": 1,
+      "clearcoat": null,
+      "environmentOverride": null,
+      "textureSlots": {
+        "map": {
+          "source": "original",
+          "label": "wood.jpg",
+          "assetUrl": null
+        },
+        "normalMap": {
+          "source": "original",
+          "label": "wood_NRM.jpg",
+          "assetUrl": null
+        },
+        "aoMap": {
+          "source": "original",
+          "label": "light.jpg",
+          "assetUrl": null
+        }
+      },
+      "effects": {
+        "flipbook": null,
+        "rainImpacts": null
+      }
+    }
+  ],
+  "animations": []
+}
