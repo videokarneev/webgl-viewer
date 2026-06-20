@@ -927,6 +927,11 @@ function PublishedSceneController({
             rainImpactRate: materialEntry.effects.rainImpacts.rate,
             rainImpactSize: materialEntry.effects.rainImpacts.size,
             rainImpactStrength: materialEntry.effects.rainImpacts.strength,
+            rainImpactOpacity: materialEntry.effects.rainImpacts.opacity,
+            rainImpactNormalStrength: materialEntry.effects.rainImpacts.normalStrength,
+            rainImpactWetness: materialEntry.effects.rainImpacts.wetness,
+            rainImpactNoise: materialEntry.effects.rainImpacts.noise,
+            rainImpactFlow: materialEntry.effects.rainImpacts.flow,
             rainImpactLifetime: materialEntry.effects.rainImpacts.lifetime,
             rainImpactCount: materialEntry.effects.rainImpacts.count,
           })

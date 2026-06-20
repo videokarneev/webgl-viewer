@@ -2582,15 +2582,21 @@ function AtlasEffectSection({
 
           <label className="field">
             <span>
-              Rate <output>{formatNumber(material.effect.rainImpactRate, 1)}/s</output>
+              Drops <output>{material.effect.rainImpactCount}</output>
             </span>
             <input
               type="range"
-              min="0"
-              max="60"
-              step="0.5"
-              value={material.effect.rainImpactRate}
-              onInput={(event) => updateMaterialEffect(materialId, { rainImpactRate: Number(event.currentTarget.value) })}
+              min="1"
+              max="32"
+              step="1"
+              value={material.effect.rainImpactCount}
+              onInput={(event) => {
+                const count = Number(event.currentTarget.value) || 1
+                updateMaterialEffect(materialId, {
+                  rainImpactCount: count,
+                  rainImpactRate: count / Math.max(material.effect.rainImpactLifetime, 0.001),
+                })
+              }}
             />
           </label>
 
@@ -2627,33 +2633,104 @@ function AtlasEffectSection({
           <div className="grid-two">
             <label className="field">
               <span>
-                Lifetime <output>{formatNumber(material.effect.rainImpactLifetime)}s</output>
+                Opacity <output>{formatNumber(material.effect.rainImpactOpacity)}</output>
               </span>
               <input
                 type="range"
-                min="0.2"
-                max="6"
-                step="0.05"
-                value={material.effect.rainImpactLifetime}
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.effect.rainImpactOpacity}
                 onInput={(event) =>
-                  updateMaterialEffect(materialId, { rainImpactLifetime: Number(event.currentTarget.value) })
+                  updateMaterialEffect(materialId, { rainImpactOpacity: Number(event.currentTarget.value) })
                 }
               />
             </label>
-            <label className="field field--compact-number">
-              <span>Max Rings</span>
+            <label className="field">
+              <span>
+                Normal <output>{formatNumber(material.effect.rainImpactNormalStrength)}</output>
+              </span>
               <input
-                type="number"
-                min="1"
-                max="32"
-                step="1"
-                value={material.effect.rainImpactCount}
-                onChange={(event) =>
-                  updateMaterialEffect(materialId, { rainImpactCount: Number(event.currentTarget.value) || 1 })
+                type="range"
+                min="0"
+                max="2"
+                step="0.01"
+                value={material.effect.rainImpactNormalStrength}
+                onInput={(event) =>
+                  updateMaterialEffect(materialId, { rainImpactNormalStrength: Number(event.currentTarget.value) })
                 }
               />
             </label>
           </div>
+
+          <label className="field">
+            <span>
+              Wetness <output>{formatNumber(material.effect.rainImpactWetness)}</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={material.effect.rainImpactWetness}
+              onInput={(event) =>
+                updateMaterialEffect(materialId, { rainImpactWetness: Number(event.currentTarget.value) })
+              }
+            />
+          </label>
+
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Noise <output>{formatNumber(material.effect.rainImpactNoise)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.effect.rainImpactNoise}
+                onInput={(event) =>
+                  updateMaterialEffect(materialId, { rainImpactNoise: Number(event.currentTarget.value) })
+                }
+              />
+            </label>
+            <label className="field">
+              <span>
+                Flow <output>{formatNumber(material.effect.rainImpactFlow)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="3"
+                step="0.01"
+                value={material.effect.rainImpactFlow}
+                onInput={(event) =>
+                  updateMaterialEffect(materialId, { rainImpactFlow: Number(event.currentTarget.value) })
+                }
+              />
+            </label>
+          </div>
+
+          <label className="field">
+            <span>
+              Lifetime <output>{formatNumber(material.effect.rainImpactLifetime)}s</output>
+            </span>
+            <input
+              type="range"
+              min="0.2"
+              max="6"
+              step="0.05"
+              value={material.effect.rainImpactLifetime}
+              onInput={(event) => {
+                const lifetime = Number(event.currentTarget.value)
+                updateMaterialEffect(materialId, {
+                  rainImpactLifetime: lifetime,
+                  rainImpactRate: material.effect.rainImpactCount / Math.max(lifetime, 0.001),
+                })
+              }}
+            />
+          </label>
         </>
       ) : null}
 

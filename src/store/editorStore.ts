@@ -322,6 +322,11 @@ export interface AtlasEffectState {
   rainImpactRate: number
   rainImpactSize: number
   rainImpactStrength: number
+  rainImpactOpacity: number
+  rainImpactNormalStrength: number
+  rainImpactWetness: number
+  rainImpactNoise: number
+  rainImpactFlow: number
   rainImpactLifetime: number
   rainImpactCount: number
 }
@@ -353,6 +358,11 @@ export const DEFAULT_ATLAS_EFFECT: AtlasEffectState = {
   rainImpactRate: 10,
   rainImpactSize: 0.08,
   rainImpactStrength: 0.45,
+  rainImpactOpacity: 1,
+  rainImpactNormalStrength: 0.65,
+  rainImpactWetness: 0.35,
+  rainImpactNoise: 0.35,
+  rainImpactFlow: 0.65,
   rainImpactLifetime: 1.15,
   rainImpactCount: 24,
 }
@@ -1193,6 +1203,14 @@ function clampEffect(effect: AtlasEffectState): AtlasEffectState {
     rainImpactRate: Math.min(Math.max(effect.rainImpactRate ?? DEFAULT_ATLAS_EFFECT.rainImpactRate, 0), 60),
     rainImpactSize: Math.min(Math.max(effect.rainImpactSize ?? DEFAULT_ATLAS_EFFECT.rainImpactSize, 0.005), 0.5),
     rainImpactStrength: Math.min(Math.max(effect.rainImpactStrength ?? DEFAULT_ATLAS_EFFECT.rainImpactStrength, 0), 2),
+    rainImpactOpacity: Math.min(Math.max(effect.rainImpactOpacity ?? DEFAULT_ATLAS_EFFECT.rainImpactOpacity, 0), 1),
+    rainImpactNormalStrength: Math.min(
+      Math.max(effect.rainImpactNormalStrength ?? DEFAULT_ATLAS_EFFECT.rainImpactNormalStrength, 0),
+      2,
+    ),
+    rainImpactWetness: Math.min(Math.max(effect.rainImpactWetness ?? DEFAULT_ATLAS_EFFECT.rainImpactWetness, 0), 1),
+    rainImpactNoise: Math.min(Math.max(effect.rainImpactNoise ?? DEFAULT_ATLAS_EFFECT.rainImpactNoise, 0), 1),
+    rainImpactFlow: Math.min(Math.max(effect.rainImpactFlow ?? DEFAULT_ATLAS_EFFECT.rainImpactFlow, 0), 3),
     rainImpactLifetime: Math.min(Math.max(effect.rainImpactLifetime ?? DEFAULT_ATLAS_EFFECT.rainImpactLifetime, 0.2), 6),
     rainImpactCount: Math.min(Math.max(Math.round(effect.rainImpactCount ?? DEFAULT_ATLAS_EFFECT.rainImpactCount), 1), 32),
     rainImpactsAdded: Boolean(effect.rainImpactsAdded),

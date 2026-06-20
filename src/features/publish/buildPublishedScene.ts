@@ -445,6 +445,11 @@ export interface PublishedSceneV2 {
         rate: number
         size: number
         strength: number
+        opacity?: number
+        normalStrength?: number
+        wetness?: number
+        noise?: number
+        flow?: number
         lifetime: number
         count: number
       } | null
@@ -644,9 +649,14 @@ async function buildPublishedSceneInternal() {
         rainImpacts: material.effect.rainImpactsAdded
           ? {
               enabled: material.effect.rainImpactsEnabled,
-              rate: material.effect.rainImpactRate,
+              rate: material.effect.rainImpactCount / Math.max(material.effect.rainImpactLifetime, 0.001),
               size: material.effect.rainImpactSize,
               strength: material.effect.rainImpactStrength,
+              opacity: material.effect.rainImpactOpacity,
+              normalStrength: material.effect.rainImpactNormalStrength,
+              wetness: material.effect.rainImpactWetness,
+              noise: material.effect.rainImpactNoise,
+              flow: material.effect.rainImpactFlow,
               lifetime: material.effect.rainImpactLifetime,
               count: material.effect.rainImpactCount,
             }
