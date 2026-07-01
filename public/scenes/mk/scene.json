@@ -3341,7 +3341,7 @@
       },
       "rays": {
         "color": "#ff0000",
-        "intensity": 1.43,
+        "intensity": 1.95,
         "falloff": 1.25,
         "edgeFade": 0.22,
         "fillQuality": 0.25,
@@ -3355,21 +3355,21 @@
       },
       "dust": {
         "enabled": true,
-        "count": 180,
+        "count": 171,
         "sizeMin": 0.015,
         "sizeMax": 0.05,
         "speed": 0.0005555555555555556,
         "colorLinked": false,
         "color": "#ffa8a8",
-        "strength": 0.54,
+        "strength": 0.39,
         "directionMode": "global",
         "directionLocal": [
           0,
           1,
           0
         ],
-        "drift": 0.06,
-        "edgeFade": 0.16
+        "drift": 0.05,
+        "edgeFade": 0.6
       }
     }
   ],
