@@ -27,14 +27,14 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.012357102050303215,
-      1.6660744445648925,
-      2.9565572438547165
+      -0.013410092424066105,
+      1.7269800148307681,
+      3.27596370510219
     ],
     "target": [
-      0.01235710205030324,
-      1.6660744445648923,
-      -9.433425419592295e-17
+      -0.013410092424066105,
+      1.726980014830768,
+      -1.1024767862141927e-16
     ],
     "focalLength": 20,
     "frameAspectPreset": "auto",
@@ -125,9 +125,9 @@
     "noise": {
       "amount": 0.6,
       "scale": 5,
-      "grain": 1,
+      "grain": 0.8,
       "motionMode": "soft",
-      "motionSpeed": 1.15,
+      "motionSpeed": 1.6,
       "quality": "low"
     },
     "direction": {
@@ -141,7 +141,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [
     {
-      "id": "effect:stencil-volume:1:1782940519494",
+      "id": "effect:stencil-volume:1:1782941011369",
       "label": "Stencil Volume",
       "visible": true,
       "transform": {
@@ -4272,15 +4272,15 @@
         ],
         "endRotationX": 0,
         "endRotationY": 0,
-        "endScaleX": 1.5911602736500958,
-        "endScaleY": 1.6668207960249546
+        "endScaleX": 1.6734555682262018,
+        "endScaleY": 1.5325637369251908
       },
       "rays": {
-        "color": "#fe3939",
-        "intensity": 1.59,
+        "color": "#ff4d4d",
+        "intensity": 1.54,
         "falloff": 1.4,
         "edgeFade": 0.22,
-        "fillQuality": 0.35,
+        "fillQuality": 0.25,
         "useGlobalSettings": true,
         "noiseAmount": 0.6,
         "noiseScale": 5,
@@ -4291,12 +4291,12 @@
       },
       "dust": {
         "enabled": true,
-        "count": 446,
-        "sizeMin": 0.01,
-        "sizeMax": 0.03,
+        "count": 180,
+        "sizeMin": 0.015,
+        "sizeMax": 0.05,
         "speed": 0.0005555555555555556,
         "colorLinked": false,
-        "color": "#ff9e9e",
+        "color": "#ff9999",
         "strength": 0.54,
         "directionMode": "global",
         "directionLocal": [
@@ -4305,14 +4305,14 @@
           0
         ],
         "drift": 0.06,
-        "edgeFade": 0.93
+        "edgeFade": 1
       }
     }
   ],
   "model": null,
   "objects": [
     {
-      "id": "root:effect:stencil-volume:1:1782940519494",
+      "id": "root:effect:stencil-volume:1:1782941011369",
       "parentId": null,
       "type": "effect",
       "label": "Stencil Volume",
