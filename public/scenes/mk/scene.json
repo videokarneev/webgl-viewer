@@ -3341,8 +3341,8 @@
       },
       "rays": {
         "color": "#ff0000",
-        "intensity": 1.2,
-        "falloff": 1.4,
+        "intensity": 2.3,
+        "falloff": 1.25,
         "edgeFade": 0.22,
         "fillQuality": 0.25,
         "useGlobalSettings": true,
