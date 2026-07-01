@@ -125,7 +125,7 @@
     "noise": {
       "amount": 0.6,
       "scale": 10,
-      "grain": 1,
+      "grain": 0.74,
       "motionMode": "soft",
       "motionSpeed": 1.4,
       "quality": "medium"
@@ -3340,11 +3340,11 @@
         "endScaleY": 1.667100508937382
       },
       "rays": {
-        "color": "#ff0000",
-        "intensity": 2.11,
-        "falloff": 1.37,
-        "edgeFade": 0.28,
-        "fillQuality": 0.63,
+        "color": "#ff5252",
+        "intensity": 1.64,
+        "falloff": 1.45,
+        "edgeFade": 2,
+        "fillQuality": 0.21,
         "useGlobalSettings": true,
         "noiseAmount": 0.6,
         "noiseScale": 5,
