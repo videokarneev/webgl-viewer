@@ -29,7 +29,7 @@
     "position": [
       0.02929771640078795,
       1.6397362489966059,
-      3.0446303901267027
+      3.0446303901267004
     ],
     "target": [
       0.02929771640078795,
@@ -3336,15 +3336,15 @@
         ],
         "endRotationX": 0,
         "endRotationY": 0,
-        "endScaleX": 1.520213181341811,
-        "endScaleY": 1.2377277648608327
+        "endScaleX": 1.9868593809756847,
+        "endScaleY": 1.667100508937382
       },
       "rays": {
         "color": "#ff0000",
-        "intensity": 1.95,
-        "falloff": 1.25,
-        "edgeFade": 0.22,
-        "fillQuality": 0.25,
+        "intensity": 2.11,
+        "falloff": 1.37,
+        "edgeFade": 0.28,
+        "fillQuality": 0.3,
         "useGlobalSettings": true,
         "noiseAmount": 0.6,
         "noiseScale": 5,
