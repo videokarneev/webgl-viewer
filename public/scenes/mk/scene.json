@@ -27,13 +27,13 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.02929771640078795,
-      1.6397362489966059,
-      3.0446303901267004
+      0.024613728641936526,
+      1.7092265665871191,
+      3.2170495325004986
     ],
     "target": [
-      0.02929771640078795,
-      1.6397362489966056,
+      0.024613728641936526,
+      1.709226566587119,
       -0.23133331497547077
     ],
     "focalLength": 20,
@@ -124,11 +124,11 @@
   "godRaysGlobals": {
     "noise": {
       "amount": 0.6,
-      "scale": 5,
+      "scale": 10,
       "grain": 1,
       "motionMode": "soft",
-      "motionSpeed": 1.6,
-      "quality": "low"
+      "motionSpeed": 1.4,
+      "quality": "medium"
     },
     "direction": {
       "vector": [
@@ -3344,7 +3344,7 @@
         "intensity": 2.11,
         "falloff": 1.37,
         "edgeFade": 0.28,
-        "fillQuality": 0.3,
+        "fillQuality": 0.63,
         "useGlobalSettings": true,
         "noiseAmount": 0.6,
         "noiseScale": 5,
@@ -3355,9 +3355,9 @@
       },
       "dust": {
         "enabled": true,
-        "count": 171,
-        "sizeMin": 0.015,
-        "sizeMax": 0.05,
+        "count": 468,
+        "sizeMin": 0.007,
+        "sizeMax": 0.033,
         "speed": 0.0005555555555555556,
         "colorLinked": false,
         "color": "#ffa8a8",
