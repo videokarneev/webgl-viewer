@@ -10,7 +10,26 @@ export type AtlasUvChannel = 'auto' | 'normal' | 'baseColor' | 'emissive' | 'uv'
 export type AtlasWrapMode = 'repeat' | 'clamp'
 export type TransformMode = 'translate' | 'rotate' | 'scale' | 'none'
 export type MeasurementUnit = 'cm' | 'm'
-export type BackgroundMode = 'none' | 'color' | 'background' | 'hdri'
+export type BackgroundMode = 'none' | 'color' | 'gradient' | 'background' | 'hdri'
+export type SceneDirectorMode = 'background' | 'interface' | 'callouts' | 'actions' | 'states' | 'animator'
+export type InterfaceElementAnchor =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right'
+export type InterfaceElementActionType = 'none' | 'openUrl'
+export type InterfaceElementUrlTarget = 'newTab' | 'sameFrame'
+export type InterfaceElementShapeType = 'rectangle' | 'oval' | 'svg'
+export type InterfaceElementRenderMode = 'overlay' | 'screen3d'
+export type InterfaceElementDepthMode = 'overlay' | 'occluded'
+export type InterfaceElementScaleMode = 'fixedScreen' | 'perspective'
+export type InterfaceElementMaterialPreset = 'plastic' | 'metal' | 'glass' | 'matte' | 'custom'
+export type InterfaceElementMaterialType = 'standard' | 'physical'
 export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap' | 'aoMap' | 'emissiveMap' | 'alphaMap' | 'bumpMap' | 'displacementMap' | 'specularMap'
 export type MaterialTextureSource = 'original' | 'custom'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
@@ -455,8 +474,80 @@ export interface ViewportHudState {
   sidebarVisible: boolean
   inspectorVisible: boolean
   transformMode: TransformMode
+  directorDockOpen: boolean
+  directorMode: SceneDirectorMode
   activeGodRaysDirectionBoxId: string | null
   activeStencilVolumeEndHandleId: string | null
+}
+
+export interface InterfaceElementActionState {
+  type: InterfaceElementActionType
+  url: string
+  target: InterfaceElementUrlTarget
+}
+
+export interface InterfaceElementShapeState {
+  type: InterfaceElementShapeType
+  cornerRadius: number
+  svgMarkup: string | null
+  svgLabel: string | null
+}
+
+export interface InterfaceElementOverlayState {
+  anchor: InterfaceElementAnchor
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+  fontSize: number
+}
+
+export interface InterfaceElementMaterialState {
+  type: InterfaceElementMaterialType
+  preset: InterfaceElementMaterialPreset
+  color: string
+  opacity: number
+  metalness: number
+  roughness: number
+  envMapIntensity: number
+  clearcoat: number
+  clearcoatRoughness: number
+  transmission: number
+  ior: number
+  emissive: string
+  emissiveIntensity: number
+}
+
+export interface InterfaceElementScreen3dState {
+  anchor: InterfaceElementAnchor
+  offsetX: number
+  offsetY: number
+  distance: number
+  width: number
+  height: number
+  scaleMode: InterfaceElementScaleMode
+  depthMode: InterfaceElementDepthMode
+  billboard: boolean
+  material: InterfaceElementMaterialState
+}
+
+export interface InterfaceElementState {
+  id: string
+  label: string
+  visible: boolean
+  renderMode: InterfaceElementRenderMode
+  anchor: InterfaceElementAnchor
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+  fontSize: number
+  overlay: InterfaceElementOverlayState
+  screen3d: InterfaceElementScreen3dState
+  shape: InterfaceElementShapeState
+  action: InterfaceElementActionState
+  url: string
+  openInNewTab: boolean
 }
 
 export interface TransformSettingsState {
@@ -729,6 +820,168 @@ export const DEFAULT_BACKGROUND_AUDIO: BackgroundAudioState = {
   fileSize: null,
   volume: 0.16,
   loop: true,
+}
+
+function createDefaultInterfaceMaterialState(): InterfaceElementMaterialState {
+  return {
+    type: 'physical',
+    preset: 'plastic',
+    color: '#dfe7ef',
+    opacity: 1,
+    metalness: 0.08,
+    roughness: 0.28,
+    envMapIntensity: 1,
+    clearcoat: 0.65,
+    clearcoatRoughness: 0.18,
+    transmission: 0,
+    ior: 1.45,
+    emissive: '#000000',
+    emissiveIntensity: 0,
+  }
+}
+
+function createDefaultInterfaceElement(index: number): InterfaceElementState {
+  return {
+    id: `ui:${Date.now()}:${index}`,
+    label: index === 1 ? 'Explore' : `Button ${index}`,
+    visible: true,
+    renderMode: 'overlay',
+    anchor: 'bottom-center',
+    offsetX: 0,
+    offsetY: -32,
+    width: 168,
+    height: 44,
+    fontSize: 13,
+    overlay: {
+      anchor: 'bottom-center',
+      offsetX: 0,
+      offsetY: -32,
+      width: 168,
+      height: 44,
+      fontSize: 13,
+    },
+    screen3d: {
+      anchor: 'bottom-center',
+      offsetX: 0,
+      offsetY: -32,
+      distance: 1.2,
+      width: 220,
+      height: 68,
+      scaleMode: 'fixedScreen',
+      depthMode: 'overlay',
+      billboard: true,
+      material: createDefaultInterfaceMaterialState(),
+    },
+    shape: {
+      type: 'rectangle',
+      cornerRadius: 14,
+      svgMarkup: null,
+      svgLabel: null,
+    },
+    action: {
+      type: 'openUrl',
+      url: '',
+      target: 'newTab',
+    },
+    url: '',
+    openInNewTab: true,
+  }
+}
+
+function normalizeInterfaceElementState(entry: InterfaceElementState): InterfaceElementState {
+  const legacyUrl = entry.url ?? ''
+  const legacyTarget = entry.openInNewTab === false ? 'sameFrame' : 'newTab'
+  const shapeType = entry.shape?.type === 'oval' || entry.shape?.type === 'svg' ? entry.shape.type : 'rectangle'
+  const shape: InterfaceElementShapeState = {
+    type: shapeType,
+    cornerRadius: Number.isFinite(entry.shape?.cornerRadius) ? entry.shape.cornerRadius : 14,
+    svgMarkup: typeof entry.shape?.svgMarkup === 'string' ? entry.shape.svgMarkup : null,
+    svgLabel: typeof entry.shape?.svgLabel === 'string' ? entry.shape.svgLabel : null,
+  }
+  const renderMode = entry.renderMode === 'screen3d' ? 'screen3d' : 'overlay'
+  const overlay: InterfaceElementOverlayState = {
+    anchor: entry.overlay?.anchor ?? entry.anchor ?? 'bottom-center',
+    offsetX: Number.isFinite(entry.overlay?.offsetX) ? entry.overlay.offsetX : (entry.offsetX ?? 0),
+    offsetY: Number.isFinite(entry.overlay?.offsetY) ? entry.overlay.offsetY : (entry.offsetY ?? -32),
+    width: Number.isFinite(entry.overlay?.width) ? entry.overlay.width : (entry.width ?? 168),
+    height: Number.isFinite(entry.overlay?.height) ? entry.overlay.height : (entry.height ?? 44),
+    fontSize: Number.isFinite(entry.overlay?.fontSize) ? entry.overlay.fontSize : (entry.fontSize ?? 13),
+  }
+  const defaultMaterial = createDefaultInterfaceMaterialState()
+  const preset = entry.screen3d?.material?.preset
+  const screen3d: InterfaceElementScreen3dState = {
+    anchor: entry.screen3d?.anchor ?? overlay.anchor,
+    offsetX: Number.isFinite(entry.screen3d?.offsetX) ? entry.screen3d.offsetX : overlay.offsetX,
+    offsetY: Number.isFinite(entry.screen3d?.offsetY) ? entry.screen3d.offsetY : overlay.offsetY,
+    distance: Number.isFinite(entry.screen3d?.distance) ? entry.screen3d.distance : 1.2,
+    width: Number.isFinite(entry.screen3d?.width) ? entry.screen3d.width : 220,
+    height: Number.isFinite(entry.screen3d?.height) ? entry.screen3d.height : 68,
+    scaleMode: entry.screen3d?.scaleMode === 'perspective' ? 'perspective' : 'fixedScreen',
+    depthMode: entry.screen3d?.depthMode === 'occluded' ? 'occluded' : 'overlay',
+    billboard: entry.screen3d?.billboard ?? true,
+    material: {
+      type: entry.screen3d?.material?.type === 'standard' ? 'standard' : 'physical',
+      preset:
+        preset === 'metal' || preset === 'glass' || preset === 'matte' || preset === 'custom' ? preset : 'plastic',
+      color: entry.screen3d?.material?.color ?? defaultMaterial.color,
+      opacity: Number.isFinite(entry.screen3d?.material?.opacity) ? entry.screen3d.material.opacity : defaultMaterial.opacity,
+      metalness: Number.isFinite(entry.screen3d?.material?.metalness)
+        ? entry.screen3d.material.metalness
+        : defaultMaterial.metalness,
+      roughness: Number.isFinite(entry.screen3d?.material?.roughness)
+        ? entry.screen3d.material.roughness
+        : defaultMaterial.roughness,
+      envMapIntensity: Number.isFinite(entry.screen3d?.material?.envMapIntensity)
+        ? entry.screen3d.material.envMapIntensity
+        : defaultMaterial.envMapIntensity,
+      clearcoat: Number.isFinite(entry.screen3d?.material?.clearcoat)
+        ? entry.screen3d.material.clearcoat
+        : defaultMaterial.clearcoat,
+      clearcoatRoughness: Number.isFinite(entry.screen3d?.material?.clearcoatRoughness)
+        ? entry.screen3d.material.clearcoatRoughness
+        : defaultMaterial.clearcoatRoughness,
+      transmission: Number.isFinite(entry.screen3d?.material?.transmission)
+        ? entry.screen3d.material.transmission
+        : defaultMaterial.transmission,
+      ior: Number.isFinite(entry.screen3d?.material?.ior) ? entry.screen3d.material.ior : defaultMaterial.ior,
+      emissive: entry.screen3d?.material?.emissive ?? defaultMaterial.emissive,
+      emissiveIntensity: Number.isFinite(entry.screen3d?.material?.emissiveIntensity)
+        ? entry.screen3d.material.emissiveIntensity
+        : defaultMaterial.emissiveIntensity,
+    },
+  }
+  const action: InterfaceElementActionState = entry.action
+    ? {
+        type: entry.action.type === 'none' ? 'none' : 'openUrl',
+        url: entry.action.url ?? legacyUrl,
+        target: entry.action.target === 'sameFrame' ? 'sameFrame' : 'newTab',
+      }
+    : {
+        type: legacyUrl ? 'openUrl' : 'none',
+        url: legacyUrl,
+        target: legacyTarget,
+      }
+
+  return {
+    ...entry,
+    renderMode,
+    anchor: overlay.anchor,
+    offsetX: overlay.offsetX,
+    offsetY: overlay.offsetY,
+    width: overlay.width,
+    height: overlay.height,
+    fontSize: overlay.fontSize,
+    overlay,
+    screen3d,
+    shape,
+    action,
+    url: action.url,
+    openInNewTab: action.target === 'newTab',
+  }
+}
+
+function cloneInterfaceElementsState(interfaceElements: InterfaceElementState[]) {
+  return interfaceElements.map((entry) => normalizeInterfaceElementState({ ...entry }))
 }
 
 export type GodRaysSourceFace = '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
@@ -1024,6 +1277,9 @@ interface HistorySnapshot {
   responsiveFrame: ResponsiveFrameState
   backgroundMode: BackgroundMode
   backgroundColor: string
+  backgroundGradientStart: string
+  backgroundGradientEnd: string
+  backgroundGradientAngle: number
   backgroundRotation: number
   extraLights: ExtraLightState[]
   phoneScreenBoxes: PhoneScreenBoxState[]
@@ -1035,6 +1291,8 @@ interface HistorySnapshot {
   floatAnimation: FloatAnimationState
   focusAnimation: FocusAnimationState
   backgroundAudio: BackgroundAudioState
+  interfaceElements: InterfaceElementState[]
+  selectedInterfaceElementId: string | null
 }
 
 interface HistoryState {
@@ -1056,6 +1314,9 @@ interface EditorState {
   backgroundEnabled: boolean
   backgroundMode: BackgroundMode
   backgroundColor: string
+  backgroundGradientStart: string
+  backgroundGradientEnd: string
+  backgroundGradientAngle: number
   backgroundPanoramaUrl: string
   backgroundRotation: number
   selectedObjectId: string | null
@@ -1084,6 +1345,8 @@ interface EditorState {
   floatAnimation: FloatAnimationState
   focusAnimation: FocusAnimationState
   backgroundAudio: BackgroundAudioState
+  interfaceElements: InterfaceElementState[]
+  selectedInterfaceElementId: string | null
   status: string
   runtimeTextures: RuntimeTextureState
   runtime: RuntimeRegistryState
@@ -1133,9 +1396,15 @@ interface EditorState {
   setBackgroundEnabled: (value: boolean) => void
   setBackgroundMode: (value: BackgroundMode) => void
   setBackgroundColor: (value: string) => void
+  setBackgroundGradient: (patch: Partial<Pick<EditorState, 'backgroundGradientStart' | 'backgroundGradientEnd' | 'backgroundGradientAngle'>>) => void
   setBackgroundPanoramaUrl: (value: string) => void
   setBackgroundRotation: (value: number) => void
   setHud: (patch: Partial<ViewportHudState>) => void
+  addInterfaceElement: () => string
+  updateInterfaceElement: (id: string, patch: Partial<Omit<InterfaceElementState, 'id'>>) => void
+  removeInterfaceElement: (id: string) => void
+  replaceInterfaceElements: (entries: InterfaceElementState[]) => void
+  setSelectedInterfaceElementId: (id: string | null) => void
   setTransformSettings: (patch: Partial<TransformSettingsState>) => void
   setViewer: (patch: Partial<ViewerState>) => void
   setResponsiveFramePreset: (kind: ResponsiveFramePresetKind, patch: Partial<ResponsiveFramePresetState>) => void
@@ -1780,6 +2049,9 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     responsiveFrame: cloneResponsiveFrameState(state.responsiveFrame),
     backgroundMode: state.backgroundMode,
     backgroundColor: state.backgroundColor,
+    backgroundGradientStart: state.backgroundGradientStart,
+    backgroundGradientEnd: state.backgroundGradientEnd,
+    backgroundGradientAngle: state.backgroundGradientAngle,
     backgroundRotation: state.backgroundRotation,
     extraLights: cloneExtraLightsState(state.extraLights),
     phoneScreenBoxes: clonePhoneScreenBoxesState(state.phoneScreenBoxes),
@@ -1791,6 +2063,8 @@ function createHistorySnapshot(state: EditorState): HistorySnapshot {
     floatAnimation: cloneFloatAnimationState(state.floatAnimation),
     focusAnimation: cloneFocusAnimationState(state.focusAnimation),
     backgroundAudio: cloneBackgroundAudioState(state.backgroundAudio),
+    interfaceElements: cloneInterfaceElementsState(state.interfaceElements),
+    selectedInterfaceElementId: state.selectedInterfaceElementId,
   }
 }
 
@@ -2206,6 +2480,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   backgroundEnabled: false,
   backgroundMode: 'none',
   backgroundColor: '#808080',
+  backgroundGradientStart: '#111820',
+  backgroundGradientEnd: '#3f5f73',
+  backgroundGradientAngle: 135,
   backgroundPanoramaUrl: '',
   backgroundRotation: 0,
   selectedObjectId: null,
@@ -2257,6 +2534,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     sidebarVisible: true,
     inspectorVisible: true,
     transformMode: 'none',
+    directorDockOpen: false,
+    directorMode: 'background',
     activeGodRaysDirectionBoxId: null,
     activeStencilVolumeEndHandleId: null,
   },
@@ -2314,6 +2593,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   floatAnimation: DEFAULT_FLOAT_ANIMATION,
   focusAnimation: DEFAULT_FOCUS_ANIMATION,
   backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
+  interfaceElements: [],
+  selectedInterfaceElementId: null,
   status: 'Ready. Load a model, atlas, and optional HDRI to begin.',
   runtimeTextures: {
     atlasTexture: null,
@@ -2354,6 +2635,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         selectedObjectId: id,
         selectedMaterialId: resolvedMaterialId,
+        selectedInterfaceElementId: null,
         selectedAnchorIndex: null,
         hud:
           activeGodRaysDirectionBoxId === state.hud.activeGodRaysDirectionBoxId &&
@@ -2371,6 +2653,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       if (!id) {
         return {
           selectedMaterialId: null,
+          selectedInterfaceElementId: null,
           selectedAnchorIndex: null,
         }
       }
@@ -2383,6 +2666,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         selectedMaterialId: id,
         selectedObjectId: material.meshIds[0] ?? state.selectedObjectId,
+        selectedInterfaceElementId: null,
         selectedAnchorIndex: null,
         hud: state.hud.activeGodRaysDirectionBoxId || state.hud.activeStencilVolumeEndHandleId
           ? {
@@ -2897,6 +3181,12 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       }),
     ),
+  setBackgroundGradient: (patch) =>
+    set((state) =>
+      withHistory(state, {
+        ...patch,
+      }),
+    ),
   setBackgroundPanoramaUrl: (value) => set({ backgroundPanoramaUrl: value }),
   setBackgroundRotation: (value) =>
     set((state) =>
@@ -2914,6 +3204,62 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ...state.hud,
         ...patch,
       },
+    })),
+  addInterfaceElement: () => {
+    const state = get()
+    const nextElement = createDefaultInterfaceElement(state.interfaceElements.length + 1)
+    set((currentState) =>
+      withHistory(currentState, {
+        interfaceElements: [...currentState.interfaceElements, nextElement],
+        selectedInterfaceElementId: nextElement.id,
+        selectedObjectId: null,
+        selectedMaterialId: null,
+      }),
+    )
+    return nextElement.id
+  },
+  updateInterfaceElement: (id, patch) =>
+    set((state) =>
+      withHistory(state, {
+        interfaceElements: state.interfaceElements.map((entry) =>
+          entry.id === id
+            ? normalizeInterfaceElementState({
+                ...entry,
+                ...patch,
+              } as InterfaceElementState)
+            : entry,
+        ),
+      }),
+    ),
+  removeInterfaceElement: (id) =>
+    set((state) =>
+      withHistory(state, {
+        interfaceElements: state.interfaceElements.filter((entry) => entry.id !== id),
+        selectedInterfaceElementId: state.selectedInterfaceElementId === id ? null : state.selectedInterfaceElementId,
+      }),
+    ),
+  replaceInterfaceElements: (entries) =>
+    set((state) => ({
+      interfaceElements: cloneInterfaceElementsState(entries),
+      selectedInterfaceElementId:
+        state.selectedInterfaceElementId && entries.some((entry) => entry.id === state.selectedInterfaceElementId)
+          ? state.selectedInterfaceElementId
+          : entries[0]?.id ?? null,
+    })),
+  setSelectedInterfaceElementId: (id) =>
+    set((state) => ({
+      selectedInterfaceElementId: id,
+      selectedObjectId: id ? null : state.selectedObjectId,
+      selectedMaterialId: id ? null : state.selectedMaterialId,
+      selectedAnchorIndex: null,
+      hud:
+        id && (state.hud.activeGodRaysDirectionBoxId || state.hud.activeStencilVolumeEndHandleId)
+          ? {
+              ...state.hud,
+              activeGodRaysDirectionBoxId: null,
+              activeStencilVolumeEndHandleId: null,
+            }
+          : state.hud,
     })),
   setTransformSettings: (patch) =>
     set((state) =>
@@ -3964,6 +4310,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         backgroundEnabled: false,
         backgroundMode: 'none',
         backgroundColor: '#808080',
+        backgroundGradientStart: '#111820',
+        backgroundGradientEnd: '#3f5f73',
+        backgroundGradientAngle: 135,
         backgroundPanoramaUrl: '',
         backgroundRotation: 0,
         selectedObjectId: null,
@@ -4038,6 +4387,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           sidebarVisible: true,
           inspectorVisible: true,
           transformMode: 'none',
+          directorDockOpen: false,
+          directorMode: 'background',
           activeGodRaysDirectionBoxId: null,
           activeStencilVolumeEndHandleId: null,
         },
@@ -4072,6 +4423,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         floatAnimation: DEFAULT_FLOAT_ANIMATION,
         focusAnimation: DEFAULT_FOCUS_ANIMATION,
         backgroundAudio: DEFAULT_BACKGROUND_AUDIO,
+        interfaceElements: [],
+        selectedInterfaceElementId: null,
         runtimeTextures: {
           atlasTexture: null,
           atlasFrameTexture: null,
@@ -4163,6 +4516,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         responsiveFrame: cloneResponsiveFrameState(previous.responsiveFrame),
         backgroundMode: previous.backgroundMode,
         backgroundColor: previous.backgroundColor,
+        backgroundGradientStart: previous.backgroundGradientStart,
+        backgroundGradientEnd: previous.backgroundGradientEnd,
+        backgroundGradientAngle: previous.backgroundGradientAngle,
         backgroundRotation: previous.backgroundRotation,
         extraLights: cloneExtraLightsState(previous.extraLights),
         phoneScreenBoxes: clonePhoneScreenBoxesState(previous.phoneScreenBoxes),
@@ -4174,6 +4530,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         floatAnimation: cloneFloatAnimationState(previous.floatAnimation),
         focusAnimation: cloneFocusAnimationState(previous.focusAnimation),
         backgroundAudio: cloneBackgroundAudioState(previous.backgroundAudio),
+        interfaceElements: cloneInterfaceElementsState(previous.interfaceElements),
+        selectedInterfaceElementId: previous.selectedInterfaceElementId,
         history: {
           past: state.history.past.slice(0, -1),
           future: [current, ...state.history.future].slice(0, HISTORY_LIMIT),
@@ -4206,6 +4564,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         responsiveFrame: cloneResponsiveFrameState(next.responsiveFrame),
         backgroundMode: next.backgroundMode,
         backgroundColor: next.backgroundColor,
+        backgroundGradientStart: next.backgroundGradientStart,
+        backgroundGradientEnd: next.backgroundGradientEnd,
+        backgroundGradientAngle: next.backgroundGradientAngle,
         backgroundRotation: next.backgroundRotation,
         extraLights: cloneExtraLightsState(next.extraLights),
         phoneScreenBoxes: clonePhoneScreenBoxesState(next.phoneScreenBoxes),
@@ -4217,6 +4578,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         floatAnimation: cloneFloatAnimationState(next.floatAnimation),
         focusAnimation: cloneFocusAnimationState(next.focusAnimation),
         backgroundAudio: cloneBackgroundAudioState(next.backgroundAudio),
+        interfaceElements: cloneInterfaceElementsState(next.interfaceElements),
+        selectedInterfaceElementId: next.selectedInterfaceElementId,
         history: {
           past: [...state.history.past, current].slice(-HISTORY_LIMIT),
           future: state.history.future.slice(1),

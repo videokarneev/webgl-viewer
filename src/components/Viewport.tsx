@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Grid, OrbitControls, TransformControls } from '@react-three/drei'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
@@ -19,6 +19,7 @@ import {
 import { applyCameraFrame, applyViewerCameraOptics, fitCameraToObject } from '../features/scene/runtime/shared'
 import { useShowcaseMotionSensor, type ShowcaseMotionSample } from '../features/scene/runtime/useShowcaseMotionSensor'
 import { ViewerSync } from '../features/scene/runtime/ViewerSync'
+import { getInterfaceElementRuntimeAction, runInterfaceElementAction } from '../features/scene/runtime/interfaceElementActions'
 import { TouchObjectRotationController } from '../features/scene/runtime/TouchObjectRotationController'
 import {
   DEFAULT_VIEWER_CAMERA_FOV,
@@ -27,6 +28,8 @@ import {
   getGodRaysStoredDirectionFromArrowObject,
   getStencilVolumeEndHandleId,
   type FrameAspectPreset,
+  type InterfaceElementAnchor,
+  type InterfaceElementShapeState,
   useEditorStore,
 } from '../store/editorStore'
 import { MaterialEffectController } from './MaterialEffectController'
@@ -38,6 +41,7 @@ import { GodRaysBoxes } from './viewport/effects/GodRaysBoxes'
 import { StencilVolumes } from './viewport/effects/StencilVolumes'
 import { FlightController } from './viewport/FlightController'
 import { syncRuntimeObjectTransform } from './viewport/transformShared'
+import { InterfaceScreen3DOverlay } from './viewport/InterfaceScreen3DOverlay'
 import {
   consumeFlightUnlockForEscape,
   consumeFlightUnlockFullscreenRestore,
@@ -52,6 +56,134 @@ const EnvironmentManager = lazy(() =>
 
 function supportsGyroShowcaseInput(mode: string) {
   return mode === 'gyro' || mode === 'mouse+gyro'
+}
+
+function getInterfaceElementAnchorStyle(anchor: InterfaceElementAnchor) {
+  const style: CSSProperties = {}
+
+  if (anchor.includes('top')) {
+    style.top = 0
+  } else if (anchor.includes('bottom')) {
+    style.bottom = 0
+  } else {
+    style.top = '50%'
+  }
+
+  if (anchor.includes('left')) {
+    style.left = 0
+  } else if (anchor.includes('right')) {
+    style.right = 0
+  } else {
+    style.left = '50%'
+  }
+
+  return style
+}
+
+function getInterfaceElementBaseTransform(anchor: InterfaceElementAnchor) {
+  const translateX = anchor.includes('left') ? '0%' : anchor.includes('right') ? '-100%' : '-50%'
+  const translateY = anchor.includes('top') ? '0%' : anchor.includes('bottom') ? '-100%' : '-50%'
+  return `translate(${translateX}, ${translateY})`
+}
+
+function getNormalizedInterfaceElementShape(shape?: InterfaceElementShapeState): InterfaceElementShapeState {
+  const type = shape?.type === 'oval' || shape?.type === 'svg' ? shape.type : 'rectangle'
+  const cornerRadius = Number.isFinite(shape?.cornerRadius) ? shape?.cornerRadius ?? 14 : 14
+  const svgMarkup = typeof shape?.svgMarkup === 'string' ? shape.svgMarkup : null
+  const svgLabel = typeof shape?.svgLabel === 'string' ? shape.svgLabel : null
+  return {
+    type,
+    cornerRadius,
+    svgMarkup,
+    svgLabel,
+  }
+}
+
+function getInterfaceElementShapeClassName(shape: InterfaceElementShapeState) {
+  if (shape.type === 'oval') {
+    return ' interface-overlay__button--oval'
+  }
+
+  if (shape.type === 'svg' && shape.svgMarkup) {
+    return ' interface-overlay__button--svg'
+  }
+
+  return ''
+}
+
+function getInterfaceElementShapeStyle(shape: InterfaceElementShapeState): CSSProperties {
+  if (shape.type === 'oval') {
+    return {
+      borderRadius: '50%',
+      clipPath: 'ellipse(50% 50% at 50% 50%)',
+    }
+  }
+
+  if (shape.type === 'svg' && shape.svgMarkup) {
+    return { borderRadius: '0px', padding: 0 }
+  }
+
+  return { borderRadius: `${Math.max(0, shape.cornerRadius)}px` }
+}
+
+function InterfaceOverlay({ allowSelection }: { allowSelection: boolean }) {
+  const interfaceElements = useEditorStore((state) => state.interfaceElements)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
+  const setSelectedInterfaceElementId = useEditorStore((state) => state.setSelectedInterfaceElementId)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
+
+  if (!interfaceElements.some((entry) => entry.visible && entry.renderMode !== 'screen3d')) {
+    return null
+  }
+
+  return (
+    <div className={`interface-overlay${allowSelection ? ' interface-overlay--editor' : ''}`} aria-label="Interface elements">
+      {interfaceElements
+        .filter((entry) => entry.visible && entry.renderMode !== 'screen3d')
+        .map((entry) => {
+          const shape = getNormalizedInterfaceElementShape(entry.shape)
+          const layout = entry.overlay
+          const style = {
+            ...getInterfaceElementAnchorStyle(layout.anchor),
+            ...getInterfaceElementShapeStyle(shape),
+            width: `${layout.width}px`,
+            height: `${layout.height}px`,
+            transform: `${getInterfaceElementBaseTransform(layout.anchor)} translate(${layout.offsetX}px, ${layout.offsetY}px)`,
+            fontSize: `${layout.fontSize}px`,
+          } as CSSProperties
+
+          const isSelected = allowSelection && selectedInterfaceElementId === entry.id
+          return (
+            <button
+              key={entry.id}
+              type="button"
+              className={`interface-overlay__button${getInterfaceElementShapeClassName(shape)}${isSelected ? ' is-selected' : ''}`}
+              style={style}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (allowSelection) {
+                  setSelectedInterfaceElementId(entry.id)
+                  useEditorStore.getState().setHud({ transformMode: 'none' })
+                  return
+                }
+
+                runInterfaceElementAction(getInterfaceElementRuntimeAction(entry))
+              }}
+            >
+              {shape.type === 'svg' && shape.svgMarkup ? (
+                <span
+                  className="interface-overlay__shape"
+                  aria-hidden="true"
+                  dangerouslySetInnerHTML={{ __html: shape.svgMarkup }}
+                />
+              ) : null}
+              <span className="interface-overlay__label">{entry.label || 'Button'}</span>
+            </button>
+          )
+        })}
+    </div>
+  )
 }
 const LightRig = lazy(() =>
   import('./viewport/LightRig').then((module) => ({
@@ -847,32 +979,52 @@ function getGeometryStats(object: THREE.Object3D | null): GeometryStats {
   }
 }
 
+function applyInitialViewerCameraState(
+  camera: THREE.Camera,
+  viewer: ReturnType<typeof useEditorStore.getState>['viewer'],
+  width: number,
+  height: number,
+  targetOffset = new THREE.Vector3(),
+) {
+  const perspectiveCamera = camera as THREE.PerspectiveCamera
+  const orbitTarget = new THREE.Vector3(...viewer.orbitTarget).add(targetOffset)
+  perspectiveCamera.aspect = Math.max(width, 1) / Math.max(height, 1)
+  perspectiveCamera.position.set(...viewer.cameraPosition)
+  perspectiveCamera.lookAt(orbitTarget)
+  applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
+  perspectiveCamera.updateMatrixWorld(true)
+}
+
 function CameraBridge({
   controlsRef,
   cameraOffsetRef,
   targetOffsetRef,
+  syncViewerToStore,
 }: {
   controlsRef: React.RefObject<OrbitControlsImpl | null>
   cameraOffsetRef: React.MutableRefObject<THREE.Vector3>
   targetOffsetRef: React.MutableRefObject<THREE.Vector3>
+  syncViewerToStore: boolean
 }) {
   const { camera, size } = useThree()
   const viewer = useEditorStore((state) => state.viewer)
 
-  useEffect(() => {
-    const perspectiveCamera = camera as THREE.PerspectiveCamera
-    const orbitTarget = new THREE.Vector3(...viewer.orbitTarget)
-    perspectiveCamera.aspect = size.width / Math.max(size.height, 1)
-    perspectiveCamera.position.set(...viewer.cameraPosition)
-    perspectiveCamera.lookAt(orbitTarget)
-    applyViewerCameraOptics(perspectiveCamera, viewer.focalLength)
+  useLayoutEffect(() => {
+    applyInitialViewerCameraState(camera, viewer, size.width, size.height, targetOffsetRef.current)
     if (controlsRef.current) {
-      controlsRef.current.target.copy(orbitTarget).add(targetOffsetRef.current)
+      controlsRef.current.target.set(...viewer.orbitTarget).add(targetOffsetRef.current)
       controlsRef.current.update()
     }
   }, [camera, controlsRef, size.height, size.width, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
 
-  return <ViewerSync controlsRef={controlsRef} cameraOffsetRef={cameraOffsetRef} targetOffsetRef={targetOffsetRef} />
+  return (
+    <ViewerSync
+      controlsRef={controlsRef}
+      cameraOffsetRef={cameraOffsetRef}
+      targetOffsetRef={targetOffsetRef}
+      syncToStore={syncViewerToStore}
+    />
+  )
 }
 
 function RendererBridge({
@@ -1708,10 +1860,13 @@ function ViewportScene({
   registerViewOrbitDrag,
   onCameraQuaternionChange,
   onTransformDraggingChange,
+  onInterfaceDraggingChange,
   transformDragging,
+  interfaceDragging,
   allowSelection,
   autoFrameOnLoad,
   transparentBackground,
+  clearTransparentBackground = transparentBackground,
   clearColor,
   gyroSampleRef,
 }: {
@@ -1721,10 +1876,13 @@ function ViewportScene({
   registerViewOrbitDrag: (handler: (deltaX: number, deltaY: number) => void) => void
   onCameraQuaternionChange: (quaternion: OrientationQuaternion) => void
   onTransformDraggingChange: (value: boolean) => void
+  onInterfaceDraggingChange: (value: boolean) => void
   transformDragging: boolean
+  interfaceDragging: boolean
   allowSelection: boolean
   autoFrameOnLoad: boolean
   transparentBackground: boolean
+  clearTransparentBackground?: boolean
   clearColor: number
   gyroSampleRef: React.MutableRefObject<ShowcaseMotionSample>
 }) {
@@ -1915,11 +2073,12 @@ function ViewportScene({
 
   return (
     <>
-      <RendererBridge transparentBackground={transparentBackground} clearColor={clearColor} />
+      <RendererBridge transparentBackground={clearTransparentBackground} clearColor={clearColor} />
       <CameraBridge
         controlsRef={controlsRef}
         cameraOffsetRef={showcaseCameraOffsetRef}
         targetOffsetRef={showcaseTargetOffsetRef}
+        syncViewerToStore={allowSelection}
       />
       <OrientationTracker onChange={onCameraQuaternionChange} />
       <PerformanceProbe onSample={onStats} />
@@ -1935,6 +2094,7 @@ function ViewportScene({
         {allowSelection ? <TransformGizmo onDraggingChange={onTransformDraggingChange} /> : null}
         <MaterialEffectController />
         <SceneAnimationController />
+        <InterfaceScreen3DOverlay allowSelection={allowSelection} onDraggingChange={onInterfaceDraggingChange} />
         <FocusInteractionController enabled={!allowSelection} />
         <ShowcaseInteractionController
           controlsRef={controlsRef}
@@ -1976,7 +2136,7 @@ function ViewportScene({
       ) : null}
       {hud.axesVisible ? <axesHelper args={[2]} /> : null}
       {viewer.cameraMode === 'orbit' ? (
-        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled && !transformDragging && !focusOrbitBlocked} makeDefault />
+        <OrbitControls ref={controlsRef} enabled={hud.orbitEnabled && !transformDragging && !interfaceDragging && !focusOrbitBlocked} makeDefault />
       ) : null}
       <FlightController />
     </>
@@ -2191,22 +2351,30 @@ export function Viewport({
   enforceFrameAspect = false,
   autoFrameOnLoad = true,
   transparentBackground = false,
+  initialContainerSize,
+  lockContainerSize = false,
 }: {
   showChrome?: boolean
   allowSelection?: boolean
   enforceFrameAspect?: boolean
   autoFrameOnLoad?: boolean
   transparentBackground?: boolean
+  initialContainerSize?: { width: number; height: number }
+  lockContainerSize?: boolean
 }) {
   const hud = useEditorStore((state) => state.hud)
   const isZenMode = useEditorStore((state) => state.isZenMode)
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
   const backgroundColor = useEditorStore((state) => state.backgroundColor)
+  const backgroundGradientStart = useEditorStore((state) => state.backgroundGradientStart)
+  const backgroundGradientEnd = useEditorStore((state) => state.backgroundGradientEnd)
+  const backgroundGradientAngle = useEditorStore((state) => state.backgroundGradientAngle)
   const currentEnvMap = useEditorStore((state) => state.runtimeTextures.environmentMap)
   const currentBackgroundMap = useEditorStore((state) => state.runtimeTextures.environmentBackground)
   const viewer = useEditorStore((state) => state.viewer)
   const setHud = useEditorStore((state) => state.setHud)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const setSelectedInterfaceElementId = useEditorStore((state) => state.setSelectedInterfaceElementId)
   const setZenMode = useEditorStore((state) => state.setZenMode)
   const setViewportMetrics = useEditorStore((state) => state.setViewportMetrics)
   const phoneScreenBoxes = useEditorStore((state) => state.phoneScreenBoxes)
@@ -2219,7 +2387,11 @@ export function Viewport({
   const applyViewOrbitDragRef = useRef<(deltaX: number, deltaY: number) => void>(() => {})
   const [metricTextPalette, setMetricTextPalette] = useState(LIGHT_METRIC_TEXT)
   const [isTransformDragging, setIsTransformDragging] = useState(false)
-  const [containerSize, setContainerSize] = useState({ width: 1, height: 1 })
+  const [isInterfaceDragging, setIsInterfaceDragging] = useState(false)
+  const [containerSize, setContainerSize] = useState(() => ({
+    width: Math.max(Math.round(initialContainerSize?.width ?? 1), 1),
+    height: Math.max(Math.round(initialContainerSize?.height ?? 1), 1),
+  }))
   const [cameraQuaternion, setCameraQuaternion] = useState<OrientationQuaternion>([0, 0, 0, 1])
   const [webPublishStatus, setWebPublishStatus] = useState<WebPublishDeploymentStatus | null>(null)
   const [webPublishCopyFeedback, setWebPublishCopyFeedback] = useState<'idle' | 'copied' | 'error'>('idle')
@@ -2283,20 +2455,35 @@ export function Viewport({
           } as CSSProperties),
     [effectiveEnforceFrameAspect, frameStyle],
   )
+  const shouldUseCssGradientBackground = !transparentBackground && backgroundMode === 'gradient'
+  const shouldUseTransparentCanvas = transparentBackground || shouldUseCssGradientBackground
 
   const viewportStyle = useMemo(
-    () =>
-      ({
+    () => {
+      const style = {
         '--viewport-grid-cell-color': VIEWPORT_GRID_CELL_COLOR,
         '--viewport-grid-section-color': VIEWPORT_GRID_SECTION_COLOR,
         '--viewport-grid-text-color': metricTextPalette.primary,
         '--viewport-grid-text-muted-color': metricTextPalette.muted,
-      }) as CSSProperties & Record<string, string>,
-    [metricTextPalette],
+      } as CSSProperties & Record<string, string>
+
+      if (shouldUseCssGradientBackground) {
+        style.background = `linear-gradient(${backgroundGradientAngle}deg, ${backgroundGradientStart}, ${backgroundGradientEnd})`
+      }
+
+      return style
+    },
+    [
+      backgroundGradientAngle,
+      backgroundGradientEnd,
+      backgroundGradientStart,
+      metricTextPalette,
+      shouldUseCssGradientBackground,
+    ],
   )
   const canvasStyle = useMemo(
-    () => (transparentBackground ? ({ background: 'transparent' } as CSSProperties) : undefined),
-    [transparentBackground],
+    () => (shouldUseTransparentCanvas ? ({ background: 'transparent' } as CSSProperties) : undefined),
+    [shouldUseTransparentCanvas],
   )
   const showMotionToggle = useMemo(
     () =>
@@ -2332,6 +2519,7 @@ export function Viewport({
 
   useEffect(() => {
     setIsTransformDragging(false)
+    setIsInterfaceDragging(false)
   }, [selectedObjectId, viewer.cameraMode])
 
   useEffect(() => {
@@ -2340,12 +2528,32 @@ export function Viewport({
       return
     }
 
-    const updateSize = () => {
+    const readContainerSize = () => {
       const bounds = container.getBoundingClientRect()
-      setContainerSize({
+      return {
         width: Math.max(Math.round(bounds.width), 1),
         height: Math.max(Math.round(bounds.height), 1),
+      }
+    }
+
+    const updateSize = () => {
+      const nextSize = readContainerSize()
+      setContainerSize((current) =>
+        current.width === nextSize.width && current.height === nextSize.height ? current : nextSize,
+      )
+    }
+
+    if (lockContainerSize) {
+      setContainerSize((current) => {
+        const lockedSize = initialContainerSize
+          ? {
+              width: Math.max(Math.round(initialContainerSize.width), 1),
+              height: Math.max(Math.round(initialContainerSize.height), 1),
+            }
+          : readContainerSize()
+        return current.width === lockedSize.width && current.height === lockedSize.height ? current : lockedSize
       })
+      return
     }
 
     updateSize()
@@ -2358,8 +2566,7 @@ export function Viewport({
     return () => {
       observer.disconnect()
     }
-  }, [])
-
+  }, [initialContainerSize, lockContainerSize])
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.code !== 'Escape') {
@@ -2451,6 +2658,13 @@ export function Viewport({
         return
       }
 
+      if (backgroundMode === 'gradient') {
+        const startLuminance = getLuminanceFromHex(backgroundGradientStart)
+        const endLuminance = getLuminanceFromHex(backgroundGradientEnd)
+        setMetricTextPalette(getMetricTextPalette((startLuminance + endLuminance) / 2))
+        return
+      }
+
       const texture = backgroundMode === 'hdri' ? currentEnvMap : currentBackgroundMap
       if (!texture) {
         setMetricTextPalette(LIGHT_METRIC_TEXT)
@@ -2470,7 +2684,7 @@ export function Viewport({
     return () => {
       disposed = true
     }
-  }, [backgroundColor, backgroundMode, currentBackgroundMap, currentEnvMap])
+  }, [backgroundColor, backgroundGradientEnd, backgroundGradientStart, backgroundMode, currentBackgroundMap, currentEnvMap])
 
   return (
     <main
@@ -2486,15 +2700,16 @@ export function Viewport({
           className="viewport-canvas"
           dpr={[1, 2]}
           style={canvasStyle}
-          gl={{ alpha: true, antialias: true, premultipliedAlpha: !transparentBackground }}
+          gl={{ alpha: true, antialias: true, premultipliedAlpha: !shouldUseTransparentCanvas }}
           camera={{
             position: viewer.cameraPosition,
             fov: DEFAULT_VIEWER_CAMERA_FOV,
             near: 0.1,
             far: 2000,
           }}
-          onCreated={({ gl, scene }) => {
-            if (!transparentBackground) {
+          onCreated={({ gl, scene, camera, size }) => {
+            applyInitialViewerCameraState(camera, useEditorStore.getState().viewer, size.width, size.height)
+            if (!shouldUseTransparentCanvas) {
               return
             }
             gl.domElement.style.background = 'transparent'
@@ -2506,6 +2721,7 @@ export function Viewport({
               return
             }
             setSelectedObjectId(null)
+            setSelectedInterfaceElementId(null)
             setHud({ transformMode: 'none' })
           }}
         >
@@ -2517,6 +2733,7 @@ export function Viewport({
             onCameraQuaternionChange={setCameraQuaternion}
             onStats={setViewportMetrics}
             onTransformDraggingChange={setIsTransformDragging}
+            onInterfaceDraggingChange={setIsInterfaceDragging}
             registerViewDirection={(handler) => {
               applyViewDirectionRef.current = handler
             }}
@@ -2524,12 +2741,15 @@ export function Viewport({
               applyViewOrbitDragRef.current = handler
             }}
             transparentBackground={transparentBackground}
+            clearTransparentBackground={shouldUseTransparentCanvas}
             transformDragging={isTransformDragging}
+            interfaceDragging={isInterfaceDragging}
             registerResetCamera={(handler) => {
               resetCameraRef.current = handler
             }}
           />
         </Canvas>
+        <InterfaceOverlay allowSelection={allowSelection} />
       </div>
       {!effectiveEnforceFrameAspect && viewer.frameGuidesEnabled ? (
         <>

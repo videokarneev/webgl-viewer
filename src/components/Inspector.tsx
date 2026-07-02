@@ -6,7 +6,17 @@ import {
   getStandardEnvironmentPresetByUrl,
 } from '../features/environment/standardEnvironmentPresets'
 import { loadHdri, loadTexture } from '../features/scene/runtime/shared'
-import { type MaterialTextureSlotState, useEditorStore } from '../store/editorStore'
+import {
+  type InterfaceElementActionState,
+  type InterfaceElementActionType,
+  type InterfaceElementAnchor,
+  type InterfaceElementMaterialPreset,
+  type InterfaceElementMaterialType,
+  type InterfaceElementRenderMode,
+  type InterfaceElementShapeType,
+  type MaterialTextureSlotState,
+  useEditorStore,
+} from '../store/editorStore'
 
 function createObjectUrl(file: File) {
   return URL.createObjectURL(file)
@@ -121,7 +131,144 @@ function getSceneEnvironmentOptionLabel(sourceLabel: string | null | undefined, 
   return getAssetName(sourceLabel, getAssetName(fallbackUrl, 'Studio')).replace(/\.(hdr|exr|jpg|jpeg|png)$/i, '')
 }
 
+function readTextFile(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file.'))
+    reader.readAsText(file)
+  })
+}
+
+async function normalizeSvgShapeFile(file: File) {
+  const svgText = await readTextFile(file)
+  const parser = new DOMParser()
+  const documentResult = parser.parseFromString(svgText, 'image/svg+xml')
+  const parserError = documentResult.querySelector('parsererror')
+  const sourceSvg = documentResult.documentElement
+  if (parserError || sourceSvg.tagName.toLowerCase() !== 'svg') {
+    throw new Error('Selected file is not a valid SVG.')
+  }
+
+  const hiddenHost = document.createElement('div')
+  hiddenHost.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:0;height:0;overflow:hidden;visibility:hidden;'
+  const runtimeSvg = document.importNode(sourceSvg, true) as unknown as SVGSVGElement
+  hiddenHost.appendChild(runtimeSvg)
+  document.body.appendChild(hiddenHost)
+
+  try {
+    const bbox = runtimeSvg.getBBox()
+    if (!Number.isFinite(bbox.width) || !Number.isFinite(bbox.height) || bbox.width <= 0 || bbox.height <= 0) {
+      throw new Error('SVG does not contain a visible shape.')
+    }
+
+    const sanitizedSvg = sourceSvg.cloneNode(true) as SVGSVGElement
+    sanitizedSvg.removeAttribute('x')
+    sanitizedSvg.removeAttribute('y')
+    sanitizedSvg.removeAttribute('width')
+    sanitizedSvg.removeAttribute('height')
+    sanitizedSvg.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`)
+    sanitizedSvg.setAttribute('preserveAspectRatio', 'none')
+    sanitizedSvg.querySelectorAll('script, foreignObject').forEach((node) => node.remove())
+    return new XMLSerializer().serializeToString(sanitizedSvg)
+  } finally {
+    document.body.removeChild(hiddenHost)
+  }
+}
+
 type MaterialInspectorSectionKey = 'summary' | 'baseMaterial' | 'emission' | 'effects'
+
+const INTERFACE_ELEMENT_MATERIAL_PRESETS: Array<{ value: InterfaceElementMaterialPreset; label: string }> = [
+  { value: 'plastic', label: 'Plastic' },
+  { value: 'metal', label: 'Metal' },
+  { value: 'glass', label: 'Glass' },
+  { value: 'matte', label: 'Matte' },
+  { value: 'custom', label: 'Custom' },
+]
+
+function getInterfaceMaterialPresetPatch(preset: InterfaceElementMaterialPreset) {
+  switch (preset) {
+    case 'metal':
+      return {
+        type: 'physical' as const,
+        preset,
+        color: '#c9d2dc',
+        opacity: 1,
+        metalness: 0.88,
+        roughness: 0.18,
+        envMapIntensity: 1.25,
+        clearcoat: 0.24,
+        clearcoatRoughness: 0.14,
+        transmission: 0,
+        ior: 1.45,
+        emissive: '#000000',
+        emissiveIntensity: 0,
+      }
+    case 'glass':
+      return {
+        type: 'physical' as const,
+        preset,
+        color: '#dce9f6',
+        opacity: 0.82,
+        metalness: 0.02,
+        roughness: 0.08,
+        envMapIntensity: 1.35,
+        clearcoat: 1,
+        clearcoatRoughness: 0.06,
+        transmission: 0.72,
+        ior: 1.22,
+        emissive: '#000000',
+        emissiveIntensity: 0,
+      }
+    case 'matte':
+      return {
+        type: 'physical' as const,
+        preset,
+        color: '#d8dee6',
+        opacity: 1,
+        metalness: 0.02,
+        roughness: 0.78,
+        envMapIntensity: 0.45,
+        clearcoat: 0.04,
+        clearcoatRoughness: 0.7,
+        transmission: 0,
+        ior: 1.45,
+        emissive: '#000000',
+        emissiveIntensity: 0,
+      }
+    case 'custom':
+      return { preset }
+    case 'plastic':
+    default:
+      return {
+        type: 'physical' as const,
+        preset: 'plastic' as const,
+        color: '#dfe7ef',
+        opacity: 1,
+        metalness: 0.08,
+        roughness: 0.28,
+        envMapIntensity: 1,
+        clearcoat: 0.65,
+        clearcoatRoughness: 0.18,
+        transmission: 0,
+        ior: 1.45,
+        emissive: '#000000',
+        emissiveIntensity: 0,
+      }
+  }
+}
+
+const INTERFACE_ELEMENT_ANCHORS: Array<{ value: InterfaceElementAnchor; label: string }> = [
+  { value: 'top-left', label: 'Top Left' },
+  { value: 'top-center', label: 'Top Center' },
+  { value: 'top-right', label: 'Top Right' },
+  { value: 'center-left', label: 'Center Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'center-right', label: 'Center Right' },
+  { value: 'bottom-left', label: 'Bottom Left' },
+  { value: 'bottom-center', label: 'Bottom Center' },
+  { value: 'bottom-right', label: 'Bottom Right' },
+]
 
 function SectionChevron({ isCollapsed }: { isCollapsed: boolean }) {
   return (
@@ -2752,6 +2899,567 @@ function AtlasEffectSection({
   )
 }
 
+function InterfaceElementInspector({ interfaceElementId }: { interfaceElementId: string }) {
+  const interfaceElement = useEditorStore((state) =>
+    state.interfaceElements.find((entry) => entry.id === interfaceElementId) ?? null,
+  )
+  const updateInterfaceElement = useEditorStore((state) => state.updateInterfaceElement)
+  const removeInterfaceElement = useEditorStore((state) => state.removeInterfaceElement)
+  const setStatus = useEditorStore((state) => state.setStatus)
+  const svgShapeInputRef = useRef<HTMLInputElement | null>(null)
+
+  if (!interfaceElement) {
+    return null
+  }
+
+  const action: InterfaceElementActionState = interfaceElement.action ?? {
+    type: interfaceElement.url ? 'openUrl' : 'none',
+    url: interfaceElement.url ?? '',
+    target: interfaceElement.openInNewTab === false ? 'sameFrame' : 'newTab',
+  }
+  const updateAction = (patch: Partial<InterfaceElementActionState>) => {
+    const nextAction = { ...action, ...patch }
+    updateInterfaceElement(interfaceElement.id, {
+      action: nextAction,
+      url: nextAction.url,
+      openInNewTab: nextAction.target === 'newTab',
+    })
+  }
+  const renderMode: InterfaceElementRenderMode = interfaceElement.renderMode === 'screen3d' ? 'screen3d' : 'overlay'
+  const overlay = interfaceElement.overlay ?? {
+    anchor: interfaceElement.anchor,
+    offsetX: interfaceElement.offsetX,
+    offsetY: interfaceElement.offsetY,
+    width: interfaceElement.width,
+    height: interfaceElement.height,
+    fontSize: interfaceElement.fontSize,
+  }
+  const screen3d = interfaceElement.screen3d
+  const material = screen3d.material
+  const shape = interfaceElement.shape ?? {
+    type: 'rectangle',
+    cornerRadius: 14,
+    svgMarkup: null,
+    svgLabel: null,
+  }
+  const updateShape = (patch: Partial<typeof shape>) => {
+    updateInterfaceElement(interfaceElement.id, {
+      shape: {
+        ...shape,
+        ...patch,
+      },
+    })
+  }
+  const updateOverlay = (patch: Partial<typeof overlay>) => {
+    updateInterfaceElement(interfaceElement.id, {
+      overlay: {
+        ...overlay,
+        ...patch,
+      },
+    })
+  }
+  const updateScreen3d = (patch: Partial<typeof screen3d>) => {
+    updateInterfaceElement(interfaceElement.id, {
+      screen3d: {
+        ...screen3d,
+        ...patch,
+      },
+    })
+  }
+  const updateScreen3dMaterial = (patch: Partial<typeof material>) => {
+    updateScreen3d({
+      material: {
+        ...material,
+        ...patch,
+      },
+    })
+  }
+  const handleSvgShapeFile = async (file: File) => {
+    try {
+      const svgMarkup = await normalizeSvgShapeFile(file)
+      updateShape({
+        type: 'svg',
+        svgMarkup,
+        svgLabel: file.name,
+      })
+      setStatus(`Loaded UI shape: ${file.name}`)
+    } catch (error) {
+      console.error(error)
+      setStatus(error instanceof Error ? error.message : 'Failed to load SVG shape.')
+    }
+  }
+
+  return (
+    <>
+      <SectionPanel title="Interface Element">
+        <div className="readout-row">
+          <span>ID</span>
+          <strong>{interfaceElement.id}</strong>
+        </div>
+        <label className="left-toggle">
+          <input
+            type="checkbox"
+            checked={interfaceElement.visible}
+            onChange={(event) => updateInterfaceElement(interfaceElement.id, { visible: event.currentTarget.checked })}
+          />
+          <span>Visible</span>
+        </label>
+        <label className="field">
+          <span>Label</span>
+          <input
+            type="text"
+            value={interfaceElement.label}
+            onChange={(event) => updateInterfaceElement(interfaceElement.id, { label: event.currentTarget.value })}
+          />
+        </label>
+        <label className="field">
+          <span>Render</span>
+          <select
+            value={renderMode}
+            onChange={(event) =>
+              updateInterfaceElement(interfaceElement.id, {
+                renderMode: event.currentTarget.value as InterfaceElementRenderMode,
+              })
+            }
+          >
+            <option value="overlay">Overlay</option>
+            <option value="screen3d">3D HUD</option>
+          </select>
+        </label>
+      </SectionPanel>
+
+      <SectionPanel title="Shape">
+        <label className="field">
+          <span>Shape</span>
+          <select
+            value={shape.type}
+            onChange={(event) => updateShape({ type: event.currentTarget.value as InterfaceElementShapeType })}
+          >
+            <option value="rectangle">Rectangle</option>
+            <option value="oval">Oval</option>
+            <option value="svg">SVG Shape</option>
+          </select>
+        </label>
+        {shape.type === 'rectangle' ? (
+          <label className="field">
+            <span>
+              Radius <output>{formatNumber(shape.cornerRadius, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="96"
+              step="1"
+              value={shape.cornerRadius}
+              onInput={(event) => updateShape({ cornerRadius: Number(event.currentTarget.value) })}
+            />
+          </label>
+        ) : null}
+        {shape.type === 'svg' ? (
+          <>
+            <div className="readout-row">
+              <span>Source</span>
+              <strong>{shape.svgLabel ?? 'No SVG loaded'}</strong>
+            </div>
+            <button type="button" className="tool-button" onClick={() => svgShapeInputRef.current?.click()}>
+              <span className="tool-button__glyph">SVG</span>
+              <span className="tool-button__label">Load Shape</span>
+            </button>
+          </>
+        ) : null}
+      </SectionPanel>
+
+      <SectionPanel title="Layout">
+        <label className="field">
+          <span>Anchor</span>
+          <select
+            value={renderMode === 'screen3d' ? screen3d.anchor : overlay.anchor}
+            onChange={(event) => {
+              const anchor = event.currentTarget.value as InterfaceElementAnchor
+              if (renderMode === 'screen3d') {
+                updateScreen3d({ anchor })
+                return
+              }
+              updateOverlay({ anchor })
+            }}
+          >
+            {INTERFACE_ELEMENT_ANCHORS.map((anchor) => (
+              <option key={anchor.value} value={anchor.value}>
+                {anchor.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="grid-two">
+          <label className="field">
+            <span>
+              X Offset <output>{formatNumber(renderMode === 'screen3d' ? screen3d.offsetX : overlay.offsetX, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min="-640"
+              max="640"
+              step="1"
+              value={renderMode === 'screen3d' ? screen3d.offsetX : overlay.offsetX}
+              onInput={(event) => {
+                const offsetX = Number(event.currentTarget.value)
+                if (renderMode === 'screen3d') {
+                  updateScreen3d({ offsetX })
+                  return
+                }
+                updateOverlay({ offsetX })
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>
+              Y Offset <output>{formatNumber(renderMode === 'screen3d' ? screen3d.offsetY : overlay.offsetY, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min="-640"
+              max="640"
+              step="1"
+              value={renderMode === 'screen3d' ? screen3d.offsetY : overlay.offsetY}
+              onInput={(event) => {
+                const offsetY = Number(event.currentTarget.value)
+                if (renderMode === 'screen3d') {
+                  updateScreen3d({ offsetY })
+                  return
+                }
+                updateOverlay({ offsetY })
+              }}
+            />
+          </label>
+        </div>
+
+        <div className="grid-two">
+          <label className="field">
+            <span>
+              Width <output>{formatNumber(renderMode === 'screen3d' ? screen3d.width : overlay.width, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min={renderMode === 'screen3d' ? '72' : '48'}
+              max={renderMode === 'screen3d' ? '720' : '720'}
+              step="1"
+              value={renderMode === 'screen3d' ? screen3d.width : overlay.width}
+              onInput={(event) => {
+                const width = Number(event.currentTarget.value)
+                if (renderMode === 'screen3d') {
+                  updateScreen3d({ width })
+                  return
+                }
+                updateOverlay({ width })
+              }}
+            />
+          </label>
+          <label className="field">
+            <span>
+              Height <output>{formatNumber(renderMode === 'screen3d' ? screen3d.height : overlay.height, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min={renderMode === 'screen3d' ? '28' : '24'}
+              max={renderMode === 'screen3d' ? '240' : '240'}
+              step="1"
+              value={renderMode === 'screen3d' ? screen3d.height : overlay.height}
+              onInput={(event) => {
+                const height = Number(event.currentTarget.value)
+                if (renderMode === 'screen3d') {
+                  updateScreen3d({ height })
+                  return
+                }
+                updateOverlay({ height })
+              }}
+            />
+          </label>
+        </div>
+
+        {renderMode === 'screen3d' ? (
+          <label className="field">
+            <span>
+              Distance <output>{formatNumber(screen3d.distance, 2)}</output>
+            </span>
+            <input
+              type="range"
+              min="0.4"
+              max="4"
+              step="0.01"
+              value={screen3d.distance}
+              onInput={(event) => updateScreen3d({ distance: Number(event.currentTarget.value) })}
+            />
+          </label>
+        ) : (
+          <label className="field">
+            <span>
+              Font Size <output>{formatNumber(overlay.fontSize, 0)}</output>
+            </span>
+            <input
+              type="range"
+              min="10"
+              max="48"
+              step="1"
+              value={overlay.fontSize}
+              onInput={(event) => updateOverlay({ fontSize: Number(event.currentTarget.value) })}
+            />
+          </label>
+        )}
+
+        {renderMode === 'screen3d' && shape.type !== 'rectangle' ? (
+          <p className="settings-note">3D HUD MVP currently renders the button body as a rectangle; oval and SVG support can be layered in next.</p>
+        ) : null}
+      </SectionPanel>
+
+      {renderMode === 'screen3d' ? (
+        <SectionPanel title="3D Material">
+          <label className="field">
+            <span>Type</span>
+            <select
+              value={material.type}
+              onChange={(event) =>
+                updateScreen3dMaterial({ type: event.currentTarget.value as InterfaceElementMaterialType, preset: 'custom' })
+              }
+            >
+              <option value="physical">Physical</option>
+              <option value="standard">Standard</option>
+            </select>
+          </label>
+          <label className="field">
+            <span>Preset</span>
+            <select
+              value={material.preset}
+              onChange={(event) => {
+                const preset = event.currentTarget.value as InterfaceElementMaterialPreset
+                updateScreen3dMaterial(getInterfaceMaterialPresetPatch(preset))
+              }}
+            >
+              {INTERFACE_ELEMENT_MATERIAL_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Color</span>
+            <input
+              type="color"
+              value={material.color}
+              onChange={(event) => updateScreen3dMaterial({ color: event.currentTarget.value, preset: 'custom' })}
+            />
+          </label>
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Opacity <output>{formatNumber(material.opacity, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0.05"
+                max="1"
+                step="0.01"
+                value={material.opacity}
+                onInput={(event) => updateScreen3dMaterial({ opacity: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                Reflections <output>{formatNumber(material.envMapIntensity, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="2"
+                step="0.01"
+                value={material.envMapIntensity}
+                onInput={(event) => updateScreen3dMaterial({ envMapIntensity: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+          </div>
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Roughness <output>{formatNumber(material.roughness, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.roughness}
+                onInput={(event) => updateScreen3dMaterial({ roughness: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                Metalness <output>{formatNumber(material.metalness, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.metalness}
+                onInput={(event) => updateScreen3dMaterial({ metalness: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+          </div>
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Clearcoat <output>{formatNumber(material.clearcoat, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.clearcoat}
+                disabled={material.type !== 'physical'}
+                onInput={(event) => updateScreen3dMaterial({ clearcoat: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                Coat Rough <output>{formatNumber(material.clearcoatRoughness, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.clearcoatRoughness}
+                disabled={material.type !== 'physical'}
+                onInput={(event) =>
+                  updateScreen3dMaterial({ clearcoatRoughness: Number(event.currentTarget.value), preset: 'custom' })
+                }
+              />
+            </label>
+          </div>
+          <div className="grid-two">
+            <label className="field">
+              <span>
+                Transmission <output>{formatNumber(material.transmission, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={material.transmission}
+                disabled={material.type !== 'physical'}
+                onInput={(event) => updateScreen3dMaterial({ transmission: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                IOR <output>{formatNumber(material.ior, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="1"
+                max="2.4"
+                step="0.01"
+                value={material.ior}
+                disabled={material.type !== 'physical'}
+                onInput={(event) => updateScreen3dMaterial({ ior: Number(event.currentTarget.value), preset: 'custom' })}
+              />
+            </label>
+          </div>
+          <div className="grid-two">
+            <label className="field">
+              <span>Emissive</span>
+              <input
+                type="color"
+                value={material.emissive}
+                onChange={(event) => updateScreen3dMaterial({ emissive: event.currentTarget.value, preset: 'custom' })}
+              />
+            </label>
+            <label className="field">
+              <span>
+                Glow <output>{formatNumber(material.emissiveIntensity, 2)}</output>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="3"
+                step="0.01"
+                value={material.emissiveIntensity}
+                onInput={(event) =>
+                  updateScreen3dMaterial({ emissiveIntensity: Number(event.currentTarget.value), preset: 'custom' })
+                }
+              />
+            </label>
+          </div>
+        </SectionPanel>
+      ) : null}
+
+      <input
+        ref={svgShapeInputRef}
+        hidden
+        type="file"
+        accept=".svg,image/svg+xml"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          if (!file) {
+            return
+          }
+          void handleSvgShapeFile(file)
+          event.currentTarget.value = ''
+        }}
+      />
+
+      <SectionPanel title="Actions">
+        <label className="field">
+          <span>Action</span>
+          <select
+            value={action.type}
+            onChange={(event) => updateAction({ type: event.currentTarget.value as InterfaceElementActionType })}
+          >
+            <option value="none">None</option>
+            <option value="openUrl">Open URL</option>
+          </select>
+        </label>
+        {action.type === 'openUrl' ? (
+          <>
+            <label className="field">
+              <span>URL</span>
+              <input
+                type="url"
+                value={action.url}
+                placeholder="https://example.com"
+                onChange={(event) => updateAction({ url: event.currentTarget.value })}
+              />
+            </label>
+            <label className="field">
+              <span>Target</span>
+              <select
+                value={action.target}
+                onChange={(event) =>
+                  updateAction({ target: event.currentTarget.value === 'sameFrame' ? 'sameFrame' : 'newTab' })
+                }
+              >
+                <option value="newTab">New Tab</option>
+                <option value="sameFrame">Same Frame</option>
+              </select>
+            </label>
+          </>
+        ) : null}
+        <button
+          type="button"
+          className="tool-button tool-button--secondary"
+          onClick={() => removeInterfaceElement(interfaceElement.id)}
+        >
+          <span className="tool-button__glyph">DEL</span>
+          <span className="tool-button__label">Remove Element</span>
+        </button>
+      </SectionPanel>
+    </>
+  )
+}
+
 export function InspectorContent() {
   const [collapsedSectionsByMaterial, setCollapsedSectionsByMaterial] = useState<
     Record<string, Partial<Record<MaterialInspectorSectionKey, boolean>>>
@@ -2832,6 +3540,7 @@ export function Inspector() {
     selectedObjectId ? Boolean(state.materials[selectedObjectId]) : false,
   )
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const hasSelectedMaterial = useEditorStore((state) =>
     selectedMaterialId ? Boolean(state.materials[selectedMaterialId]) : false,
   )
@@ -2847,18 +3556,22 @@ export function Inspector() {
   const canInspectMaterial =
     selectedObjectType === 'material' || selectedObjectType === 'mesh' || Boolean(resolvedMaterialId)
   const hasMaterial = Boolean(resolvedMaterialId)
+  const isInterfaceElementSelected = Boolean(selectedInterfaceElementId)
+  const inspectorTitle = isInterfaceElementSelected ? 'Interface Inspector' : 'Material Inspector'
 
   return (
     <aside className="inspector-dock">
       <div className="inspector-dock__header">
-        <span>Material Inspector</span>
+        <span>{inspectorTitle}</span>
       </div>
       <div className="inspector-dock__content">
-        {!canInspectMaterial || !hasMaterial ? (
+        {isInterfaceElementSelected ? (
+          <InterfaceElementInspector interfaceElementId={selectedInterfaceElementId!} />
+        ) : !canInspectMaterial || !hasMaterial ? (
           <div className="inspector-placeholder">
-            <p className="inspector-placeholder__title">No material selected</p>
+            <p className="inspector-placeholder__title">Nothing selected</p>
             <p className="inspector-placeholder__body">
-              Select a mesh or material to edit its material settings.
+              Select a mesh, material, or UI element to edit its settings.
             </p>
           </div>
         ) : (

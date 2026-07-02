@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Sidebar } from '../components/Sidebar'
 import { Viewport } from '../components/Viewport'
 import { Inspector } from '../components/Inspector'
+import { SceneDirectorDock } from '../components/SceneDirectorDock'
 import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
 import { useEditorStore } from '../store/editorStore'
@@ -91,12 +92,23 @@ export function App() {
         if (event.key === 'Delete') {
           const state = useEditorStore.getState()
           const selectedObjectId = state.selectedObjectId
+          const selectedInterfaceElementId = state.selectedInterfaceElementId
 
-          if (!selectedObjectId) {
+          if (!selectedObjectId && !selectedInterfaceElementId) {
             return
           }
 
           event.preventDefault()
+
+          if (selectedInterfaceElementId) {
+            state.removeInterfaceElement(selectedInterfaceElementId)
+            state.setHud({ transformMode: 'none' })
+            return
+          }
+
+          if (!selectedObjectId) {
+            return
+          }
 
           if (selectedObjectId === 'effect:bloom') {
             state.setHud({ postEffectsEnabled: false, postEffectsVisible: false, transformMode: 'none' })
@@ -240,6 +252,7 @@ export function App() {
       <BackgroundAudioController key={`audio:${sceneResetNonce}`} />
       {!isZenMode && sidebarVisible ? <Sidebar key={`sidebar:${sceneResetNonce}`} /> : null}
       <Viewport key={`viewport:${sceneResetNonce}`} />
+      {!isZenMode ? <SceneDirectorDock key={`director:${sceneResetNonce}`} /> : null}
       {!isZenMode && inspectorVisible ? (
         <div key={`history:${sceneResetNonce}`} className="app-shell__history-floating" aria-label="History controls">
           <button

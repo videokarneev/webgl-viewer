@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-06-21
+Last updated: 2026-07-02
 
 ## Project
 
@@ -51,6 +51,42 @@ Latest push/deploy notes:
 
 Recent local work:
 
+- On 2026-07-02 published `mk` / Stencil first-frame jump investigation continued:
+  - user reported the old Stencil scene at `https://karneev.org/mk` jumps on load: on desktop the first second has a small twitch/shift, and on phone the first frame still appears lower in the viewport before jumping to the intended framing;
+  - several local fixes were attempted in `src/app/PublishedPlayerApp.tsx`, `src/components/Viewport.tsx`, `src/features/publish/buildPublishedScene.ts`, and `public/scenes/mk/scene.json`;
+  - attempted fixes included layout-settle gating, `sceneApplied` gating, initial container size passed into `Viewport`, locking the first responsive preset, writing separate `landscape`/`portrait` responsive camera poses for `mk`, fallback publish logic for default responsive cameras, and synchronizing camera pose/focal/aspect in `Canvas.onCreated` plus `CameraBridge` via `useLayoutEffect`;
+  - `npx tsc --noEmit` and `npx vite build` passed after these changes;
+  - IMPORTANT: the user explicitly confirmed the bug is still NOT fixed after these attempts, so do not treat the earlier camera/layout changes alone as a solved state;
+  - follow-up candidate fix found a likely first-frame writer inside `StencilVolume`: the root group initially rendered at origin and only received `objectState` transform in `useEffect` after paint; `src/components/viewport/effects/StencilVolume.tsx` now passes `position`/`rotation`/`scale`/`visible` directly to the root group and syncs the imperative ref in `useLayoutEffect`;
+  - validation after this candidate fix: `npx tsc --noEmit` and `npx vite build` passed; local production preview with headless WebGL/SwiftShader rendered the portrait `mk` player stably at 4s and 6s (`bbox` stayed around `y=120..361`); still requires real Tilda/phone verification after deploy.
+  - follow-up fix in the next session removed another first-frame delay: published `mk` uses baked stencil contours, but `StencilVolume` still moved those shapes into local `maskContour` state from `useEffect` after the first paint. Baked contour shapes now feed `contourCapGeometry` and `buildStencilVolumePreparedPrimitives(...)` synchronously during the first render, so the ray volume is not built once with an empty shape list before appearing on the next frame.
+  - validation after the baked-contour sync fix: `npx tsc --noEmit` and `npx vite build` passed. Local Chrome headless screenshot attempts stayed blank in this environment even with SwiftShader/virtual-time, so real browser/Tilda verification is still required.
+  - user retested on the real phone page and confirmed it still jumps, so the Stencil-only fixes were not enough.
+  - follow-up runtime fix removed two more published-player jump sources: the separate `PublishedSceneController` camera-sync `useEffect` was removed so published camera is written only at final scene-apply time, and `ViewerSync` no longer writes camera position/orbit target back into zustand when `allowSelection=false` (published player). This avoids a Three camera -> store -> CameraBridge feedback loop in the iframe.
+  - follow-up mobile layout fix added `lockContainerSize` for the published `Viewport`: after `PublishedPlayerApp` waits for a settled container measurement, the internal canvas/frame rect stops responding to later mobile `ResizeObserver` changes from Tilda/browser viewport chrome. Editor resize behavior remains live.
+  - validation after the camera/layout lock fix: `npx tsc --noEmit` and `npx vite build` passed; still needs deploy and real phone verification.
+- On 2026-06-21 SCN Director work continued:
+  - compact Director controls were moved into the left `SCN` panel under the selected Director button;
+  - the bottom Director dock is now reserved for large editors and currently opens only for `ANIM`;
+  - `BG` now has a compact Background Builder MVP with none/color/gradient/360/reflections modes;
+  - static CSS gradient background was added with start/end colors and angle;
+  - `UI` now has a first overlay text-button MVP with anchor, x/y offset, width/height, font size, label, visibility, shape, action URL, target, and remove controls;
+  - overlay UI renders above the viewport in editor and published player;
+  - selected overlay elements now open a right-side `Interface Inspector`;
+  - UI button shape supports editable rectangle radius, oval, and custom SVG shape import;
+  - imported SVG shapes are normalized by their rendered geometry bbox into a new viewBox, so original canvas placement/coordinates are ignored and the editor centers the shape like standard forms;
+  - published overlay buttons execute their stored `action`; editor overlay buttons select the UI element;
+  - `Add Phone Showcase` was removed from the user-facing `SCN` panel for now, but the underlying phone showcase logic remains in the project.
+- On 2026-06-22 `UI` work expanded beyond the first overlay MVP:
+  - `interfaceElements` gained `renderMode: 'overlay' | 'screen3d'` plus nested `overlay` and `screen3d` layout/material state;
+  - `screen3d` is a camera-facing 3D HUD button rendered inside the Three scene, not in DOM;
+  - `screen3d` currently supports a rectangle body, camera-facing placement, `distance`, `width`, `height`, and material presets/controls;
+  - the right `Interface Inspector` now has `Render` mode switching and richer `3D Material` controls including `type`, `preset`, `opacity`, `roughness`, `metalness`, `clearcoat`, `clearcoat roughness`, `transmission`, `ior`, `emissive`, and `glow`;
+  - the Outliner now has an `Interface` list/mode so UI elements can be reselected there;
+  - selecting a UI element now routes back to the right inspector again after earlier selection-state conflicts were fixed;
+  - editor-side drag for `screen3d` translate now works by changing `screen3d.offsetX/offsetY` relative to the current `anchor`;
+  - editor drag jitter was reduced by stopping repeated texture rebuilds and re-binding pointer listeners on every offset update;
+  - editor-side drag now appears stable, but `local run` still shows residual jitter / shake when moving a `screen3d` button.
 - Rain Impacts MVP was implemented and visually confirmed by the user on 2026-06-11.
 - On 2026-06-12 Rain Impacts was iterated further for wet material realism:
   - user confirmed the current look is excellent after switching `Noise/Flow` to full-surface animated wet-noise rather than moving spots;
@@ -59,15 +95,25 @@ Recent local work:
 - The confirmed working path uses `CanvasTexture` overlays and a combined normal canvas, not the earlier shader-only path.
 - Modified files:
   - `src/store/editorStore.ts`
+  - `src/components/Sidebar.tsx`
+  - `src/components/Viewport.tsx`
+  - `src/components/SceneDirectorDock.tsx`
+  - `src/components/viewport/EnvironmentManager.tsx`
   - `src/components/Inspector.tsx`
   - `src/components/MaterialEffectController.tsx`
   - `src/features/publish/buildPublishedScene.ts`
+  - `public/scenes/mk/scene.json`
   - `src/app/PublishedPlayerApp.tsx`
+  - `src/app/App.tsx`
+  - `src/styles.css`
   - `CODEX_HANDOFF.md`
+  - `src/components/Outliner.tsx`
+  - `src/components/viewport/InterfaceScreen3DOverlay.tsx`
+  - `src/features/scene/runtime/interfaceElementActions.ts`
 
 ## Validation
 
-Passing after the latest Rain Impacts work:
+Passing after the latest SCN Director / BG / UI / screen3d UI work:
 
 - `npx tsc --noEmit`
 - `npx vite build`
@@ -77,6 +123,19 @@ Vite still prints the usual chunk-size warning, but the build succeeds.
 User confirmed the Rain Impacts visual after the canvas-overlay fix. The confirmed preview showed clear animated circular ripples on the MTG card.
 
 User later confirmed the updated wet-noise look after `Noise/Flow` became a full-surface animated wet shimmer instead of moving spots.
+
+Current published `mk` / Stencil first-frame jump status:
+
+- As of 2026-07-02, local candidate fixes have been applied in `StencilVolume`, `PublishedPlayerApp`, `Viewport`, and `ViewerSync`: Stencil transform/contours are first-frame safe, published camera is no longer rewritten by a separate sync effect, published `ViewerSync` no longer writes camera back into the store, and the published canvas size is locked after the settled first measurement.
+- Earlier symptoms: desktop started near the intended position then made a small initial twitch/shift; phone first frame appeared too low, then jumped to correct framing.
+- Do not claim this is confirmed fixed until the user verifies on the real phone page after deploy.
+
+Current UI validation status:
+
+- `Overlay` UI selection path now works again through viewport clicks, `SCN -> UI`, and the Outliner `Interface` list.
+- `screen3d` button movement is stable in the editor after drag/render cleanup.
+- `local run` still has a remaining bug: when moving a `screen3d` button, the button still jitters/shakes.
+- Next Codex session should start by fixing this `local run` / published-runtime `screen3d` drag jitter before adding more UI features.
 
 ## Current Published Site Setup
 
@@ -285,7 +344,7 @@ Recent bug and fixes:
 
 Publish/runtime:
 
-- Published scene version is now `18`.
+- Published scene version is now `19` for UI element `action` serialization.
 - `effects.rainImpacts` serializes:
   - `enabled`
   - `rate`
@@ -345,6 +404,125 @@ Future realism plan:
 
 Last discussed with the user: 2026-06-21.
 
+Initial implementation started:
+
+- `SCN` now has a `Director` launch grid for `BG`, `UI`, `CALL`, `ACT`, `STATE`, and `ANIM`.
+- Compact Director controls now render in the left `SCN` panel under the active Director button.
+- A bottom viewport dock component exists:
+  - `src/components/SceneDirectorDock.tsx`
+  - rendered from `src/app/App.tsx`;
+  - editor UI state is stored in `hud.directorDockOpen` / `hud.directorMode`;
+  - published player closes the dock explicitly through `PublishedPlayerApp`.
+- The bottom dock is currently reserved for the larger `ANIM` editor shell only.
+- `BG` no longer opens the bottom dock.
+- `UI`, `CALL`, `ACT`, and `STATE` currently stay in the left panel.
+- This is still mostly an editor/runtime UI shell; it does not yet introduce the final first-class `director` scene schema.
+
+Current `BG` implementation:
+
+- Lives in `src/components/Sidebar.tsx` under `SCN -> Director -> BG`.
+- Modes:
+  - `NONE`;
+  - `COLOR`;
+  - `GRADIENT`;
+  - `360 IMAGE`;
+  - `REFLECTIONS`.
+- Existing background/environment fields are still used:
+  - `backgroundMode`;
+  - `backgroundColor`;
+  - `backgroundRotation`;
+  - `environment.background`;
+  - `environment.backgroundVisible`;
+  - `environment.backgroundIntensity`;
+  - `environment.backgroundBlur`.
+- New gradient fields were added to `src/store/editorStore.ts`:
+  - `backgroundGradientStart`;
+  - `backgroundGradientEnd`;
+  - `backgroundGradientAngle`.
+- Gradient rendering is CSS-based in `src/components/Viewport.tsx`:
+  - `backgroundMode === 'gradient'` applies a CSS `linear-gradient(...)` to `viewport-wrap`;
+  - the WebGL canvas clear alpha is made transparent for gradient mode;
+  - `transparentBackground` remains a separate published-player concept;
+  - `EnvironmentManager` clears `scene.background` for `gradient` so stale Three backgrounds do not remain.
+- Publish/runtime:
+  - `src/features/publish/buildPublishedScene.ts` writes optional `gradientStart`, `gradientEnd`, and `gradientAngle` under `scene.background`;
+  - `src/app/PublishedPlayerApp.tsx` restores those values and falls back to defaults for older scene JSON.
+
+Current `UI` / Interface state:
+
+- Data lives in `src/store/editorStore.ts` as `interfaceElements`.
+- Selection lives in `selectedInterfaceElementId`.
+- Store API:
+  - `addInterfaceElement`;
+  - `updateInterfaceElement`;
+  - `removeInterfaceElement`;
+  - `replaceInterfaceElements`;
+  - `setSelectedInterfaceElementId`.
+- `interfaceElements` now support two render paths:
+  - `renderMode: 'overlay'`;
+  - `renderMode: 'screen3d'`.
+- Shared element fields still include:
+  - `id`;
+  - `label`;
+  - `visible`;
+  - `shape` with `type`, `cornerRadius`, `svgMarkup`, and `svgLabel`;
+  - `action` with `type`, `url`, and `target`;
+  - legacy `url`;
+  - legacy `openInNewTab`.
+- `overlay` layout state includes:
+  - `anchor`;
+  - `offsetX`;
+  - `offsetY`;
+  - `width`;
+  - `height`;
+  - `fontSize`.
+- `screen3d` state includes:
+  - `anchor`;
+  - `offsetX`;
+  - `offsetY`;
+  - `distance`;
+  - `width`;
+  - `height`;
+  - `scaleMode`;
+  - `depthMode`;
+  - `billboard`;
+  - `material` with `type`, `preset`, `color`, `opacity`, `metalness`, `roughness`, `envMapIntensity`, `clearcoat`, `clearcoatRoughness`, `transmission`, `ior`, `emissive`, and `emissiveIntensity`.
+- UI controls currently live in:
+  - `SCN -> Director -> UI` for the compact list and basic controls;
+  - the right `Interface Inspector` for render mode, shape, layout, action, and 3D material controls.
+- Runtime render paths:
+  - `InterfaceOverlay` in `src/components/Viewport.tsx` renders `overlay` UI above the canvas inside `viewport-stage`;
+  - `InterfaceScreen3DOverlay` in `src/components/viewport/InterfaceScreen3DOverlay.tsx` renders `screen3d` UI inside the Three scene as a camera-facing HUD plane;
+  - in editor (`allowSelection=true`) clicking a UI element selects it;
+  - in published/local run (`allowSelection=false`) clicking executes `action`; legacy `url` remains a fallback.
+- Outliner support:
+  - `src/components/Outliner.tsx` now has an `Interface` mode/list for UI elements.
+- Current `screen3d` limitations / known issue:
+  - body shape is still effectively rectangle-only in 3D; `oval`/`svg` are not yet true 3D shapes;
+  - editor drag is usable;
+  - `local run` still has residual jitter when dragging a `screen3d` button.
+
+Important UX correction from the user after seeing the first prototype:
+
+- The bottom dock should not be used for every Director button.
+- Simple settings should stay in the left `SCN` block, under the selected Director button, just like the existing compact settings panels.
+- Use the bottom dock only when the editor needs a larger working surface.
+- Decision rule:
+  - if the tool is mostly "set a value", keep it in the left panel;
+  - if the tool is "edit over time, space, layout, paths, or many relationships", open the bottom dock.
+- `BG` should usually live in the left panel:
+  - background mode;
+  - color;
+  - image/gradient selection;
+  - blur/intensity/visibility;
+  - simple crop/focal controls later.
+- Compact `BG` controls have already been moved back into the left panel.
+- `ANIM` is the clearest first real dock use case because timeline/keyframes need width.
+- The user noticed and corrected two visual details:
+  - compact Director panels need a small top gap from the Director button grid;
+  - do not add a decorative left border/vertical line to the new compact panels.
+- Keep `Add Phone Showcase` hidden from the user for now; logic remains but the user wants to return to it later.
+
 High-level goal:
 
 - Build a broader scene-director system, not just an animation tab.
@@ -375,14 +553,21 @@ UI placement / product model:
   - `Actions / Triggers`;
   - `States`;
   - `Animation Timeline`.
+- Compact section controls should render in the left panel under the active Director button.
 - Large editors should open in a bottom dock over the viewport, roughly where the user highlighted the lower-center viewport area in the screenshot.
-- The bottom dock can switch modes:
+- Good left-panel candidates:
+  - `BG`: background mode, color, images, simple gradient, blur/intensity/visibility;
+  - `UI`: list of elements, add button, selected element basics;
+  - `CALL`: callout list, add callout, trigger mode;
+  - `ACT`: simple action binding rows;
+  - `STATE`: state list and basic visibility settings;
+  - `ANIM`: clip list, add clip, play/enable basics.
+- Good bottom-dock candidates:
   - `Animator`;
-  - `Interface`;
-  - `Background`;
-  - `Callouts`;
-  - `Actions`;
-  - `States`;
+  - `Interface Layout Editor`;
+  - `Callout Placement Editor`;
+  - `Actions / States Graph`;
+  - `Path Editor`;
   - `Layout`.
 - The right inspector should remain the property editor for the currently selected object/UI element/background/action/clip.
 - The dock should be closable/resizable so the editor can return to a clean viewport.
@@ -564,17 +749,22 @@ Implementation roadmap:
    - keep current scenes loading.
 2. SCN dock shell:
    - make `SCN` the entry point;
-   - add bottom dock container with editor modes;
+   - keep compact Director sections in the left panel;
+   - keep the bottom dock container for large editor modes only;
    - keep right inspector for selected item details.
 3. Background Builder MVP:
-   - transparent/solid/image/static gradient;
+   - implemented primarily in the left `SCN` panel, not as a default dock editor;
+   - transparent/solid/image/static gradient baseline is started;
    - per-format settings;
    - fit/crop/focal point basics;
    - editor preview and published player support.
 4. Interface Elements MVP:
-   - overlay PNG/SVG/text button;
+   - compact left-panel list/add/basic settings are started;
+   - add a larger layout dock only when manual responsive placement needs more space;
+   - first overlay text button is implemented;
    - anchor layout with landscape/portrait/square overrides;
-   - click action;
+   - click action now uses the first `action` model (`none` / `openUrl`) instead of reading only raw `url`;
+   - next step should introduce a shared action model instead of adding more hard-coded button behaviors;
    - open URL action;
    - publish/runtime support.
 5. Action/Trigger core:
@@ -585,6 +775,7 @@ Implementation roadmap:
    - set state;
    - open URL, including parent-page option planning.
 6. Animator core:
+   - first major bottom-dock use case;
    - clips;
    - target bindings;
    - transform keyframes;
@@ -628,6 +819,18 @@ Implementation roadmap:
    - copy/delete keys;
    - easing selector;
    - current-time preview.
+
+Open published `mk` / Stencil issue to verify next time:
+
+- Candidate local fix: `StencilVolume` root transform is now applied before first paint via JSX props plus `useLayoutEffect`; this targets the phone symptom where the first frame appeared too low because the effect root initially rendered at origin instead of `y=1.5`.
+- User has already tried/seen separate vertical and horizontal format settings; those did not fix the jump, so treat this as a runtime first-frame transform issue, not a responsive preset issue.
+- Next step is deploy/retest on the real `https://karneev.org/mk` phone page. If it still jumps, inspect any remaining first-frame writers in `PublishedPlayerApp`, `Viewport` / `CameraBridge`, `ViewerSync`, `SceneAnimationController`, production scene JSON, and the Tilda iframe/container sizing path.
+
+Open UI issue to resume first next time:
+
+- First task next session: fix residual `screen3d` button drag jitter in `local run` / published-style runtime.
+- Current editor path is much better after stopping texture rebuilds and separating interface drag from orbit drag, but runtime still shakes.
+- Suspect next place to inspect first: `src/components/viewport/InterfaceScreen3DOverlay.tsx` drag update path vs camera-facing recompute in `applyScreen3dTransform(...)`, and whether store writes during runtime drag should be buffered locally until pointer-up.
 
 Important constraints for this future work:
 

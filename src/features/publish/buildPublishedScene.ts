@@ -1,7 +1,11 @@
 import {
+  DEFAULT_VIEWER_CAMERA_POSITION,
+  DEFAULT_VIEWER_FOCAL_LENGTH,
+  DEFAULT_VIEWER_ORBIT_TARGET,
   normalizePhoneScreenBoxState,
   useEditorStore,
   type FrameAspectPreset,
+  type InterfaceElementState,
   type MaterialTextureSlot,
   type PhoneScreenBoxState,
   type ResponsiveFramePresetKind,
@@ -11,7 +15,6 @@ import {
 import { getStandardEnvironmentPresetByUrl } from '../environment/standardEnvironmentPresets'
 import { getPublishNodeId } from './publishNodeIds'
 import { extractMaskContour } from '../stencilVolume/maskContour'
-
 type PublishedTextureSource = 'none' | 'original' | 'custom' | 'flipbook'
 
 type PublishedStencilShape = {
@@ -125,11 +128,14 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
   scene: {
     background: {
       mode: string
       color: string
+      gradientStart?: string
+      gradientEnd?: string
+      gradientAngle?: number
       rotation: number
     }
     environment: {
@@ -195,6 +201,7 @@ export interface PublishedSceneV2 {
     volume: number
     loop: boolean
   }
+  interfaceElements?: InterfaceElementState[]
   lights: {
     ambient: {
       exists: boolean
@@ -489,15 +496,40 @@ export interface PublishedSceneV2 {
   >
 }
 
+function arePublishedVectorsClose(left: [number, number, number], right: [number, number, number], tolerance = 0.0001) {
+  return (
+    Math.abs(left[0] - right[0]) <= tolerance &&
+    Math.abs(left[1] - right[1]) <= tolerance &&
+    Math.abs(left[2] - right[2]) <= tolerance
+  )
+}
+
+function isDefaultResponsiveCameraPreset(preset: ResponsiveFrameState[ResponsiveFramePresetKind]) {
+  return (
+    arePublishedVectorsClose(preset.cameraPosition, DEFAULT_VIEWER_CAMERA_POSITION) &&
+    arePublishedVectorsClose(preset.orbitTarget, DEFAULT_VIEWER_ORBIT_TARGET) &&
+    Math.abs(preset.focalLength - DEFAULT_VIEWER_FOCAL_LENGTH) <= 0.0001
+  )
+}
+
 function buildPublishedResponsiveFrame(
   responsiveFrame: ResponsiveFrameState,
+  fallbackCamera: {
+    position: [number, number, number]
+    target: [number, number, number]
+    focalLength: number
+  },
 ): NonNullable<PublishedSceneV2['responsiveFrame']> {
-  const serializePreset = (kind: ResponsiveFramePresetKind) => ({
-    frameAspectPreset: responsiveFrame[kind].frameAspectPreset,
-    cameraPosition: [...responsiveFrame[kind].cameraPosition] as [number, number, number],
-    orbitTarget: [...responsiveFrame[kind].orbitTarget] as [number, number, number],
-    focalLength: responsiveFrame[kind].focalLength,
-  })
+  const serializePreset = (kind: ResponsiveFramePresetKind) => {
+    const preset = responsiveFrame[kind]
+    const shouldUseFallbackCamera = isDefaultResponsiveCameraPreset(preset)
+    return {
+      frameAspectPreset: preset.frameAspectPreset,
+      cameraPosition: [...(shouldUseFallbackCamera ? fallbackCamera.position : preset.cameraPosition)] as [number, number, number],
+      orbitTarget: [...(shouldUseFallbackCamera ? fallbackCamera.target : preset.orbitTarget)] as [number, number, number],
+      focalLength: shouldUseFallbackCamera ? fallbackCamera.focalLength : preset.focalLength,
+    }
+  }
 
   return {
     landscape: serializePreset('landscape'),
@@ -898,11 +930,14 @@ async function buildPublishedSceneInternal() {
     state.assets.reflections ?? state.environment.source ?? publishedEnvironmentPreset?.label ?? null
 
   const scene: PublishedSceneV2 = {
-    version: 18,
+    version: 19,
     scene: {
       background: {
         mode: state.backgroundMode,
         color: state.backgroundColor,
+        gradientStart: state.backgroundGradientStart,
+        gradientEnd: state.backgroundGradientEnd,
+        gradientAngle: state.backgroundGradientAngle,
         rotation: state.backgroundRotation,
       },
       environment: {
@@ -928,7 +963,11 @@ async function buildPublishedSceneInternal() {
       frameAspectPreset: state.viewer.frameAspectPreset,
       exposure: state.viewer.exposure,
     },
-    responsiveFrame: buildPublishedResponsiveFrame(state.responsiveFrame),
+    responsiveFrame: buildPublishedResponsiveFrame(state.responsiveFrame, {
+      position: [...state.viewer.cameraPosition],
+      target: [...state.viewer.orbitTarget],
+      focalLength: state.viewer.focalLength,
+    }),
     viewer: {
       postEffectsEnabled: state.hud.postEffectsEnabled,
       bloomIntensity: state.viewer.bloomIntensity,
@@ -949,6 +988,7 @@ async function buildPublishedSceneInternal() {
       volume: state.backgroundAudio.volume,
       loop: state.backgroundAudio.loop,
     },
+    interfaceElements: state.interfaceElements.map((entry) => ({ ...entry })),
     lights: {
       ambient: {
         exists: state.lights.ambient.exists,

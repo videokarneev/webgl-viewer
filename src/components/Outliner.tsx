@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useEditorStore } from '../store/editorStore'
 
-type ViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
+type ViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects' | 'interface'
 
 type OutlinerEntry =
   | {
@@ -45,6 +45,15 @@ type OutlinerEntry =
       depth: number
       selectionId: string
     }
+  | {
+      id: string
+      label: string
+      visible: boolean
+      removable: boolean
+      kind: 'interface'
+      depth: number
+      selectionId: string
+    }
 
 type RootViewMode = Extract<ViewMode, 'layers' | 'meshes' | 'materials'>
 
@@ -81,6 +90,15 @@ function LightIcon() {
     <svg viewBox="0 0 16 16" className="outliner-filter__icon" aria-hidden="true">
       <path d="M8 2.5a4 4 0 0 0-2.4 7.2c.5.4.8 1 .9 1.6h3c.1-.6.4-1.2.9-1.6A4 4 0 0 0 8 2.5Z" fill="none" stroke="currentColor" strokeWidth="1.2" />
       <path d="M6.6 12.2h2.8M6.9 13.8h2.2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function UiIcon() {
+  return (
+    <svg viewBox="0 0 16 16" className="outliner-filter__icon" aria-hidden="true">
+      <rect x="2.5" y="3" width="11" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5 6.2h6M5 8h4.5M5 9.8h3" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
     </svg>
   )
 }
@@ -172,6 +190,9 @@ function RowIcon({ kind }: { kind: OutlinerEntry['kind'] | 'root' }) {
   if (kind === 'effect') {
     return <FxIcon />
   }
+  if (kind === 'interface') {
+    return <UiIcon />
+  }
   if (kind === 'light' || kind === 'ambient') {
     return <LightIcon />
   }
@@ -203,8 +224,11 @@ export function Outliner({
   const godRaysBoxes = useEditorStore((state) => state.godRaysBoxes)
   const stencilVolumes = useEditorStore((state) => state.stencilVolumes)
   const selectedMaterialId = useEditorStore((state) => state.selectedMaterialId)
+  const interfaceElements = useEditorStore((state) => state.interfaceElements)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
+  const setSelectedInterfaceElementId = useEditorStore((state) => state.setSelectedInterfaceElementId)
   const toggleVisibility = useEditorStore((state) => state.toggleVisibility)
   const deleteObject = useEditorStore((state) => state.deleteObject)
   const resetMaterialToDefault = useEditorStore((state) => state.resetMaterialToDefault)
@@ -216,6 +240,8 @@ export function Outliner({
   const removeAmbientLight = useEditorStore((state) => state.removeAmbientLight)
   const removeExtraLight = useEditorStore((state) => state.removeExtraLight)
   const removeGodRaysBox = useEditorStore((state) => state.removeGodRaysBox)
+  const removeStencilVolume = useEditorStore((state) => state.removeStencilVolume)
+  const removeInterfaceElement = useEditorStore((state) => state.removeInterfaceElement)
 
   const [search, setSearch] = useState('')
   const [internalViewMode, setInternalViewMode] = useState<ViewMode>('layers')
@@ -415,7 +441,7 @@ export function Outliner({
 
   const rootSections = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (resolvedViewMode === 'lights' || resolvedViewMode === 'effects') {
+    if (resolvedViewMode === 'lights' || resolvedViewMode === 'effects' || resolvedViewMode === 'interface') {
       return []
     }
 
@@ -523,19 +549,45 @@ export function Outliner({
       .filter((section): section is NonNullable<typeof section> => Boolean(section))
   }, [materials, meshIdsByRoot, objects, resolvedViewMode, rootModels, sceneGraph, search, selectedObjectId])
 
+  const interfaceEntries = useMemo<OutlinerEntry[]>(() => {
+    const query = search.trim().toLowerCase()
+    const entries = interfaceElements.map((entry) => ({
+      id: entry.id,
+      label: entry.label || 'Untitled Button',
+      visible: entry.visible,
+      removable: true,
+      kind: 'interface' as const,
+      depth: 0,
+      selectionId: entry.id,
+    }))
+
+    if (!query) {
+      return entries
+    }
+
+    return entries.filter((entry) => entry.label.toLowerCase().includes(query))
+  }, [interfaceElements, search])
+
   const visibleEntries = useMemo(() => {
     const query = search.trim().toLowerCase()
-    const source = resolvedViewMode === 'lights' ? lightEntries : resolvedViewMode === 'effects' ? effectEntries : []
+    const source =
+      resolvedViewMode === 'lights'
+        ? lightEntries
+        : resolvedViewMode === 'effects'
+          ? effectEntries
+          : resolvedViewMode === 'interface'
+            ? interfaceEntries
+            : []
 
     if (!query) {
       return source
     }
 
     return source.filter((entry) => entry.label.toLowerCase().includes(query))
-  }, [effectEntries, lightEntries, resolvedViewMode, search])
+  }, [effectEntries, interfaceEntries, lightEntries, resolvedViewMode, search])
 
   useEffect(() => {
-    if (resolvedViewMode !== 'lights' && resolvedViewMode !== 'effects') {
+    if (resolvedViewMode !== 'lights' && resolvedViewMode !== 'effects' && resolvedViewMode !== 'interface') {
       previousViewModeRef.current = resolvedViewMode
       return
     }
@@ -550,11 +602,15 @@ export function Outliner({
     const shouldAutoSelect = hasEnteredSpecialMode
 
     if (shouldAutoSelect) {
-      setSelectedObjectId(firstEntry.selectionId)
+      if (resolvedViewMode === 'interface') {
+        setSelectedInterfaceElementId(firstEntry.selectionId)
+      } else {
+        setSelectedObjectId(firstEntry.selectionId)
+      }
     }
 
     previousViewModeRef.current = resolvedViewMode
-  }, [resolvedViewMode, selectedObjectId, setSelectedObjectId, visibleEntries])
+  }, [resolvedViewMode, selectedObjectId, setSelectedInterfaceElementId, setSelectedObjectId, visibleEntries])
 
   const handleToggleRootCollapsed = (rootId: string) => {
     if (resolvedViewMode !== 'layers' && resolvedViewMode !== 'meshes' && resolvedViewMode !== 'materials') {
@@ -571,6 +627,14 @@ export function Outliner({
   }
 
   const handleToggleVisibility = (entry: OutlinerEntry) => {
+    if (entry.kind === 'interface') {
+      const target = interfaceElements.find((interfaceEntry) => interfaceEntry.id === entry.selectionId)
+      if (!target) {
+        return
+      }
+      useEditorStore.getState().updateInterfaceElement(entry.selectionId, { visible: !target.visible })
+      return
+    }
     if (entry.kind === 'effect') {
       if (entry.selectionId === 'effect:scene-audio') {
         setBackgroundAudio({ previewEnabled: !backgroundAudio.previewEnabled && Boolean(backgroundAudio.assetUrl) })
@@ -608,6 +672,11 @@ export function Outliner({
     if (!entry.removable) {
       return
     }
+    if (entry.kind === 'interface') {
+      removeInterfaceElement(entry.selectionId)
+      setHud({ transformMode: 'none' })
+      return
+    }
     if (entry.kind === 'effect') {
       if (entry.selectionId === 'effect:scene-audio') {
         if (selectedObjectId === entry.selectionId) {
@@ -632,6 +701,11 @@ export function Outliner({
           setSelectedObjectId(null)
         }
         setHud({ postEffectsEnabled: false, postEffectsVisible: false })
+        return
+      }
+
+      if (entry.selectionId.startsWith('effect:stencil-volume:')) {
+        removeStencilVolume(entry.selectionId)
         return
       }
 
@@ -713,6 +787,9 @@ export function Outliner({
               </ModeButton>
               <ModeButton active={resolvedViewMode === 'effects'} title="Effects" onClick={() => setResolvedViewMode('effects')}>
                 <FxIcon />
+              </ModeButton>
+              <ModeButton active={resolvedViewMode === 'interface'} title="Interface" onClick={() => setResolvedViewMode('interface')}>
+                <UiIcon />
               </ModeButton>
             </div>
           </div>
@@ -814,6 +891,11 @@ export function Outliner({
                                 setSelectedMaterialId(entry.materialId)
                                 return
                               }
+                              if (entry.kind === 'interface') {
+                                setSelectedInterfaceElementId(entry.selectionId)
+                                setHud({ transformMode: 'none' })
+                                return
+                              }
                               setSelectedObjectId(entry.selectionId)
                             }}
                             onKeyDown={(event) => {
@@ -823,6 +905,11 @@ export function Outliner({
                               event.preventDefault()
                               if (entry.kind === 'material') {
                                 setSelectedMaterialId(entry.materialId)
+                                return
+                              }
+                              if (entry.kind === 'interface') {
+                                setSelectedInterfaceElementId(entry.selectionId)
+                                setHud({ transformMode: 'none' })
                                 return
                               }
                               setSelectedObjectId(entry.selectionId)
@@ -873,11 +960,13 @@ export function Outliner({
               ? (materials[entry.materialId]?.meshIds ?? []).every((meshId) => objects[meshId]?.visible ?? true)
               : true
           const isSelected =
-            entry.kind === 'effect'
-              ? selectedObjectId === entry.selectionId
-              : entry.kind === 'material'
-              ? selectedMaterialId === entry.materialId || selectedObjectId === entry.parentMeshId
-              : selectedObjectId === entry.selectionId
+            entry.kind === 'interface'
+              ? selectedInterfaceElementId === entry.selectionId
+              : entry.kind === 'effect'
+                ? selectedObjectId === entry.selectionId
+                : entry.kind === 'material'
+                  ? selectedMaterialId === entry.materialId || selectedObjectId === entry.parentMeshId
+                  : selectedObjectId === entry.selectionId
 
           const isVisibilityHidden =
             entry.kind === 'material' ? !materialVisible : !entry.visible
@@ -889,6 +978,11 @@ export function Outliner({
               tabIndex={0}
               className={`tree-node${isSelected ? ' is-selected' : ''}${isVisibilityHidden ? ' is-dimmed' : ''}`}
               onClick={() => {
+                if (entry.kind === 'interface') {
+                  setSelectedInterfaceElementId(entry.selectionId)
+                  setHud({ transformMode: 'none' })
+                  return
+                }
                 if (entry.kind === 'effect') {
                   setSelectedObjectId(entry.selectionId)
                   return
@@ -904,6 +998,11 @@ export function Outliner({
                   return
                 }
                 event.preventDefault()
+                if (entry.kind === 'interface') {
+                  setSelectedInterfaceElementId(entry.selectionId)
+                  setHud({ transformMode: 'none' })
+                  return
+                }
                 if (entry.kind === 'effect') {
                   setSelectedObjectId(entry.selectionId)
                   return

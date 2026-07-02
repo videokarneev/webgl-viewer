@@ -1,5 +1,5 @@
 import { type ThreeEvent, useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import {
   getGodRaysDirectionWorldFromLocal,
@@ -1258,22 +1258,27 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     return new THREE.Quaternion().setFromEuler(new THREE.Euler(entry.endRotationX, entry.endRotationY, 0, 'XYZ'))
   }, [entry.endRotationX, entry.endRotationY])
   const maskContourGeometry = useMemo(() => {
-    if (!maskContour?.positions.length) {
+    const positions = maskContour?.positions ?? []
+    if (!positions.length) {
       return null
     }
 
     const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(maskContour.positions, 3))
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     return geometry
   }, [maskContour])
+  const effectiveMaskContourShapes = useMemo(
+    () => entry.bakedContourShapes?.length ? entry.bakedContourShapes : maskContour?.shapes ?? [],
+    [entry.bakedContourShapes, maskContour],
+  )
   const contourCapGeometry = useMemo(
-    () => createContourCapGeometry(maskContour?.shapes ?? []),
-    [maskContour],
+    () => createContourCapGeometry(effectiveMaskContourShapes),
+    [effectiveMaskContourShapes],
   )
   const preparedPrimitiveVolumes = useMemo(
     () => buildStencilVolumePreparedPrimitives(
       entry,
-      maskContour?.shapes ?? [],
+      effectiveMaskContourShapes,
       entry.bakedPrimitiveShapeGroups ?? null,
       entry.bakedPreparedPrimitives ?? null,
     ),
@@ -1282,7 +1287,7 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
       entry.bakedPrimitiveShapeGroups,
       entry.sourceHeight,
       entry.sourceWidth,
-      maskContour,
+      effectiveMaskContourShapes,
     ],
   )
   const primitiveVolumes = useMemo(
@@ -1450,7 +1455,7 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
     dustWorldBounds,
   ])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!groupRef.current || !objectState) {
       return
     }
@@ -1712,6 +1717,10 @@ export function StencilVolume({ entry }: { entry: StencilVolumeState }) {
   return (
     <group
       ref={groupRef}
+      position={objectState.position}
+      rotation={objectState.rotation}
+      scale={objectState.scale}
+      visible={objectState.visible}
       onClick={(event: ThreeEvent<MouseEvent>) => {
         if (event.delta > 2) {
           return

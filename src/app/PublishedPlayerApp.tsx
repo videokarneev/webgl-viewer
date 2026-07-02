@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { AssetController } from '../components/AssetController'
 import { BackgroundAudioController } from '../components/BackgroundAudioController'
@@ -74,6 +74,7 @@ const DEFAULT_RESPONSIVE_FRAME_ASPECTS: Record<ResponsiveFramePresetKind, FrameA
   square: '1:1',
 }
 const AUTO_LANDSCAPE_FALLBACK_CAMERA_DISTANCE_SCALE = 1.62
+const PUBLISHED_PLAYER_LAYOUT_SETTLE_MS = 520
 
 function isFrameAspectPreset(value: string | null | undefined): value is FrameAspectPreset {
   return (
@@ -393,16 +394,19 @@ function PublishedSceneController({
   scene,
   publishedCameraState,
   transparentBackground,
+  onSceneApplied,
 }: {
   scene: PublishedSceneV2
   publishedCameraState: PublishedCameraState
   transparentBackground: boolean
+  onSceneApplied: () => void
 }) {
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
   const requestAtlasLoad = useEditorStore((state) => state.requestAtlasLoad)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
   const setBackgroundMode = useEditorStore((state) => state.setBackgroundMode)
   const setBackgroundColor = useEditorStore((state) => state.setBackgroundColor)
+  const setBackgroundGradient = useEditorStore((state) => state.setBackgroundGradient)
   const setBackgroundRotation = useEditorStore((state) => state.setBackgroundRotation)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const setLights = useEditorStore((state) => state.setLights)
@@ -427,6 +431,7 @@ function PublishedSceneController({
   const updateFocusAnimation = useEditorStore((state) => state.updateFocusAnimation)
   const setStatus = useEditorStore((state) => state.setStatus)
   const setBackgroundAudio = useEditorStore((state) => state.setBackgroundAudio)
+  const replaceInterfaceElements = useEditorStore((state) => state.replaceInterfaceElements)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
@@ -452,6 +457,7 @@ function PublishedSceneController({
       orbitEnabled: scene.camera.mode !== 'firstPerson',
       sidebarVisible: false,
       inspectorVisible: false,
+      directorDockOpen: false,
       performanceStatsVisible: false,
       fpsEnabled: false,
       gridVisible: false,
@@ -471,6 +477,11 @@ function PublishedSceneController({
     setGodRaysGlobalDirection(publishedGlobalDirection ?? DEFAULT_GOD_RAYS_GLOBAL_DIRECTION)
     setBackgroundMode((transparentBackground ? 'none' : scene.scene.background.mode) as never)
     setBackgroundColor(scene.scene.background.color)
+    setBackgroundGradient({
+      backgroundGradientStart: scene.scene.background.gradientStart ?? '#111820',
+      backgroundGradientEnd: scene.scene.background.gradientEnd ?? '#3f5f73',
+      backgroundGradientAngle: scene.scene.background.gradientAngle ?? 135,
+    })
     setBackgroundRotation(scene.scene.background.rotation)
     setViewer({
       cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
@@ -650,14 +661,17 @@ function PublishedSceneController({
       volume: scene.audio?.volume ?? 0.16,
       loop: scene.audio?.loop ?? true,
     })
+    replaceInterfaceElements(scene.interfaceElements ?? [])
   }, [
     replaceExtraLights,
     replacePhoneScreenBoxes,
     replaceGodRaysBoxes,
     replaceStencilVolumes,
+    replaceInterfaceElements,
     scene,
     setBackgroundAudio,
     setBackgroundColor,
+    setBackgroundGradient,
     setBackgroundMode,
     setBackgroundRotation,
     setEnvironment,
@@ -669,17 +683,6 @@ function PublishedSceneController({
     transparentBackground,
   ])
 
-  useEffect(() => {
-    setViewer({
-      cameraMode: scene.camera.mode === 'firstPerson' ? 'firstPerson' : 'orbit',
-      cameraPosition: publishedCameraState.cameraPosition,
-      orbitTarget: publishedCameraState.orbitTarget,
-      resetCameraPosition: publishedCameraState.cameraPosition,
-      resetOrbitTarget: publishedCameraState.orbitTarget,
-      focalLength: publishedCameraState.focalLength,
-      frameAspectPreset: publishedCameraState.frameAspectPreset,
-    })
-  }, [publishedCameraState, scene.camera.mode, setViewer])
 
   useEffect(() => {
     if (requestedRef.current) {
@@ -1002,11 +1005,12 @@ function PublishedSceneController({
       setSelectedObjectId(null)
       setSelectedMaterialId(null)
       setStatus('Published scene ready.')
+      onSceneApplied()
     })().catch((error) => {
       console.error(error)
       setStatus('Failed to apply published scene.')
     })
-  }, [addFloatAnimation, addFocusAnimation, addRotateAnimation, loadedModelCount, materials, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateFloatAnimation, updateFocusAnimation, updateMaterial, updateMaterialEffect, updateObjectTransform, updatePhoneScreenBox, updateRotateAnimation, upsertMaterialEnvironment])
+  }, [addFloatAnimation, addFocusAnimation, addRotateAnimation, loadedModelCount, materials, onSceneApplied, publishedCameraState, reversePublishIdMap, scene, setSelectedMaterialId, setSelectedObjectId, setStatus, setViewer, updateFloatAnimation, updateFocusAnimation, updateMaterial, updateMaterialEffect, updateObjectTransform, updatePhoneScreenBox, updateRotateAnimation, upsertMaterialEnvironment])
 
   return null
 }
@@ -1084,6 +1088,9 @@ async function loadPublishedSceneFromLocation() {
 export function PublishedPlayerApp() {
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const [scene, setScene] = useState<PublishedSceneV2 | null>(null)
+  const [sceneApplied, setSceneApplied] = useState(false)
+  const [layoutSettled, setLayoutSettled] = useState(false)
+  const [lockedResponsivePresetKind, setLockedResponsivePresetKind] = useState<ResponsiveFramePresetKind | null>(null)
   const [error, setError] = useState<string | null>(null)
   const containerRef = useRef<HTMLElement | null>(null)
   const [containerSize, setContainerSize] = useState(() => ({
@@ -1096,13 +1103,14 @@ export function PublishedPlayerApp() {
   const transparentRawThreeDiagnostic = isTransparentRawThreeDiagnostic()
   const transparentRawWebGlDiagnostic = isTransparentRawWebGlDiagnostic()
   const backgroundOverride = getPublishedPlayerBackgroundOverride()
-  const responsivePresetKind = useMemo(
+  const measuredResponsivePresetKind = useMemo(
     () =>
       scene?.responsiveFrame
         ? resolvePublishedResponsivePresetKind(containerSize.width / Math.max(containerSize.height, 1))
         : null,
     [containerSize.height, containerSize.width, scene],
   )
+  const responsivePresetKind = lockedResponsivePresetKind ?? (layoutSettled ? measuredResponsivePresetKind : null)
   const publishedCameraState = useMemo(
     () =>
       scene
@@ -1111,17 +1119,53 @@ export function PublishedPlayerApp() {
     [containerSize.height, containerSize.width, responsivePresetKind, scene],
   )
 
+  const handleSceneApplied = useCallback(() => {
+    setSceneApplied(true)
+  }, [])
+
+  useEffect(() => {
+    if (!layoutSettled || lockedResponsivePresetKind || !measuredResponsivePresetKind) {
+      return
+    }
+
+    setLockedResponsivePresetKind(measuredResponsivePresetKind)
+  }, [layoutSettled, lockedResponsivePresetKind, measuredResponsivePresetKind])
   useEffect(() => {
     const container = containerRef.current
     if (!container) {
       return
     }
 
+    let settleTimer: number | null = null
+    let frameId: number | null = null
+
+    const markLayoutChanging = () => {
+      setLayoutSettled(false)
+      if (settleTimer != null) {
+        window.clearTimeout(settleTimer)
+      }
+      settleTimer = window.setTimeout(() => {
+        settleTimer = null
+        setLayoutSettled(true)
+      }, PUBLISHED_PLAYER_LAYOUT_SETTLE_MS)
+    }
+
     const updateSize = () => {
-      const bounds = container.getBoundingClientRect()
-      setContainerSize({
-        width: Math.max(Math.round(bounds.width), 1),
-        height: Math.max(Math.round(bounds.height), 1),
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId)
+      }
+
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null
+        const bounds = container.getBoundingClientRect()
+        const nextSize = {
+          width: Math.max(Math.round(bounds.width), 1),
+          height: Math.max(Math.round(bounds.height), 1),
+        }
+        setContainerSize((current) =>
+          current.width === nextSize.width && current.height === nextSize.height ? current : nextSize,
+        )
+        markLayoutChanging()
       })
     }
 
@@ -1131,9 +1175,21 @@ export function PublishedPlayerApp() {
       updateSize()
     })
     observer.observe(container)
+    window.addEventListener('resize', updateSize)
+    window.addEventListener('orientationchange', updateSize)
+    window.visualViewport?.addEventListener('resize', updateSize)
 
     return () => {
       observer.disconnect()
+      window.removeEventListener('resize', updateSize)
+      window.removeEventListener('orientationchange', updateSize)
+      window.visualViewport?.removeEventListener('resize', updateSize)
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId)
+      }
+      if (settleTimer != null) {
+        window.clearTimeout(settleTimer)
+      }
     }
   }, [scene])
 
@@ -1146,6 +1202,9 @@ export function PublishedPlayerApp() {
     requestSceneReset()
     void loadPublishedSceneFromLocation()
       .then((loadedScene) => {
+        setSceneApplied(false)
+        setLayoutSettled(false)
+        setLockedResponsivePresetKind(null)
         setScene(loadedScene)
       })
       .catch((loadError) => {
@@ -1241,20 +1300,25 @@ export function PublishedPlayerApp() {
     >
       <AssetController />
       <BackgroundAudioController autoplay />
-      {publishedCameraState ? (
+      {publishedCameraState && (layoutSettled || sceneApplied) ? (
         <PublishedSceneController
           scene={scene}
           publishedCameraState={publishedCameraState}
           transparentBackground={transparentBackground}
+          onSceneApplied={handleSceneApplied}
         />
       ) : null}
-      <Viewport
-        showChrome={false}
-        allowSelection={false}
-        enforceFrameAspect
-        autoFrameOnLoad={false}
-        transparentBackground={transparentBackground}
-      />
+      {sceneApplied ? (
+        <Viewport
+          showChrome={false}
+          allowSelection={false}
+          enforceFrameAspect
+          autoFrameOnLoad={false}
+          transparentBackground={transparentBackground}
+          initialContainerSize={containerSize}
+          lockContainerSize
+        />
+      ) : null}
     </main>
   )
 }

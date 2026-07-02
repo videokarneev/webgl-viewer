@@ -198,7 +198,7 @@ export function EnvironmentManager() {
       return
     }
 
-    if (backgroundMode === 'none') {
+    if (backgroundMode === 'none' || backgroundMode === 'gradient') {
       scene.background = null
     }
   })

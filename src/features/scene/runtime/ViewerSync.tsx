@@ -8,10 +8,12 @@ export function ViewerSync({
   controlsRef,
   cameraOffsetRef,
   targetOffsetRef,
+  syncToStore = true,
 }: {
   controlsRef: React.RefObject<OrbitControlsImpl | null>
   cameraOffsetRef?: MutableRefObject<THREE.Vector3>
   targetOffsetRef?: MutableRefObject<THREE.Vector3>
+  syncToStore?: boolean
 }) {
   const viewer = useEditorStore((state) => state.viewer)
   const setViewer = useEditorStore((state) => state.setViewer)
@@ -67,6 +69,10 @@ export function ViewerSync({
           controls.target.z - (targetOffset?.z ?? 0),
         ]
       : currentViewer.orbitTarget
+
+    if (!syncToStore) {
+      return
+    }
 
     if (
       currentViewer.cameraPosition[0] !== nextCameraPosition[0] ||

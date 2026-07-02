@@ -20,14 +20,17 @@ import {
   type ExtraLightState,
   type FocusFrontFace,
   type FrameAspectPreset,
+  type InterfaceElementAnchor,
+  type InterfaceElementShapeType,
   type ResponsiveFramePresetKind,
   type RotateAnimationAxis,
   type RotateAnimationPivot,
+  type SceneDirectorMode,
   type SceneGraphNode,
 } from '../store/editorStore'
 
 type SidebarTab = 'scn' | 'cam' | 'lgt' | 'fx' | 'anim'
-type OutlinerViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects'
+type OutlinerViewMode = 'layers' | 'meshes' | 'materials' | 'lights' | 'effects' | 'interface'
 type GodRaysDirectionPreset = 'front' | 'back' | 'left' | 'right' | 'top' | 'bottom'
 
 const TAB_LABELS: Record<SidebarTab, string> = {
@@ -67,6 +70,17 @@ const GOD_RAYS_DIRECTION_PRESETS: Array<{ id: GodRaysDirectionPreset; label: str
   { id: 'right', label: 'RIGHT', direction: [1, 0, 0] },
   { id: 'top', label: 'TOP', direction: [0, 1, 0] },
   { id: 'bottom', label: 'BOTTOM', direction: [0, -1, 0] },
+]
+const INTERFACE_ELEMENT_ANCHORS: Array<{ value: InterfaceElementAnchor; label: string }> = [
+  { value: 'top-left', label: 'Top Left' },
+  { value: 'top-center', label: 'Top Center' },
+  { value: 'top-right', label: 'Top Right' },
+  { value: 'center-left', label: 'Center Left' },
+  { value: 'center', label: 'Center' },
+  { value: 'center-right', label: 'Center Right' },
+  { value: 'bottom-left', label: 'Bottom Left' },
+  { value: 'bottom-center', label: 'Bottom Center' },
+  { value: 'bottom-right', label: 'Bottom Right' },
 ]
 
 function broadcastWebPublishStatus(status: WebPublishDeploymentStatus | null) {
@@ -370,60 +384,32 @@ function ExtraLightSettings({
 function SceneTabContent() {
   const backgroundMode = useEditorStore((state) => state.backgroundMode)
   const backgroundColor = useEditorStore((state) => state.backgroundColor)
+  const backgroundGradientStart = useEditorStore((state) => state.backgroundGradientStart)
+  const backgroundGradientEnd = useEditorStore((state) => state.backgroundGradientEnd)
+  const backgroundGradientAngle = useEditorStore((state) => state.backgroundGradientAngle)
   const backgroundRotation = useEditorStore((state) => state.backgroundRotation)
-  const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
-  const sceneGraph = useEditorStore((state) => state.sceneGraph)
-  const phoneScreenBoxes = useEditorStore((state) => state.phoneScreenBoxes)
-  const addPhoneScreenBox = useEditorStore((state) => state.addPhoneScreenBox)
-  const updatePhoneScreenBox = useEditorStore((state) => state.updatePhoneScreenBox)
+  const environment = useEditorStore((state) => state.environment)
+  const assets = useEditorStore((state) => state.assets)
+  const hud = useEditorStore((state) => state.hud)
+  const interfaceElements = useEditorStore((state) => state.interfaceElements)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
+  const setHud = useEditorStore((state) => state.setHud)
   const setBackgroundMode = useEditorStore((state) => state.setBackgroundMode)
   const setBackgroundColor = useEditorStore((state) => state.setBackgroundColor)
+  const setBackgroundGradient = useEditorStore((state) => state.setBackgroundGradient)
   const setBackgroundPanoramaUrl = useEditorStore((state) => state.setBackgroundPanoramaUrl)
   const setBackgroundRotation = useEditorStore((state) => state.setBackgroundRotation)
+  const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
+  const addInterfaceElement = useEditorStore((state) => state.addInterfaceElement)
+  const updateInterfaceElement = useEditorStore((state) => state.updateInterfaceElement)
+  const removeInterfaceElement = useEditorStore((state) => state.removeInterfaceElement)
+  const setSelectedInterfaceElementId = useEditorStore((state) => state.setSelectedInterfaceElementId)
+  const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
+  const setSelectedMaterialId = useEditorStore((state) => state.setSelectedMaterialId)
   const backgroundInputRef = useRef<HTMLInputElement | null>(null)
-  const selectedNode = selectedObjectId ? sceneGraph[selectedObjectId] ?? null : null
-  const selectedPhoneBox = phoneScreenBoxes.find((entry) => entry.id === selectedObjectId) ?? null
-  const targetPhoneBox = selectedPhoneBox ?? phoneScreenBoxes[0] ?? null
-  const selectedIsPhoneBoxPart = Boolean(
-    selectedObjectId &&
-      phoneScreenBoxes.some((entry) => entry.id === selectedObjectId || entry.materialId === selectedObjectId),
-  )
-  const canAttachSelectedObject = Boolean(
-    targetPhoneBox &&
-      selectedObjectId &&
-      selectedNode &&
-      selectedNode.type !== 'material' &&
-      !selectedIsPhoneBoxPart,
-  )
-  const selectedIsAttached = Boolean(
-    targetPhoneBox &&
-      selectedObjectId &&
-      targetPhoneBox.content.attachedObjectIds.includes(selectedObjectId),
-  )
-  const targetPhoneBoxLabel = targetPhoneBox ? sceneGraph[targetPhoneBox.id]?.label ?? 'Phone Box' : 'No Phone Box'
-  const selectedObjectLabel = selectedObjectId ? sceneGraph[selectedObjectId]?.label ?? selectedObjectId : 'Nothing selected'
-  const attachedObjectLabels =
-    targetPhoneBox?.content.attachedObjectIds
-      .map((objectId) => sceneGraph[objectId]?.label ?? objectId)
-      .filter(Boolean)
-      .join(', ') || 'None'
-
-  const handleTogglePhoneContentAttachment = () => {
-    if (!targetPhoneBox || !selectedObjectId || !canAttachSelectedObject) {
-      return
-    }
-
-    const attachedObjectIds = selectedIsAttached
-      ? targetPhoneBox.content.attachedObjectIds.filter((objectId) => objectId !== selectedObjectId)
-      : [...targetPhoneBox.content.attachedObjectIds, selectedObjectId]
-
-    updatePhoneScreenBox(targetPhoneBox.id, {
-      content: {
-        attachedObjectIds,
-      },
-    })
-  }
+  const selectedInterfaceElement =
+    interfaceElements.find((entry) => entry.id === selectedInterfaceElementId) ?? interfaceElements[0] ?? null
 
   const handleBackgroundFile = (file: File) => {
     const url = createObjectUrl(file)
@@ -439,117 +425,401 @@ function SceneTabContent() {
     })
   }
 
+  const openDirectorMode = (mode: SceneDirectorMode) => {
+    setHud({ directorDockOpen: mode === 'animator', directorMode: mode })
+  }
+
+  const selectInterfaceElement = (id: string) => {
+    setSelectedInterfaceElementId(id)
+    setHud({ transformMode: 'none' })
+  }
+
+  const handleBackgroundModeChange = (mode: typeof backgroundMode) => {
+    setBackgroundMode(mode)
+
+    if (mode === 'none') {
+      setEnvironment({ background: 'none', backgroundVisible: false, previewReflections: false })
+      return
+    }
+
+    if (mode === 'color') {
+      setEnvironment({ background: 'color', backgroundVisible: true, previewReflections: false })
+      return
+    }
+
+    if (mode === 'gradient') {
+      setEnvironment({ background: 'none', backgroundVisible: true, previewReflections: false })
+      return
+    }
+
+    if (mode === 'background') {
+      setEnvironment({ background: 'environment', backgroundVisible: true, previewReflections: false })
+      return
+    }
+
+    setEnvironment({ background: 'reflections', backgroundVisible: true, previewReflections: false })
+  }
+
   return (
     <div className="settings-tab">
       <div className="left-controls__group">
-        <span className="left-controls__label">Primitives</span>
-        <button type="button" className="tool-button" onClick={() => addPhoneScreenBox()}>
-          <span className="tool-button__glyph">BOX</span>
-          <span className="tool-button__label">Add Phone Showcase</span>
-        </button>
-        <p className="settings-note">Responsive portrait showcase box with open top and screen-bound sizing.</p>
-        {phoneScreenBoxes.length ? (
-          <div className="left-controls__group left-controls__group--nested">
-            <span className="left-controls__label">Phone Content</span>
-            <div className="left-controls__value">
-              <span>Box: {targetPhoneBoxLabel}</span>
-            </div>
-            <div className="left-controls__value">
-              <span>Selected: {selectedObjectLabel}</span>
-            </div>
+        <span className="left-controls__label">Director</span>
+        <div className="director-launch-grid">
+          {([
+            ['background', 'BG', 'Background'],
+            ['interface', 'UI', 'Interface'],
+            ['callouts', 'CALL', 'Callouts'],
+            ['actions', 'ACT', 'Actions'],
+            ['states', 'STATE', 'States'],
+            ['animator', 'ANIM', 'Animator'],
+          ] as const).map(([mode, glyph, label]) => (
             <button
+              key={mode}
               type="button"
-              className="tool-button tool-button--secondary"
-              disabled={!canAttachSelectedObject}
-              onClick={handleTogglePhoneContentAttachment}
+              className={`tool-button tool-button--secondary director-launch-button${
+                hud.directorMode === mode ? ' is-active' : ''
+              }`}
+              onClick={() => openDirectorMode(mode)}
             >
-              <span className="tool-button__glyph">{selectedIsAttached ? 'OUT' : 'IN'}</span>
-              <span className="tool-button__label">{selectedIsAttached ? 'Detach selected' : 'Attach selected'}</span>
+              <span className="tool-button__glyph">{glyph}</span>
+              <span className="tool-button__label">{label}</span>
             </button>
-            <p className="settings-note">Attached objects use the Phone Box portal parallax when the showcase is locked.</p>
-            <div className="left-controls__value">
-              <span>Attached: {attachedObjectLabels}</span>
-            </div>
-          </div>
-        ) : null}
+          ))}
+        </div>
       </div>
 
-      <div className="left-controls__group">
-        <span className="left-controls__label">Background</span>
-        <label className="left-select">
-          <span>Mode</span>
-          <select value={backgroundMode} onChange={(event) => setBackgroundMode(event.currentTarget.value as typeof backgroundMode)}>
-            <option value="none">NONE</option>
-            <option value="color">COLOR</option>
-            <option value="background">BACKGROUND</option>
-            <option value="hdri">HDRI</option>
-          </select>
-        </label>
-
-        {backgroundMode === 'color' ? (
-          <label className="left-color-field left-color-field--swatch">
-            <span>Color</span>
-            <input
-              type="color"
-              value={backgroundColor}
-              onChange={(event) => setBackgroundColor(event.currentTarget.value)}
-            />
+      {hud.directorMode === 'background' ? (
+        <div className="left-controls__group director-compact-panel">
+          <span className="left-controls__label">Background</span>
+          <label className="left-select">
+            <span>Mode</span>
+            <select
+              value={backgroundMode}
+              onChange={(event) => handleBackgroundModeChange(event.currentTarget.value as typeof backgroundMode)}
+            >
+              <option value="none">NONE</option>
+              <option value="color">COLOR</option>
+              <option value="gradient">GRADIENT</option>
+              <option value="background">360 IMAGE</option>
+              <option value="hdri">REFLECTIONS</option>
+            </select>
           </label>
-        ) : null}
 
-        {backgroundMode === 'background' ? (
-          <>
+          <label className="left-toggle">
             <input
-              ref={backgroundInputRef}
-              className="hidden-input"
-              type="file"
-              accept=".hdr,.exr,.jpg,.jpeg,.png,image/*"
+              type="checkbox"
+              checked={environment.backgroundVisible && backgroundMode !== 'none'}
               onChange={(event) => {
-                const file = event.currentTarget.files?.[0]
-                if (!file) {
-                  return
-                }
-                handleBackgroundFile(file)
-                event.currentTarget.value = ''
+                const nextMode = event.currentTarget.checked
+                  ? backgroundMode === 'none'
+                    ? 'color'
+                    : backgroundMode
+                  : 'none'
+                handleBackgroundModeChange(nextMode)
               }}
             />
-            <button type="button" className="tool-button" onClick={() => backgroundInputRef.current?.click()}>
-              <span className="tool-button__glyph">360</span>
-              <span className="tool-button__label">Load 360 Panorama</span>
-            </button>
-            <label className="left-slider">
-              <span>Rotation</span>
-              <input
-                type="range"
-                min="0"
-                max="360"
-                step="1"
-                value={backgroundRotation}
-                onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
-              />
-              <strong>{formatDegrees(backgroundRotation)}</strong>
-            </label>
-          </>
-        ) : null}
+            <span>Visible</span>
+          </label>
 
-        {backgroundMode === 'hdri' ? (
-          <>
-            <p className="settings-note">Using Environment map from LGT tab</p>
-            <label className="left-slider">
-              <span>Rotation</span>
+          {backgroundMode !== 'gradient' ? (
+            <label className="left-color-field left-color-field--swatch">
+              <span>Color</span>
               <input
-                type="range"
-                min="0"
-                max="360"
-                step="1"
-                value={backgroundRotation}
-                onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
+                type="color"
+                value={backgroundColor}
+                onChange={(event) => {
+                  setBackgroundColor(event.currentTarget.value)
+                  if (backgroundMode === 'none') {
+                    handleBackgroundModeChange('color')
+                  }
+                }}
               />
-              <strong>{formatDegrees(backgroundRotation)}</strong>
             </label>
-          </>
-        ) : null}
-      </div>
+          ) : null}
+
+          {backgroundMode === 'gradient' ? (
+            <>
+              <label className="left-color-field left-color-field--swatch">
+                <span>Start</span>
+                <input
+                  type="color"
+                  value={backgroundGradientStart}
+                  onChange={(event) => setBackgroundGradient({ backgroundGradientStart: event.currentTarget.value })}
+                />
+              </label>
+              <label className="left-color-field left-color-field--swatch">
+                <span>End</span>
+                <input
+                  type="color"
+                  value={backgroundGradientEnd}
+                  onChange={(event) => setBackgroundGradient({ backgroundGradientEnd: event.currentTarget.value })}
+                />
+              </label>
+              <label className="left-slider">
+                <span>Angle</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  step="1"
+                  value={backgroundGradientAngle}
+                  onInput={(event) =>
+                    setBackgroundGradient({ backgroundGradientAngle: Number(event.currentTarget.value) })
+                  }
+                />
+                <strong>{formatDegrees(backgroundGradientAngle)}</strong>
+              </label>
+            </>
+          ) : null}
+
+          <input
+            ref={backgroundInputRef}
+            className="hidden-input"
+            type="file"
+            accept=".hdr,.exr,.jpg,.jpeg,.png,.webp,image/*"
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0]
+              if (!file) {
+                return
+              }
+              handleBackgroundFile(file)
+              event.currentTarget.value = ''
+            }}
+          />
+          <div className="scene-asset-row">
+            <button type="button" className="tool-button scene-asset-row__trigger" onClick={() => backgroundInputRef.current?.click()}>
+              <span className="tool-button__glyph">IMG</span>
+              <span className="tool-button__label">Load</span>
+            </button>
+            <span className="scene-asset-row__map">{getAssetName(assets.background, 'No image')}</span>
+          </div>
+
+          <label className="left-slider">
+            <span>Rotation</span>
+            <input
+              type="range"
+              min="0"
+              max="360"
+              step="1"
+              value={backgroundRotation}
+              disabled={backgroundMode !== 'background' && backgroundMode !== 'hdri'}
+              onInput={(event) => setBackgroundRotation(Number(event.currentTarget.value))}
+            />
+            <strong>{formatDegrees(backgroundRotation)}</strong>
+          </label>
+
+          <label className="left-slider">
+            <span>Intensity</span>
+            <input
+              type="range"
+              min="0"
+              max="5"
+              step="0.01"
+              value={environment.backgroundIntensity}
+              disabled={backgroundMode !== 'background' && backgroundMode !== 'hdri'}
+              onInput={(event) => setEnvironment({ backgroundIntensity: Number(event.currentTarget.value) })}
+            />
+            <strong>{formatNumber(environment.backgroundIntensity)}</strong>
+          </label>
+
+          <label className="left-slider">
+            <span>Blur</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={environment.backgroundBlur}
+              disabled={backgroundMode !== 'background' && backgroundMode !== 'hdri'}
+              onInput={(event) => setEnvironment({ backgroundBlur: Number(event.currentTarget.value) })}
+            />
+            <strong>{formatNumber(environment.backgroundBlur)}</strong>
+          </label>
+
+          {backgroundMode === 'hdri' ? (
+            <p className="settings-note">
+              {environment.isEnvironmentEnabled ? 'Using Environment map from LGT tab.' : 'Enable or load an Environment map in LGT.'}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {hud.directorMode === 'interface' ? (
+        <div className="left-controls__group director-compact-panel">
+          <span className="left-controls__label">Interface</span>
+          <button type="button" className="tool-button" onClick={() => addInterfaceElement()}>
+            <span className="tool-button__glyph">TXT</span>
+            <span className="tool-button__label">Add Text Button</span>
+          </button>
+          {interfaceElements.length ? (
+            <div className="director-item-list">
+              {interfaceElements.map((entry) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  className={`director-item-row${selectedInterfaceElement?.id === entry.id ? ' is-active' : ''}`}
+                  onClick={() => selectInterfaceElement(entry.id)}
+                >
+                  <span>{entry.label || 'Untitled'}</span>
+                  <strong>{entry.visible ? 'ON' : 'OFF'}</strong>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="settings-note">Add a button to place simple overlay UI inside the published iframe.</p>
+          )}
+
+          {selectedInterfaceElement ? (
+            <>
+              <label className="left-toggle">
+                <input
+                  type="checkbox"
+                  checked={selectedInterfaceElement.visible}
+                  onChange={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, { visible: event.currentTarget.checked })
+                  }
+                />
+                <span>Visible</span>
+              </label>
+              <label className="left-text-field">
+                <span>Label</span>
+                <input
+                  type="text"
+                  value={selectedInterfaceElement.label}
+                  onChange={(event) => updateInterfaceElement(selectedInterfaceElement.id, { label: event.currentTarget.value })}
+                />
+              </label>
+              <label className="left-text-field">
+                <span>URL</span>
+                <input
+                  type="url"
+                  value={selectedInterfaceElement.action?.url ?? selectedInterfaceElement.url}
+                  placeholder="https://example.com"
+                  onChange={(event) => {
+                    const url = event.currentTarget.value
+                    updateInterfaceElement(selectedInterfaceElement.id, {
+                      action: {
+                        ...(selectedInterfaceElement.action ?? { type: 'openUrl', url: '', target: 'newTab' }),
+                        type: 'openUrl',
+                        url,
+                      },
+                      url,
+                    })
+                  }}
+                />
+              </label>
+              <label className="left-select">
+                <span>Anchor</span>
+                <select
+                  value={selectedInterfaceElement.anchor}
+                  onChange={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, {
+                      anchor: event.currentTarget.value as InterfaceElementAnchor,
+                    })
+                  }
+                >
+                  {INTERFACE_ELEMENT_ANCHORS.map((anchor) => (
+                    <option key={anchor.value} value={anchor.value}>
+                      {anchor.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="left-slider">
+                <span>X</span>
+                <input
+                  type="range"
+                  min="-360"
+                  max="360"
+                  step="1"
+                  value={selectedInterfaceElement.offsetX}
+                  onInput={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, { offsetX: Number(event.currentTarget.value) })
+                  }
+                />
+                <strong>{formatNumber(selectedInterfaceElement.offsetX, 0)}</strong>
+              </label>
+              <label className="left-slider">
+                <span>Y</span>
+                <input
+                  type="range"
+                  min="-360"
+                  max="360"
+                  step="1"
+                  value={selectedInterfaceElement.offsetY}
+                  onInput={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, { offsetY: Number(event.currentTarget.value) })
+                  }
+                />
+                <strong>{formatNumber(selectedInterfaceElement.offsetY, 0)}</strong>
+              </label>
+              <label className="left-slider">
+                <span>Width</span>
+                <input
+                  type="range"
+                  min="72"
+                  max="360"
+                  step="1"
+                  value={selectedInterfaceElement.width}
+                  onInput={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, { width: Number(event.currentTarget.value) })
+                  }
+                />
+                <strong>{formatNumber(selectedInterfaceElement.width, 0)}</strong>
+              </label>
+              <label className="left-slider">
+                <span>Height</span>
+                <input
+                  type="range"
+                  min="28"
+                  max="120"
+                  step="1"
+                  value={selectedInterfaceElement.height}
+                  onInput={(event) =>
+                    updateInterfaceElement(selectedInterfaceElement.id, { height: Number(event.currentTarget.value) })
+                  }
+                />
+                <strong>{formatNumber(selectedInterfaceElement.height, 0)}</strong>
+              </label>
+              <p className="settings-note">Click the overlay in the viewport or use the Inspector for more detailed UI editing.</p>
+              <button
+                type="button"
+                className="tool-button tool-button--secondary"
+                onClick={() => removeInterfaceElement(selectedInterfaceElement.id)}
+              >
+                <span className="tool-button__glyph">DEL</span>
+                <span className="tool-button__label">Remove Button</span>
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      {hud.directorMode !== 'background' && hud.directorMode !== 'interface' ? (
+        <div className="left-controls__group director-compact-panel">
+          <span className="left-controls__label">
+            {hud.directorMode === 'callouts'
+                ? 'Callouts'
+                : hud.directorMode === 'actions'
+                  ? 'Actions'
+                  : hud.directorMode === 'states'
+                    ? 'States'
+                    : 'Animator'}
+          </span>
+          <p className="settings-note">
+            {hud.directorMode === 'animator'
+              ? 'Timeline and keyframe tools open in the viewport dock.'
+              : 'Compact controls for this Director section will live here.'}
+          </p>
+          {hud.directorMode === 'animator' ? (
+            <button type="button" className="tool-button" onClick={() => setHud({ directorDockOpen: true })}>
+              <span className="tool-button__glyph">KEY</span>
+              <span className="tool-button__label">Open Animator Dock</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
     </div>
   )
 }
@@ -773,6 +1043,7 @@ function LightTabContent() {
   const environment = useEditorStore((state) => state.environment)
   const setEnvironment = useEditorStore((state) => state.setEnvironment)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const setSelectedObjectId = useEditorStore((state) => state.setSelectedObjectId)
   const requestEnvironmentLoad = useEditorStore((state) => state.requestEnvironmentLoad)
   const selectedExtraLight = extraLights.find((light) => light.id === selectedObjectId) ?? null
@@ -969,6 +1240,7 @@ function FxTabContent() {
   const objects = useEditorStore((state) => state.objects)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const transformSettings = useEditorStore((state) => state.transformSettings)
   const activeGodRaysDirectionBoxId = useEditorStore((state) => state.hud.activeGodRaysDirectionBoxId)
   const activeStencilVolumeEndHandleId = useEditorStore((state) => state.hud.activeStencilVolumeEndHandleId)
@@ -2497,6 +2769,7 @@ function AnimTabContent() {
   const floatAnimation = useEditorStore((state) => state.floatAnimation)
   const focusAnimation = useEditorStore((state) => state.focusAnimation)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const addRotateAnimation = useEditorStore((state) => state.addRotateAnimation)
   const updateRotateAnimation = useEditorStore((state) => state.updateRotateAnimation)
@@ -2967,6 +3240,7 @@ export function Sidebar() {
   const sceneGraph = useEditorStore((state) => state.sceneGraph)
   const materials = useEditorStore((state) => state.materials)
   const selectedObjectId = useEditorStore((state) => state.selectedObjectId)
+  const selectedInterfaceElementId = useEditorStore((state) => state.selectedInterfaceElementId)
   const requestModelLoad = useEditorStore((state) => state.requestModelLoad)
   const requestSceneReset = useEditorStore((state) => state.requestSceneReset)
   const setStatus = useEditorStore((state) => state.setStatus)
@@ -2984,6 +3258,9 @@ export function Sidebar() {
 
   const handleSidebarTabChange = (tab: SidebarTab) => {
     setActiveTab(tab)
+    if (tab !== 'scn') {
+      setHud({ directorDockOpen: false })
+    }
     if (tab === 'lgt') {
       setOutlinerViewMode('lights')
       return
@@ -3002,10 +3279,20 @@ export function Sidebar() {
     }
     if (mode === 'effects') {
       setActiveTab('fx')
+      return
+    }
+    if (mode === 'interface') {
+      setActiveTab('scn')
     }
   }
 
   useEffect(() => {
+    if (selectedInterfaceElementId) {
+      setActiveTab('scn')
+      setOutlinerViewMode('interface')
+      return
+    }
+
     if (!selectedObjectId) {
       return
     }
@@ -3033,7 +3320,7 @@ export function Sidebar() {
     if (selectedObjectId.startsWith('effect:')) {
       setActiveTab('fx')
     }
-  }, [sceneGraph, selectedObjectId])
+  }, [sceneGraph, selectedInterfaceElementId, selectedObjectId])
 
   useEffect(() => {
     return () => {
