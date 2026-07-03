@@ -1,6 +1,6 @@
 # Codex Handoff
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 
 ## Project
 
@@ -29,6 +29,8 @@ Branch:
 
 Latest important commits:
 
+- `d784958` `Add desktop headroom to mk scene`
+- `26cd29d` `Stabilize published player first-frame camera and viewport`
 - `d18cd51` `Add rain impact material effect`
 - `a3be82b` `Update Codex handoff notes`
 - `e61248e` `Update scene mk dust tuning`
@@ -43,7 +45,9 @@ Latest important commits:
 
 Latest push/deploy notes:
 
-- `d18cd51` is a local/latest important commit for the Rain Impacts material effect.
+- `d784958` was committed and pushed to `origin/main` on 2026-07-03. User confirmed `https://karneev.org/mk` now looks OK on both phone and desktop after the desktop headroom framing tweak.
+- `26cd29d` was committed and pushed to `origin/main` on 2026-07-02. It contains the published `mk` first-frame jump fix plus the SCN/UI work that was already in the local tree.
+- `d18cd51` is an earlier important commit for the Rain Impacts material effect.
 - `a3be82b` was pushed to `origin/main`.
 - `e61248e` was pushed to `origin/main`.
 - `5b0c402` became the ready Production deployment for the latest `mtg` scene update after the Vercel queue cleared.
@@ -51,6 +55,11 @@ Latest push/deploy notes:
 
 Recent local work:
 
+- Current git state after the last session:
+  - branch: `main`;
+  - latest commit: `d784958` `Add desktop headroom to mk scene`;
+  - pushed to `origin/main`;
+  - `git status --short` only showed this handoff file as modified after the push.
 - On 2026-07-02 published `mk` / Stencil first-frame jump investigation continued:
   - user reported the old Stencil scene at `https://karneev.org/mk` jumps on load: on desktop the first second has a small twitch/shift, and on phone the first frame still appears lower in the viewport before jumping to the intended framing;
   - several local fixes were attempted in `src/app/PublishedPlayerApp.tsx`, `src/components/Viewport.tsx`, `src/features/publish/buildPublishedScene.ts`, and `public/scenes/mk/scene.json`;
@@ -64,7 +73,9 @@ Recent local work:
   - user retested on the real phone page and confirmed it still jumps, so the Stencil-only fixes were not enough.
   - follow-up runtime fix removed two more published-player jump sources: the separate `PublishedSceneController` camera-sync `useEffect` was removed so published camera is written only at final scene-apply time, and `ViewerSync` no longer writes camera position/orbit target back into zustand when `allowSelection=false` (published player). This avoids a Three camera -> store -> CameraBridge feedback loop in the iframe.
   - follow-up mobile layout fix added `lockContainerSize` for the published `Viewport`: after `PublishedPlayerApp` waits for a settled container measurement, the internal canvas/frame rect stops responding to later mobile `ResizeObserver` changes from Tilda/browser viewport chrome. Editor resize behavior remains live.
-  - validation after the camera/layout lock fix: `npx tsc --noEmit` and `npx vite build` passed; still needs deploy and real phone verification.
+  - validation after the camera/layout lock fix: `npx tsc --noEmit` and `npx vite build` passed; committed/pushed as `26cd29d`; user later confirmed phone was OK after production deploy.
+  - desktop still had too little top headroom, so `public/scenes/mk/scene.json` was tuned in `d784958`: only `responsiveFrame.landscape` changed, with camera/target Y raised and `landscape.focalLength` set to `18.5`; `portrait` was intentionally left unchanged.
+  - user confirmed after `d784958` that both phone and desktop look OK.
 - On 2026-06-21 SCN Director work continued:
   - compact Director controls were moved into the left `SCN` panel under the selected Director button;
   - the bottom Director dock is now reserved for large editors and currently opens only for `ANIM`;
@@ -113,7 +124,7 @@ Recent local work:
 
 ## Validation
 
-Passing after the latest SCN Director / BG / UI / screen3d UI work:
+Passing after commit `d784958`:
 
 - `npx tsc --noEmit`
 - `npx vite build`
@@ -126,9 +137,9 @@ User later confirmed the updated wet-noise look after `Noise/Flow` became a full
 
 Current published `mk` / Stencil first-frame jump status:
 
-- As of 2026-07-02, local candidate fixes have been applied in `StencilVolume`, `PublishedPlayerApp`, `Viewport`, and `ViewerSync`: Stencil transform/contours are first-frame safe, published camera is no longer rewritten by a separate sync effect, published `ViewerSync` no longer writes camera back into the store, and the published canvas size is locked after the settled first measurement.
-- Earlier symptoms: desktop started near the intended position then made a small initial twitch/shift; phone first frame appeared too low, then jumped to correct framing.
-- Do not claim this is confirmed fixed until the user verifies on the real phone page after deploy.
+- Confirmed OK by the user on 2026-07-03 after `d784958` reached the site: phone looks good and desktop has acceptable top headroom.
+- The runtime first-frame jump fix is from `26cd29d`: Stencil transform/contours are first-frame safe, published camera is no longer rewritten by a separate sync effect, published `ViewerSync` no longer writes camera back into the store, and the published canvas size is locked after the settled first measurement.
+- The final desktop composition tweak is from `d784958`: only `responsiveFrame.landscape` in `public/scenes/mk/scene.json` was adjusted; `portrait` stayed unchanged.
 
 Current UI validation status:
 
@@ -820,11 +831,11 @@ Implementation roadmap:
    - easing selector;
    - current-time preview.
 
-Open published `mk` / Stencil issue to verify next time:
+Published `mk` / Stencil issue status:
 
-- Candidate local fix: `StencilVolume` root transform is now applied before first paint via JSX props plus `useLayoutEffect`; this targets the phone symptom where the first frame appeared too low because the effect root initially rendered at origin instead of `y=1.5`.
-- User has already tried/seen separate vertical and horizontal format settings; those did not fix the jump, so treat this as a runtime first-frame transform issue, not a responsive preset issue.
-- Next step is deploy/retest on the real `https://karneev.org/mk` phone page. If it still jumps, inspect any remaining first-frame writers in `PublishedPlayerApp`, `Viewport` / `CameraBridge`, `ViewerSync`, `SceneAnimationController`, production scene JSON, and the Tilda iframe/container sizing path.
+- Resolved/confirmed on 2026-07-03. User confirmed `https://karneev.org/mk` looks OK on phone and desktop.
+- Final pushed commits: `26cd29d` for the published first-frame/runtime stabilization and `d784958` for desktop `landscape` headroom in `public/scenes/mk/scene.json`.
+- If a similar regression returns, inspect `PublishedPlayerApp`, `Viewport` / `CameraBridge`, `ViewerSync`, `SceneAnimationController`, production scene JSON, and the Tilda iframe/container sizing path before making isolated Stencil patches.
 
 Open UI issue to resume first next time:
 
@@ -892,7 +903,9 @@ Publish dialog behavior:
 
 `public/scenes/mk/scene.json`:
 
-- latest pushed commit: `e61248e`;
+- latest pushed commit: `d784958`;
+- user confirmed phone and desktop framing OK on 2026-07-03;
+- desktop/landscape framing uses a separate responsive camera tweak for top headroom;
 - dust tuning changed speed from `0.01` to `0.0005555555555555556`;
 - dust tuning changed drift from `0.18` to `0.06`.
 
