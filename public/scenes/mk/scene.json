@@ -45,15 +45,15 @@
       "frameAspectPreset": "16:9",
       "cameraPosition": [
         -0.011572390644140002,
-        1.76526771498774,
+        1.5852677149877399,
         3.583466378036653
       ],
       "orbitTarget": [
         -0.012553776086030295,
-        1.693917136110042,
+        1.5139171361100416,
         -0.047498937945277826
       ],
-      "focalLength": 18.5
+      "focalLength": 20
     },
     "portrait": {
       "frameAspectPreset": "9:16",
@@ -123,10 +123,10 @@
   "phoneScreenBoxes": [],
   "godRaysGlobals": {
     "noise": {
-      "amount": 0.6,
+      "amount": 0.44,
       "scale": 5,
-      "grain": 0.18,
-      "motionMode": "off",
+      "grain": 0.37,
+      "motionMode": "soft",
       "motionSpeed": 1.6,
       "quality": "low"
     },
@@ -4276,10 +4276,10 @@
         "endScaleY": 1
       },
       "rays": {
-        "color": "#fff4cf",
-        "intensity": 1.2,
+        "color": "#ff0f0f",
+        "intensity": 1.6,
         "falloff": 1.4,
-        "edgeFade": 0.22,
+        "edgeFade": 2,
         "fillQuality": 0.15,
         "useGlobalSettings": true,
         "noiseAmount": 0.6,
@@ -4291,12 +4291,12 @@
       },
       "dust": {
         "enabled": true,
-        "count": 180,
-        "sizeMin": 0.015,
-        "sizeMax": 0.05,
-        "speed": 0.0005555555555555556,
-        "colorLinked": true,
-        "color": "#fff4cf",
+        "count": 281,
+        "sizeMin": 0.009,
+        "sizeMax": 0.027,
+        "speed": 0.00004397580000000012,
+        "colorLinked": false,
+        "color": "#ffc2c2",
         "strength": 0.54,
         "directionMode": "global",
         "directionLocal": [
@@ -4304,8 +4304,8 @@
           1,
           0
         ],
-        "drift": 0.06,
-        "edgeFade": 0.16
+        "drift": 0.02,
+        "edgeFade": 0.69
       }
     }
   ],
