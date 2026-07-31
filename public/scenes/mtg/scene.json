@@ -14,8 +14,8 @@
       "kind": "hdri",
       "assetLabel": "Studio",
       "assetUrl": "assets/environment/scene-environment-studio.exr",
-      "intensity": 0.9,
-      "rotation": -180,
+      "intensity": 1.5,
+      "rotation": 0,
       "backgroundMode": "color",
       "backgroundVisible": true,
       "backgroundAssetLabel": null,
@@ -27,9 +27,9 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.006826568999986242,
+      0.006826569000000139,
       0.6751488450000002,
-      -1.0190809606061761
+      -1.126124943441799
     ],
     "target": [
       0.0068265690000000046,
@@ -44,9 +44,9 @@
     "landscape": {
       "frameAspectPreset": "16:9",
       "cameraPosition": [
-        0.006826568999986242,
+        0.006826569000000139,
         0.6751488450000002,
-        -1.0190809606061761
+        -1.126124943441799
       ],
       "orbitTarget": [
         0.0068265690000000046,
@@ -58,9 +58,9 @@
     "portrait": {
       "frameAspectPreset": "9:16",
       "cameraPosition": [
-        0.006826568999986242,
+        0.006826569000000139,
         0.6751488450000002,
-        -1.0190809606061761
+        -1.126124943441799
       ],
       "orbitTarget": [
         0.0068265690000000046,
@@ -72,9 +72,9 @@
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        0.006826568999986242,
+        0.006826569000000139,
         0.6751488450000002,
-        -1.0190809606061761
+        -1.126124943441799
       ],
       "orbitTarget": [
         0.0068265690000000046,
@@ -141,7 +141,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [],
   "model": {
-    "id": "root:07e0e61c-3583-4568-882c-315775eefa91",
+    "id": "root:f85d5684-79b2-4a16-9884-878debd30034",
     "assetLabel": "MTG.glb",
     "assetUrl": "assets/model/scene-model-mtg.glb",
     "visible": true,
@@ -165,7 +165,7 @@
   },
   "objects": [
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -189,8 +189,8 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:0",
-      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:0",
+      "parentId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "type": "mesh",
       "label": "3",
       "visible": true,
@@ -213,8 +213,8 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:1",
-      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:1",
+      "parentId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "type": "mesh",
       "label": "1",
       "visible": true,
@@ -237,8 +237,8 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:2",
-      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:2",
+      "parentId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "type": "mesh",
       "label": "2",
       "visible": true,
@@ -261,8 +261,8 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:3",
-      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:3",
+      "parentId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "type": "mesh",
       "label": "Face",
       "visible": true,
@@ -287,7 +287,7 @@
   ],
   "materials": [
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:0/material:0",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:0/material:0",
       "name": "Black",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -306,7 +306,7 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:1/material:0",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:1/material:0",
       "name": "1",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -332,7 +332,7 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:2/material:0",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:2/material:0",
       "name": "2",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -358,7 +358,7 @@
       }
     },
     {
-      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:3/material:0",
+      "id": "root:f85d5684-79b2-4a16-9884-878debd30034/node:3/material:0",
       "name": "Face",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -389,7 +389,7 @@
           "gridY": 3,
           "fps": 5,
           "frameCount": 9,
-          "currentFrame": 2,
+          "currentFrame": 0,
           "opacity": 0.85,
           "frameBlend": true,
           "loop": true,
@@ -409,18 +409,18 @@
   "animations": [
     {
       "type": "float",
-      "targetObjectId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "targetObjectId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "enabled": true,
       "loop": true,
-      "amplitude": 0.02,
+      "amplitude": 0.025,
       "speed": 0.08,
-      "tilt": 0.5,
+      "tilt": 1,
       "startProgress": 0,
-      "progress": 77.87519997787403
+      "progress": 99.5111999778735
     },
     {
       "type": "focus",
-      "targetObjectId": "root:07e0e61c-3583-4568-882c-315775eefa91",
+      "targetObjectId": "root:f85d5684-79b2-4a16-9884-878debd30034",
       "enabled": true,
       "frontFace": "+z",
       "distance": 1.25,
