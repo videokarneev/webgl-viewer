@@ -3,6 +3,7 @@ import {
   MATERIAL_TEXTURE_SLOTS,
   type EnvironmentState,
   type MaterialTextureSlot,
+  type MaterialTextureUvChannel,
   type PbrMaterialState,
 } from '../../../store/editorStore'
 
@@ -18,9 +19,26 @@ export type RuntimeMeshMaterial = THREE.MeshStandardMaterial & {
   specularMap?: THREE.Texture | null
   userData: THREE.Material['userData'] & {
     originalTextureSlots?: Partial<Record<RuntimeTextureSlot, THREE.Texture | null>>
+    originalTextureChannels?: Partial<Record<MaterialTextureSlot, number>>
     customTextureSlots?: Partial<Record<MaterialTextureSlot, THREE.Texture | null>>
     originalEnvMapRotation?: [number, number, number]
   }
+}
+
+function resolveTextureUvChannel(
+  material: RuntimeMeshMaterial,
+  slot: MaterialTextureSlot,
+  sourceTexture: THREE.Texture | null,
+  uvChannel: MaterialTextureUvChannel | undefined,
+) {
+  if (!sourceTexture) {
+    return null
+  }
+
+  const sourceChannel = material.userData.originalTextureChannels?.[slot] ?? sourceTexture.channel
+  sourceTexture.channel = uvChannel === 'uv2' ? 1 : uvChannel === 'uv1' ? 0 : sourceChannel
+  sourceTexture.needsUpdate = true
+  return sourceTexture
 }
 
 function getTextureSourceUrl(texture: THREE.Texture) {
@@ -78,6 +96,9 @@ export function ensureMaterialTextureBackup(
   if (!standardMaterial.userData.originalTextureSlots) {
     standardMaterial.userData.originalTextureSlots = Object.fromEntries(
       RUNTIME_TEXTURE_SLOTS.map((slot) => [slot, standardMaterial[slot] ?? null]),
+    )
+    standardMaterial.userData.originalTextureChannels = Object.fromEntries(
+      MATERIAL_TEXTURE_SLOTS.map((slot) => [slot, standardMaterial[slot]?.channel ?? 0]),
     )
   }
 
@@ -176,6 +197,13 @@ export function applyMaterialEnvironment(
   }
 
   if (environment.isEnvironmentEnabled && sceneEnvironmentMap) {
+    if (Math.abs(localIntensity - 1) < 0.000001) {
+      material.envMap = null
+      material.envMapIntensity = 1
+      material.envMapRotation.set(0, 0, 0)
+      return
+    }
+
     material.envMap = sceneEnvironmentMap
     material.envMapIntensity = environment.intensity * localIntensity
     material.envMapRotation.set(0, THREE.MathUtils.degToRad(environment.rotation), 0)
@@ -198,16 +226,21 @@ export function applyMaterialTextureSelections(
     const customTexture = material.userData.customTextureSlots?.[slot] ?? null
 
     if (selectedSource === 'custom' && customTexture) {
-      material[slot] = customTexture
+      material[slot] = resolveTextureUvChannel(material, slot, customTexture, materialState.textureSlots[slot]?.uvChannel)
       return
     }
 
     if (selectedSource === 'original' && originalTexture) {
-      material[slot] = originalTexture
+      material[slot] = resolveTextureUvChannel(material, slot, originalTexture, materialState.textureSlots[slot]?.uvChannel)
       return
     }
 
-    material[slot] = customTexture ?? originalTexture ?? null
+    material[slot] = resolveTextureUvChannel(
+      material,
+      slot,
+      customTexture ?? originalTexture ?? null,
+      materialState.textureSlots[slot]?.uvChannel,
+    )
   })
 }
 

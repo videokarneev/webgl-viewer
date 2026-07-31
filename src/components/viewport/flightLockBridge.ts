@@ -1,13 +1,28 @@
-let lockFlightControls: (() => void) | null = null
+const FLIGHT_LOCK_REQUEST_EVENT = 'webgl-viewer:flight-lock-request'
+const FLIGHT_EXIT_REQUEST_EVENT = 'webgl-viewer:flight-exit-request'
 let flightUnlockSuppressionUntil = 0
 let flightUnlockFullscreenRestoreUntil = 0
 
-export function registerFlightLock(handler: (() => void) | null) {
-  lockFlightControls = handler
+export function subscribeFlightLock(handler: () => void) {
+  window.addEventListener(FLIGHT_LOCK_REQUEST_EVENT, handler)
+  return () => {
+    window.removeEventListener(FLIGHT_LOCK_REQUEST_EVENT, handler)
+  }
 }
 
 export function requestFlightLock() {
-  lockFlightControls?.()
+  window.dispatchEvent(new Event(FLIGHT_LOCK_REQUEST_EVENT))
+}
+
+export function subscribeFlightExit(handler: () => void) {
+  window.addEventListener(FLIGHT_EXIT_REQUEST_EVENT, handler)
+  return () => {
+    window.removeEventListener(FLIGHT_EXIT_REQUEST_EVENT, handler)
+  }
+}
+
+export function requestFlightExit() {
+  window.dispatchEvent(new Event(FLIGHT_EXIT_REQUEST_EVENT))
 }
 
 export function markFlightUnlockForEscape() {

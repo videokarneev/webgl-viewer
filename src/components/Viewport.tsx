@@ -46,6 +46,7 @@ import {
   consumeFlightUnlockForEscape,
   consumeFlightUnlockFullscreenRestore,
   markFlightUnlockForEscape,
+  requestFlightExit,
 } from './viewport/flightLockBridge'
 
 const EnvironmentManager = lazy(() =>
@@ -1010,12 +1011,26 @@ function CameraBridge({
   const viewer = useEditorStore((state) => state.viewer)
 
   useLayoutEffect(() => {
+    if (viewer.cameraMode === 'firstPerson') {
+      return
+    }
+
     applyInitialViewerCameraState(camera, viewer, size.width, size.height, targetOffsetRef.current)
     if (controlsRef.current) {
       controlsRef.current.target.set(...viewer.orbitTarget).add(targetOffsetRef.current)
       controlsRef.current.update()
     }
-  }, [camera, controlsRef, size.height, size.width, targetOffsetRef, viewer.cameraPosition, viewer.focalLength, viewer.orbitTarget])
+  }, [
+    camera,
+    controlsRef,
+    size.height,
+    size.width,
+    targetOffsetRef,
+    viewer.cameraMode,
+    viewer.cameraPosition,
+    viewer.focalLength,
+    viewer.orbitTarget,
+  ])
 
   return (
     <ViewerSync
@@ -2593,9 +2608,7 @@ export function Viewport({
         if (shouldRestoreFullscreen) {
           markFlightUnlockForEscape()
         }
-        setHud({ orbitEnabled: true })
-        state.setViewer({ cameraMode: 'orbit' })
-        void document.exitPointerLock()
+        requestFlightExit()
         if (shouldRestoreFullscreen && !document.fullscreenElement) {
           setZenMode(true)
           void document.documentElement.requestFullscreen().catch(() => {

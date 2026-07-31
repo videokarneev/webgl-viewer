@@ -1131,7 +1131,7 @@ function LightTabContent() {
               label="Intensity"
               color={lights.ambient.color}
               intensity={lights.ambient.intensity}
-              max={5}
+              max={10}
               onColorChange={(value) => setLights({ ambient: { color: value } })}
               onIntensityChange={(value) => setLights({ ambient: { intensity: value } })}
             />
@@ -1171,7 +1171,7 @@ function LightTabContent() {
               <input
                 type="range"
                 min="0"
-                max="10"
+                max="50"
                 step="0.1"
                 value={environment.intensity}
                 onInput={(event) => setEnvironment({ intensity: Number(event.currentTarget.value) })}

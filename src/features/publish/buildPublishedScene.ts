@@ -128,7 +128,7 @@ function buildPublishedStencilPreparedPrimitives(
 }
 
 export interface PublishedSceneV2 {
-  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19
+  version: 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20
   scene: {
     background: {
       mode: string
@@ -420,6 +420,7 @@ export interface PublishedSceneV2 {
           source: PublishedTextureSource
           label: string | null
           assetUrl: string | null
+          uvChannel?: 'source' | 'uv1' | 'uv2'
         }
       >
     >
@@ -621,10 +622,26 @@ async function buildPublishedSceneInternal() {
             return null
           }
 
-          return [slot, { source, label: label ?? null, assetUrl: assetUrl ?? null }]
+          return [
+            slot,
+            {
+              source,
+              label: label ?? null,
+              assetUrl: assetUrl ?? null,
+              uvChannel: textureState.uvChannel ?? 'source',
+            },
+          ]
         })
         .filter(
-          (entry): entry is [string, { source: PublishedTextureSource; label: string | null; assetUrl: string | null }] =>
+          (entry): entry is [
+            string,
+            {
+              source: PublishedTextureSource
+              label: string | null
+              assetUrl: string | null
+              uvChannel: 'source' | 'uv1' | 'uv2'
+            },
+          ] =>
             Boolean(entry),
         ),
     ) as PublishedSceneV2['materials'][number]['textureSlots']
@@ -930,7 +947,7 @@ async function buildPublishedSceneInternal() {
     state.assets.reflections ?? state.environment.source ?? publishedEnvironmentPreset?.label ?? null
 
   const scene: PublishedSceneV2 = {
-    version: 19,
+    version: 20,
     scene: {
       background: {
         mode: state.backgroundMode,

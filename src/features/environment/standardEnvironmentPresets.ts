@@ -18,6 +18,12 @@ export const STANDARD_ENVIRONMENT_PRESETS: StandardEnvironmentPreset[] = [
     url: '/textures/City_Night_Lights.hdr',
     kind: 'hdri',
   },
+  {
+    id: 'standard-environment:moon',
+    label: 'Moon',
+    url: '/textures/HDR_moon.hdr',
+    kind: 'hdri',
+  },
 ]
 
 export const DEFAULT_STANDARD_ENVIRONMENT_PRESET = STANDARD_ENVIRONMENT_PRESETS[0]

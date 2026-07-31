@@ -856,8 +856,21 @@ function PublishedSceneController({
         const nextTextureSlots = { ...useEditorStore.getState().materials[storeMaterialId].textureSlots }
 
         for (const [slotName, slotEntry] of Object.entries(materialEntry.textureSlots) as Array<
-          [MaterialTextureSlot, { source: 'none' | 'original' | 'custom' | 'flipbook'; label: string | null; assetUrl: string | null }]
+          [
+            MaterialTextureSlot,
+            {
+              source: 'none' | 'original' | 'custom' | 'flipbook'
+              label: string | null
+              assetUrl: string | null
+              uvChannel?: 'source' | 'uv1' | 'uv2'
+            },
+          ]
         >) {
+          nextTextureSlots[slotName] = {
+            ...nextTextureSlots[slotName],
+            uvChannel: slotEntry.uvChannel ?? 'source',
+          }
+
           if (slotEntry.source === 'custom' && slotEntry.assetUrl && runtimeMaterial) {
             const texture = await loadTexture(slotEntry.assetUrl)
             texture.name = slotEntry.label ?? `${slotName} Texture`

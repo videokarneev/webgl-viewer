@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useEditorStore } from '../../store/editorStore'
-import { markFlightUnlockForEscape, registerFlightLock } from './flightLockBridge'
+import { markFlightUnlockForEscape, subscribeFlightExit, subscribeFlightLock } from './flightLockBridge'
 
 function getFlightSpeedFactor(speed: number) {
   if (speed <= 5) {
@@ -17,6 +17,8 @@ export function FlightController() {
   const velocityRef = useRef(new THREE.Vector3())
   const directionRef = useRef(new THREE.Vector3())
   const sideRef = useRef(new THREE.Vector3())
+  const orbitTargetRef = useRef(new THREE.Vector3())
+  const orbitDistanceRef = useRef(5)
   const lockInitialized = useRef(false)
   const lockPending = useRef(false)
   const initTimeoutRef = useRef<number | null>(null)
@@ -26,8 +28,8 @@ export function FlightController() {
     KeyA: false,
     KeyS: false,
     KeyD: false,
-    Space: false,
-    ControlLeft: false,
+    KeyQ: false,
+    KeyE: false,
     ShiftLeft: false,
     ShiftRight: false,
   })
@@ -45,12 +47,26 @@ export function FlightController() {
   }, [cameraMode, gl.domElement])
 
   useLayoutEffect(() => {
+    const captureOrbitDistance = () => {
+      const orbitTarget = useEditorStore.getState().viewer.orbitTarget
+      orbitTargetRef.current.set(...orbitTarget)
+      const distance = camera.position.distanceTo(orbitTargetRef.current)
+      if (Number.isFinite(distance) && distance > 0.01) {
+        orbitDistanceRef.current = distance
+      }
+    }
+
     const exitFlightMode = () => {
       lockPending.current = false
+      directionRef.current.set(0, 0, -1).applyQuaternion(camera.quaternion).normalize()
+      orbitTargetRef.current
+        .copy(camera.position)
+        .addScaledVector(directionRef.current, Math.max(orbitDistanceRef.current, 0.1))
       setHud({ orbitEnabled: true })
       setViewer({
         cameraMode: 'orbit',
         cameraPosition: [camera.position.x, camera.position.y, camera.position.z],
+        orbitTarget: [orbitTargetRef.current.x, orbitTargetRef.current.y, orbitTargetRef.current.z],
       })
     }
 
@@ -63,12 +79,12 @@ export function FlightController() {
           exitFlightMode()
         }
         initTimeoutRef.current = null
-      }, 250)
+      }, 1000)
     }
 
     const requestLockFromHud = () => {
-      console.log('Attempting Flight Lock')
       if (document.pointerLockElement === gl.domElement) {
+        captureOrbitDistance()
         setHud({ orbitEnabled: false })
         setViewer({
           cameraMode: 'firstPerson',
@@ -83,6 +99,7 @@ export function FlightController() {
       }
 
       try {
+        captureOrbitDistance()
         lockPending.current = true
         const request = gl.domElement.requestPointerLock()
         void Promise.resolve(request).catch((error) => {
@@ -115,6 +132,13 @@ export function FlightController() {
       ) {
         markFlightUnlockForEscape()
         exitFlightMode()
+      }
+    }
+
+    const requestExitFromHud = () => {
+      exitFlightMode()
+      if (document.pointerLockElement === gl.domElement) {
+        void document.exitPointerLock()
       }
     }
 
@@ -153,7 +177,8 @@ export function FlightController() {
       }
     }
 
-    registerFlightLock(requestLockFromHud)
+    const unsubscribeFlightLock = subscribeFlightLock(requestLockFromHud)
+    const unsubscribeFlightExit = subscribeFlightExit(requestExitFromHud)
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('keyup', handleKeyUp)
     document.addEventListener('mousemove', handleMouseMove)
@@ -164,7 +189,8 @@ export function FlightController() {
         window.clearTimeout(initTimeoutRef.current)
         initTimeoutRef.current = null
       }
-      registerFlightLock(null)
+      unsubscribeFlightLock()
+      unsubscribeFlightExit()
       document.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('keyup', handleKeyUp)
       document.removeEventListener('mousemove', handleMouseMove)
@@ -177,8 +203,8 @@ export function FlightController() {
         KeyA: false,
         KeyS: false,
         KeyD: false,
-        Space: false,
-        ControlLeft: false,
+        KeyQ: false,
+        KeyE: false,
         ShiftLeft: false,
         ShiftRight: false,
       }
@@ -198,7 +224,7 @@ export function FlightController() {
 
     const forward = Number(keys.current.KeyW) - Number(keys.current.KeyS)
     const strafe = Number(keys.current.KeyD) - Number(keys.current.KeyA)
-    const vertical = Number(keys.current.Space) - Number(keys.current.ControlLeft)
+    const vertical = Number(keys.current.KeyE) - Number(keys.current.KeyQ)
     const boost = keys.current.ShiftLeft || keys.current.ShiftRight ? 3 : 1
     const speedFactor = getFlightSpeedFactor(flightSpeed)
     const acceleration = 10 * speedFactor * boost

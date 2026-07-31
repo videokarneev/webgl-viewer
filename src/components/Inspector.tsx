@@ -15,6 +15,7 @@ import {
   type InterfaceElementRenderMode,
   type InterfaceElementShapeType,
   type MaterialTextureSlotState,
+  type MaterialTextureUvChannel,
   useEditorStore,
 } from '../store/editorStore'
 
@@ -844,6 +845,50 @@ function applyPreviewTextureSelections(
   })
 }
 
+function AoUvChannelControl({
+  materialId,
+  missingUv2Count,
+  effectiveChannel,
+}: {
+  materialId: string
+  missingUv2Count: number
+  effectiveChannel: number | null
+}) {
+  const textureSlots = useEditorStore((state) => state.materials[materialId]?.textureSlots ?? null)
+  const updateLinkedMaterialTextureUvChannel = useEditorStore((state) => state.updateLinkedMaterialTextureUvChannel)
+  const effectiveChannelLabel = effectiveChannel == null ? 'Unavailable' : effectiveChannel === 0 ? 'UV1' : `UV${effectiveChannel + 1}`
+
+  if (!textureSlots) {
+    return null
+  }
+
+  const handleChange = (uvChannel: MaterialTextureUvChannel) => {
+    updateLinkedMaterialTextureUvChannel(materialId, 'aoMap', uvChannel)
+  }
+
+  return (
+    <div className='material-texture-uv-control'>
+      <label className='field field--compact-select'>
+        <span>AO Coordinates</span>
+        <select
+          value={textureSlots.aoMap.uvChannel ?? 'source'}
+          onChange={(event) => handleChange(event.currentTarget.value as MaterialTextureUvChannel)}
+        >
+          <option value='source'>From GLB</option>
+          <option value='uv1'>UV1 - Tiling</option>
+          <option value='uv2'>UV2 - Baked</option>
+        </select>
+      </label>
+      <p className='material-texture-uv-runtime'>Active runtime: {effectiveChannelLabel}</p>
+      {textureSlots.aoMap.uvChannel === 'uv2' && missingUv2Count > 0 ? (
+        <p className='material-texture-uv-warning'>
+          UV2 is missing on {missingUv2Count} {missingUv2Count === 1 ? 'mesh' : 'meshes'}.
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 function MaterialTextureList({ materialId }: { materialId: string }) {
   const materialState = useEditorStore((state) => state.materials[materialId] ?? null)
   const runtimeMaterialById = useEditorStore((state) => state.runtime.materialById)
@@ -869,6 +914,21 @@ function MaterialTextureList({ materialId }: { materialId: string }) {
 
     return materialState?.color ?? '#ffffff'
   }, [materialState?.color, resolvedMaterial])
+  const missingAoUv2MeshCount = useMemo(() => {
+    if (!materialState) {
+      return 0
+    }
+
+    return materialState.meshIds.reduce((count, meshId) => {
+      const object = runtimeObjectById[meshId]
+      if (!object || !(object as THREE.Mesh).isMesh) {
+        return count
+      }
+
+      const geometry = (object as THREE.Mesh).geometry
+      return geometry?.getAttribute('uv1') ? count : count + 1
+    }, 0)
+  }, [materialState, runtimeObjectById])
 
   const textureRows = useMemo<TextureRowEntry[]>(() => {
     if (!materialState) {
@@ -956,6 +1016,13 @@ function MaterialTextureList({ materialId }: { materialId: string }) {
               {loadingSlots[entry.slot] ? 'Loading' : 'Replace'}
             </button>
           </div>
+          {entry.slot === 'aoMap' ? (
+            <AoUvChannelControl
+              materialId={materialId}
+              missingUv2Count={missingAoUv2MeshCount}
+              effectiveChannel={resolvedMaterial?.aoMap?.channel ?? null}
+            />
+          ) : null}
           <input
             ref={(node) => {
               inputRefs.current[entry.slot] = node
@@ -2336,6 +2403,7 @@ function AtlasEffectSection({
   onToggle: () => void
 }) {
   const material = useEditorStore((state) => state.materials[materialId] ?? null)
+  const previewFrame = useEditorStore((state) => state.runtime.materialEffectPreviewFrameById[materialId] ?? null)
   const atlasSource = useEditorStore((state) => state.assets.atlas)
   const atlasLoaded = useEditorStore((state) => Boolean(state.assets.atlas && state.runtimeTextures.atlasTexture))
   const updateMaterialEffect = useEditorStore((state) => state.updateMaterialEffect)
@@ -2347,6 +2415,9 @@ function AtlasEffectSection({
   }
 
   const totalFrames = Math.max(1, material.effect.gridX * material.effect.gridY)
+  const displayedCurrentFrame = material.effect.play
+    ? (previewFrame ?? material.effect.currentFrame)
+    : material.effect.currentFrame
 
   const activeEffects = [
     ...(material.effect.isAdded
@@ -2555,14 +2626,14 @@ function AtlasEffectSection({
 
           <label className="field field--inline-range material-effect-current-frame">
             <span>
-              Current Frame <output>{material.effect.currentFrame}</output>
+              Current Frame <output>{displayedCurrentFrame}</output>
             </span>
             <input
               type="range"
               min="0"
               max={Math.max(0, totalFrames - 1)}
               step="1"
-              value={material.effect.currentFrame}
+              value={displayedCurrentFrame}
               onInput={(event) =>
                 updateMaterialEffect(materialId, {
                   currentFrame: Number(event.currentTarget.value),

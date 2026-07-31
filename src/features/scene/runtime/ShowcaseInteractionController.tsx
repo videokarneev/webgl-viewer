@@ -363,7 +363,15 @@ export function ShowcaseInteractionController({
     const perspectiveCamera = state.camera as THREE.PerspectiveCamera
     const nextSmoothing = THREE.MathUtils.clamp((activeBox?.interaction.smoothing ?? 0.14) * delta * 60, 0.01, 1)
 
-    if (!activeBox || store.viewer.cameraMode !== 'orbit') {
+    if (store.viewer.cameraMode !== 'orbit') {
+      perspectiveCamera.up.set(0, 1, 0)
+      resetPortalProjection(perspectiveCamera)
+      smoothedOffsetRef.current.set(0, 0, 0)
+      smoothedTargetOffsetRef.current.set(0, 0, 0)
+      return
+    }
+
+    if (!activeBox) {
       perspectiveCamera.up.set(0, 1, 0)
       resetPortalProjection(perspectiveCamera)
       baseCameraPositionRef.copy(perspectiveCamera.position).sub(smoothedOffsetRef.current)

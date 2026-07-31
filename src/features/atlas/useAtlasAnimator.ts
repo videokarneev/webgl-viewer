@@ -73,6 +73,9 @@ export function useAtlasAnimator(materialId: string | null) {
   const frameTextureRef = useRef<THREE.CanvasTexture | null>(null)
   const lastAtlasTextureRef = useRef<THREE.Texture | null>(null)
   const lastFrameRef = useRef(-1)
+  const lastRenderedFrameRef = useRef(Number.NaN)
+  const lastRenderSettingsRef = useRef('')
+  const textureRefreshElapsedRef = useRef(0)
   const playbackFrameRef = useRef(0)
   const lastCommittedFrameRef = useRef<number | null>(null)
   const accumulatedTimeRef = useRef(0)
@@ -101,10 +104,12 @@ export function useAtlasAnimator(materialId: string | null) {
       const rows = Math.max(1, effect.gridY)
       const maxFrames = Math.max(1, columns * rows)
       const sourceFrame = requestedFrame ?? effect.currentFrame
-      const clampedFrame = Math.min(Math.max(0, sourceFrame), Math.max(0, maxFrames - 1))
-      const baseFrame = Math.floor(clampedFrame)
+      const resolvedFrame = effect.loop
+        ? ((sourceFrame % maxFrames) + maxFrames) % maxFrames
+        : Math.min(Math.max(0, sourceFrame), Math.max(0, maxFrames - 1))
+      const baseFrame = Math.floor(resolvedFrame)
       const blendWeight =
-        effect.frameBlend && maxFrames > 1 ? Math.min(Math.max(0, clampedFrame - baseFrame), 1) : 0
+        effect.frameBlend && maxFrames > 1 ? Math.min(Math.max(0, resolvedFrame - baseFrame), 1) : 0
       const nextFrame = effect.loop ? (baseFrame + 1) % maxFrames : Math.min(baseFrame + 1, maxFrames - 1)
       const { column, row } = getFrameCoordinates(baseFrame, columns, rows, effect.frameOrder)
       const { column: nextColumn, row: nextRow } = getFrameCoordinates(nextFrame, columns, rows, effect.frameOrder)
@@ -193,6 +198,9 @@ export function useAtlasAnimator(materialId: string | null) {
       frameTextureRef.current = null
       setAtlasFrameTexture(null)
       lastAtlasTextureRef.current = atlasTexture
+      lastRenderedFrameRef.current = Number.NaN
+      lastRenderSettingsRef.current = ''
+      textureRefreshElapsedRef.current = 0
     }
 
     refresh()
@@ -224,6 +232,7 @@ export function useAtlasAnimator(materialId: string | null) {
     }
 
     const effect = materialState.effect
+    const frameCount = Math.max(1, effect.gridX * effect.gridY)
     let frame = effect.currentFrame
 
     if (effect.play) {
@@ -232,7 +241,6 @@ export function useAtlasAnimator(materialId: string | null) {
         accumulatedTimeRef.current = 0
       }
 
-      const frameCount = Math.max(1, effect.gridX * effect.gridY)
       const frameInterval = effect.fps > 0 ? 1 / effect.fps : Number.POSITIVE_INFINITY
       accumulatedTimeRef.current += delta
 
@@ -278,7 +286,34 @@ export function useAtlasAnimator(materialId: string | null) {
 
     wasPlayingRef.current = effect.play
 
-    refresh(frame)
+    textureRefreshElapsedRef.current += delta
+    const renderSettings = [
+      effect.gridX,
+      effect.gridY,
+      effect.frameOrder,
+      effect.opacity,
+      effect.wrapMode,
+      effect.targetSlot,
+      effect.loop,
+      effect.frameBlend,
+      effect.play,
+    ].join(':')
+    const settingsChanged = renderSettings !== lastRenderSettingsRef.current
+    const discreteFrameChanged =
+      Math.floor(frame) !== Math.floor(lastRenderedFrameRef.current)
+    const usesContinuousBlend = effect.play && effect.frameBlend && frameCount > 1
+    const blendRefreshInterval = 1 / 30
+    const blendRefreshDue =
+      usesContinuousBlend && textureRefreshElapsedRef.current >= blendRefreshInterval
+
+    if (settingsChanged || discreteFrameChanged || blendRefreshDue) {
+      refresh(frame)
+      lastRenderedFrameRef.current = frame
+      lastRenderSettingsRef.current = renderSettings
+      textureRefreshElapsedRef.current = usesContinuousBlend
+        ? textureRefreshElapsedRef.current % blendRefreshInterval
+        : 0
+    }
   })
 
   return {

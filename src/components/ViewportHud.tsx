@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useEditorStore } from '../store/editorStore'
-import { requestFlightLock } from './viewport/flightLockBridge'
+import { requestFlightExit, requestFlightLock } from './viewport/flightLockBridge'
 import { formatTransformNumber, sanitizeNumber } from './viewport/transformShared'
 
 function IconButton({
@@ -220,6 +220,10 @@ export function ViewportHud({ onResetCamera }: { onResetCamera: () => void }) {
             active={cameraMode === 'orbit'}
             title="Orbit camera mode"
             onClick={() => {
+              if (cameraMode === 'firstPerson') {
+                requestFlightExit()
+                return
+              }
               setHud({ orbitEnabled: true })
               setViewer({ cameraMode: 'orbit' })
             }}

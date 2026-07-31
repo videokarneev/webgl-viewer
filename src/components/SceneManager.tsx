@@ -1111,7 +1111,7 @@ export function SceneManager() {
                       setLights({
                         ambient: ambientLight.visible && ambientLight.intensity > 0.001
                           ? { visible: false }
-                          : { visible: true, intensity: ambientLight.intensity <= 0.001 ? 0.5 : ambientLight.intensity },
+                          : { visible: true, intensity: ambientLight.intensity <= 0.001 ? 0.6 : ambientLight.intensity },
                       })
                     }
                     onDelete={removeAmbientLight}

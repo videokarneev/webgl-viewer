@@ -32,6 +32,7 @@ export type InterfaceElementMaterialPreset = 'plastic' | 'metal' | 'glass' | 'ma
 export type InterfaceElementMaterialType = 'standard' | 'physical'
 export type MaterialTextureSlot = 'map' | 'normalMap' | 'roughnessMap' | 'metalnessMap' | 'aoMap' | 'emissiveMap' | 'alphaMap' | 'bumpMap' | 'displacementMap' | 'specularMap'
 export type MaterialTextureSource = 'original' | 'custom'
+export type MaterialTextureUvChannel = 'source' | 'uv1' | 'uv2'
 export type RotateAnimationPivot = 'pivot' | 'gizmo'
 export type RotateAnimationAxis = 'x' | 'y' | 'z'
 export type FocusFrontFace = '+x' | '-x' | '+y' | '-y' | '+z' | '-z'
@@ -195,6 +196,7 @@ export interface MaterialTextureSlotState {
   customUrl?: string | null
   customFileSize?: number | null
   selectedSource: MaterialTextureSource | null
+  uvChannel: MaterialTextureUvChannel
 }
 
 export const MATERIAL_TEXTURE_SLOTS: MaterialTextureSlot[] = [
@@ -1378,6 +1380,11 @@ interface EditorState {
   ) => void
   updateObjectTransform: (id: string, patch: Partial<ObjectTransformState>) => void
   updateMaterial: (id: string, patch: Partial<Omit<PbrMaterialState, 'id' | 'effect' | 'hasMaps' | 'meshIds'>>) => void
+  updateLinkedMaterialTextureUvChannel: (
+    materialId: string,
+    slot: MaterialTextureSlot,
+    uvChannel: MaterialTextureUvChannel,
+  ) => void
   updateMaterialEffect: (materialId: string, patch: Partial<AtlasEffectState>) => void
   toggleObjectVisibility: (id: string) => void
   removeSceneNode: (id: string) => void
@@ -1685,6 +1692,7 @@ function createEmptyMaterialTextureSlots() {
         customUrl: null,
         customFileSize: null,
         selectedSource: null,
+        uvChannel: 'source',
       },
     ]),
   ) as Record<MaterialTextureSlot, MaterialTextureSlotState>
@@ -1872,6 +1880,20 @@ function disposeCustomRuntimeTextures(material: THREE.Material) {
   })
 
   delete runtimeLike.userData.customTextureSlots
+}
+
+function getMaterialTextureLinkKey(textureState: MaterialTextureSlotState) {
+  if (textureState.selectedSource === 'custom') {
+    const value = textureState.customUrl ?? textureState.customLabel
+    return value ? `custom:${value}` : null
+  }
+
+  if (textureState.selectedSource === 'original') {
+    const value = textureState.originalUrl ?? textureState.originalLabel
+    return value ? `original:${value}` : null
+  }
+
+  return null
 }
 
 function disposeRuntimeObject(object: THREE.Object3D) {
@@ -2512,14 +2534,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     ambient: {
       exists: true,
       color: '#ffffff',
-      intensity: 0.5,
+      intensity: 0.6,
       visible: true,
     },
     rig: {
-      hemisphere: 0.9,
-      key: 1.8,
-      fill: 0.85,
-      rim: 0.65,
+      hemisphere: 0,
+      key: 0,
+      fill: 0,
+      rim: 0,
     },
   },
   hud: {
@@ -2864,6 +2886,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         },
       }),
     ),
+  updateLinkedMaterialTextureUvChannel: (materialId, slot, uvChannel) =>
+    set((state) => {
+      const material = state.materials[materialId]
+      if (!material) {
+        return state
+      }
+
+      const linkKey = getMaterialTextureLinkKey(material.textureSlots[slot])
+      const materials = Object.fromEntries(
+        Object.entries(state.materials).map(([id, entry]) => {
+          const isLinked = id === materialId || (
+            linkKey !== null &&
+            getMaterialTextureLinkKey(entry.textureSlots[slot]) === linkKey
+          )
+          if (!isLinked) {
+            return [id, entry]
+          }
+
+          return [
+            id,
+            {
+              ...entry,
+              textureSlots: {
+                ...entry.textureSlots,
+                [slot]: {
+                  ...entry.textureSlots[slot],
+                  uvChannel,
+                },
+              },
+            },
+          ]
+        }),
+      ) as Record<string, PbrMaterialState>
+
+      return withHistory(state, { materials })
+    }),
   updateMaterialEffect: (materialId, patch) =>
     set((state) => {
       const current = state.materials[materialId]
@@ -2932,6 +2990,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeMaterial.aoMap = null
         runtimeMaterial.emissiveMap = null
         delete runtimeMaterial.userData.originalTextureSlots
+        delete runtimeMaterial.userData.originalTextureChannels
         runtimeMaterial.color.set('#ffffff')
         runtimeMaterial.emissive.set('#000000')
         runtimeMaterial.metalness = 0
@@ -3008,6 +3067,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         runtimeMaterial.aoMap = null
         runtimeMaterial.emissiveMap = null
         delete runtimeMaterial.userData.originalTextureSlots
+        delete runtimeMaterial.userData.originalTextureChannels
         runtimeMaterial.color.set('#ffffff')
         runtimeMaterial.emissive.set('#000000')
         runtimeMaterial.metalness = 0
@@ -3149,7 +3209,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         ambient: {
           exists: true,
           color: state.lights.ambient.color || '#ffffff',
-          intensity: state.lights.ambient.intensity > 0.001 ? state.lights.ambient.intensity : 0.5,
+          intensity: state.lights.ambient.intensity > 0.001 ? state.lights.ambient.intensity : 0.6,
           visible: true,
         },
         rig: state.lights.rig,
@@ -4342,14 +4402,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
           ambient: {
             exists: true,
             color: '#ffffff',
-            intensity: 0.5,
+            intensity: 0.6,
             visible: true,
           },
           rig: {
-            hemisphere: 0.9,
-            key: 1.8,
-            fill: 0.85,
-            rim: 0.65,
+            hemisphere: 0,
+            key: 0,
+            fill: 0,
+            rim: 0,
           },
         },
         viewer: {

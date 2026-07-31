@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useEditorStore, type ExtraLightState } from '../../store/editorStore'
 
@@ -123,32 +123,9 @@ function ManagedExtraLight({ light }: { light: ExtraLightState }) {
 
 export function LightRig() {
   const ambient = useEditorStore((state) => state.lights.ambient)
-  const rig = useEditorStore((state) => state.lights.rig)
   const extraLights = useEditorStore((state) => state.extraLights)
-  const environmentEnabled = useEditorStore((state) => state.environment.isEnvironmentEnabled)
   const registerObjectRef = useEditorStore((state) => state.registerObjectRef)
   const ambientRef = useRef<THREE.AmbientLight | null>(null)
-  const lightSetup = useMemo(
-    () => ({
-      hemisphere: {
-        skyColor: '#eaf4ff',
-        groundColor: '#182028',
-      },
-      key: {
-        color: '#fff5e8',
-        position: [6, 7, 5] as [number, number, number],
-      },
-      fill: {
-        color: '#d8ebff',
-        position: [-5, 3.5, 6] as [number, number, number],
-      },
-      rim: {
-        color: '#cfe4ff',
-        position: [-4, 6, -5] as [number, number, number],
-      },
-    }),
-    [],
-  )
 
   useEffect(() => {
     registerObjectRef('light:ambient:system', ambientRef.current)
@@ -166,23 +143,6 @@ export function LightRig() {
           intensity={ambient.visible ? ambient.intensity : 0}
           visible={ambient.visible}
         />
-      ) : null}
-      {environmentEnabled ? (
-        <>
-          <hemisphereLight
-            color={lightSetup.hemisphere.skyColor}
-            groundColor={lightSetup.hemisphere.groundColor}
-            intensity={rig.hemisphere}
-          />
-          <directionalLight
-            color={lightSetup.key.color}
-            intensity={rig.key}
-            position={lightSetup.key.position}
-            castShadow
-          />
-          <directionalLight color={lightSetup.fill.color} intensity={rig.fill} position={lightSetup.fill.position} />
-          <directionalLight color={lightSetup.rim.color} intensity={rig.rim} position={lightSetup.rim.position} />
-        </>
       ) : null}
       {extraLights.map((light) => (
         <ManagedExtraLight key={light.id} light={light} />

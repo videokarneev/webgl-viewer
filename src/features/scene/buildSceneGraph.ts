@@ -73,6 +73,7 @@ function buildMaterialTextureSlots(material: THREE.Material) {
           customLabel: null,
           customUrl: null,
           selectedSource: hasOriginalTexture ? 'original' : null,
+          uvChannel: 'source',
         },
       ]
     }),
