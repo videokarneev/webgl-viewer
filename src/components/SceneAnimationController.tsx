@@ -235,6 +235,10 @@ export function SceneAnimationController() {
   const tempFloatTiltZ = useMemo(() => new THREE.Quaternion(), [])
   const tempFloatLocalPosition = useMemo(() => new THREE.Vector3(), [])
   const tempFloatLocalQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempFloatLocalOffset = useMemo(() => new THREE.Vector3(), [])
+  const tempFloatWorldOffset = useMemo(() => new THREE.Vector3(), [])
+  const tempFloatBaseInverseQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const tempFloatQuaternionOffset = useMemo(() => new THREE.Quaternion(), [])
   const tempFloatWorldPosition = useMemo(() => new THREE.Vector3(), [])
   const tempFloatWorldQuaternion = useMemo(() => new THREE.Quaternion(), [])
   const tempFocusForward = useMemo(() => new THREE.Vector3(), [])
@@ -429,6 +433,36 @@ export function SceneAnimationController() {
     session.object.quaternion.copy(tempFloatQuaternion)
     session.object.scale.copy(session.baseLocalScale)
     session.object.updateMatrixWorld(true)
+  }
+
+  const applyFloatOffsetToWorldPose = (
+    session: FloatSession,
+    animation: FloatAnimationState,
+    worldPosition: THREE.Vector3,
+    worldQuaternion: THREE.Quaternion,
+  ) => {
+    resolveFloatLocalPose(session, animation, tempFloatLocalPosition, tempFloatLocalQuaternion)
+    tempFloatLocalOffset.copy(tempFloatLocalPosition).sub(session.baseLocalPosition)
+
+    const parent = session.object.parent
+    if (parent) {
+      parent.updateWorldMatrix(true, true)
+      parent.getWorldQuaternion(tempParentQuaternion)
+      parent.getWorldScale(tempParentScale)
+      tempFloatWorldOffset
+        .copy(tempFloatLocalOffset)
+        .multiply(tempParentScale)
+        .applyQuaternion(tempParentQuaternion)
+    } else {
+      tempFloatWorldOffset.copy(tempFloatLocalOffset)
+    }
+
+    tempFloatBaseInverseQuaternion.copy(session.baseLocalQuaternion).invert()
+    tempFloatQuaternionOffset
+      .copy(tempFloatBaseInverseQuaternion)
+      .multiply(tempFloatLocalQuaternion)
+    worldPosition.add(tempFloatWorldOffset)
+    worldQuaternion.multiply(tempFloatQuaternionOffset)
   }
 
   const getLocalBoundingCenter = (object: THREE.Object3D) => {
@@ -938,6 +972,21 @@ export function SceneAnimationController() {
       : shouldReturnToLiveFloatPose
         ? tempFloatWorldQuaternion
         : session.restWorldQuaternion
+    const shouldApplyFocusedFloatPose =
+      desiredFocused &&
+      floatSessionRef.current?.targetObjectId === animation.targetObjectId &&
+      floatSessionRef.current.object === targetObject &&
+      store.floatAnimation.isAdded &&
+      store.floatAnimation.enabled &&
+      store.floatAnimation.targetObjectId === animation.targetObjectId
+    if (shouldApplyFocusedFloatPose && floatSessionRef.current) {
+      applyFloatOffsetToWorldPose(
+        floatSessionRef.current,
+        store.floatAnimation,
+        targetWorldPosition,
+        targetWorldQuaternion,
+      )
+    }
     const progress = easeInOutCubic(session.elapsed / session.duration)
     tempFocusCurrentPosition.copy(session.startWorldPosition).lerp(targetWorldPosition, progress)
     tempFocusCurrentQuaternion.copy(session.startWorldQuaternion).slerp(targetWorldQuaternion, progress)
