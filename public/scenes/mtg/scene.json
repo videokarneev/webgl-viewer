@@ -1,9 +1,12 @@
 {
-  "version": 17,
+  "version": 20,
   "scene": {
     "background": {
       "mode": "none",
       "color": "#808080",
+      "gradientStart": "#111820",
+      "gradientEnd": "#3f5f73",
+      "gradientAngle": 135,
       "rotation": 0
     },
     "environment": {
@@ -11,8 +14,8 @@
       "kind": "hdri",
       "assetLabel": "Studio",
       "assetUrl": "assets/environment/scene-environment-studio.exr",
-      "intensity": 1.5,
-      "rotation": 0,
+      "intensity": 0.9,
+      "rotation": -180,
       "backgroundMode": "color",
       "backgroundVisible": true,
       "backgroundAssetLabel": null,
@@ -24,9 +27,9 @@
   "camera": {
     "mode": "orbit",
     "position": [
-      0.009620734965076854,
-      -0.6614744761144946,
-      -1.0039874165184752
+      0.006826568999986242,
+      0.6751488450000002,
+      -1.0190809606061761
     ],
     "target": [
       0.0068265690000000046,
@@ -41,42 +44,42 @@
     "landscape": {
       "frameAspectPreset": "16:9",
       "cameraPosition": [
-        4,
-        3,
-        5
+        0.006826568999986242,
+        0.6751488450000002,
+        -1.0190809606061761
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        0.0068265690000000046,
+        0.675148845,
+        -0.02823794
       ],
       "focalLength": 20
     },
     "portrait": {
       "frameAspectPreset": "9:16",
       "cameraPosition": [
-        4,
-        3,
-        5
+        0.006826568999986242,
+        0.6751488450000002,
+        -1.0190809606061761
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        0.0068265690000000046,
+        0.675148845,
+        -0.02823794
       ],
       "focalLength": 20
     },
     "square": {
       "frameAspectPreset": "1:1",
       "cameraPosition": [
-        4,
-        3,
-        5
+        0.006826568999986242,
+        0.6751488450000002,
+        -1.0190809606061761
       ],
       "orbitTarget": [
-        0,
-        0,
-        0
+        0.0068265690000000046,
+        0.675148845,
+        -0.02823794
       ],
       "focalLength": 20
     }
@@ -101,18 +104,19 @@
     "volume": 0.16,
     "loop": true
   },
+  "interfaceElements": [],
   "lights": {
     "ambient": {
       "exists": true,
       "visible": true,
       "color": "#ffffff",
-      "intensity": 0.5
+      "intensity": 0.6
     },
     "rig": {
-      "hemisphere": 0.9,
-      "key": 1.8,
-      "fill": 0.85,
-      "rim": 0.65
+      "hemisphere": 0,
+      "key": 0,
+      "fill": 0,
+      "rim": 0
     },
     "extra": []
   },
@@ -137,7 +141,7 @@
   "godRaysBoxes": [],
   "stencilVolumes": [],
   "model": {
-    "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+    "id": "root:07e0e61c-3583-4568-882c-315775eefa91",
     "assetLabel": "MTG.glb",
     "assetUrl": "assets/model/scene-model-mtg.glb",
     "visible": true,
@@ -161,7 +165,7 @@
   },
   "objects": [
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "parentId": null,
       "type": "group",
       "label": "Loaded Model",
@@ -185,8 +189,8 @@
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:0",
-      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:0",
+      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "type": "mesh",
       "label": "3",
       "visible": true,
@@ -197,7 +201,7 @@
           -0.02823794
         ],
         "rotation": [
-          1.5707963800073816,
+          1.5707963800073814,
           0,
           0
         ],
@@ -209,8 +213,8 @@
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:1",
-      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:1",
+      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "type": "mesh",
       "label": "1",
       "visible": true,
@@ -221,7 +225,7 @@
           -0.0270746667
         ],
         "rotation": [
-          1.5707963800073816,
+          1.5707963800073814,
           0,
           0
         ],
@@ -233,8 +237,8 @@
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:2",
-      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:2",
+      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "type": "mesh",
       "label": "2",
       "visible": true,
@@ -245,7 +249,7 @@
           -0.0294011142
         ],
         "rotation": [
-          1.5707963800073816,
+          1.5707963800073814,
           0,
           0
         ],
@@ -257,8 +261,8 @@
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:3",
-      "parentId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:3",
+      "parentId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "type": "mesh",
       "label": "Face",
       "visible": true,
@@ -269,7 +273,7 @@
           -0.0270746611
         ],
         "rotation": [
-          1.5707963800073816,
+          1.5707963800073814,
           0,
           0
         ],
@@ -283,7 +287,7 @@
   ],
   "materials": [
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:0/material:0",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:0/material:0",
       "name": "Black",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -297,11 +301,12 @@
       "environmentOverride": null,
       "textureSlots": {},
       "effects": {
-        "flipbook": null
+        "flipbook": null,
+        "rainImpacts": null
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:1/material:0",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:1/material:0",
       "name": "1",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -317,15 +322,17 @@
         "map": {
           "source": "original",
           "label": "MTG.jpg",
-          "assetUrl": null
+          "assetUrl": null,
+          "uvChannel": "source"
         }
       },
       "effects": {
-        "flipbook": null
+        "flipbook": null,
+        "rainImpacts": null
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:2/material:0",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:2/material:0",
       "name": "2",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -341,15 +348,17 @@
         "map": {
           "source": "original",
           "label": "MTG2.jpg",
-          "assetUrl": null
+          "assetUrl": null,
+          "uvChannel": "source"
         }
       },
       "effects": {
-        "flipbook": null
+        "flipbook": null,
+        "rainImpacts": null
       }
     },
     {
-      "id": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df/node:3/material:0",
+      "id": "root:07e0e61c-3583-4568-882c-315775eefa91/node:3/material:0",
       "name": "Face",
       "type": "MeshStandardMaterial",
       "useSystemMaterial": false,
@@ -361,27 +370,57 @@
       "emissiveIntensity": 1,
       "clearcoat": null,
       "environmentOverride": null,
-      "textureSlots": {},
+      "textureSlots": {
+        "map": {
+          "source": "flipbook",
+          "label": "done.webp",
+          "assetUrl": "assets/atlas/4-face-map-done.webp",
+          "uvChannel": "source"
+        }
+      },
       "effects": {
-        "flipbook": null
+        "flipbook": {
+          "enabled": true,
+          "atlasAssetLabel": "done.webp",
+          "atlasAssetUrl": "assets/atlas/4-face-map-done.webp",
+          "targetSlot": "baseColor",
+          "frameOrder": "row",
+          "gridX": 3,
+          "gridY": 3,
+          "fps": 5,
+          "frameCount": 9,
+          "currentFrame": 2,
+          "opacity": 0.85,
+          "frameBlend": true,
+          "loop": true,
+          "uvChannel": "auto",
+          "wrapMode": "repeat",
+          "offsetX": 0,
+          "offsetY": 0,
+          "scaleX": 1,
+          "scaleY": 1,
+          "rotation": 0,
+          "swapXY": false
+        },
+        "rainImpacts": null
       }
     }
   ],
   "animations": [
     {
       "type": "float",
-      "targetObjectId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "targetObjectId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "enabled": true,
       "loop": true,
-      "amplitude": 0.04,
+      "amplitude": 0.02,
       "speed": 0.08,
-      "tilt": 1,
+      "tilt": 0.5,
       "startProgress": 0,
-      "progress": 0
+      "progress": 77.87519997787403
     },
     {
       "type": "focus",
-      "targetObjectId": "root:15ca86b1-bccf-41bd-84e0-57a9f75776df",
+      "targetObjectId": "root:07e0e61c-3583-4568-882c-315775eefa91",
       "enabled": true,
       "frontFace": "+z",
       "distance": 1.25,
